@@ -124,7 +124,7 @@ def visualize(
     if chip.tiles and style.logical_style is not None:
         from matplotlib.patches import Rectangle
         edgecolor_fn = _discrete_colormap_fn((3, 17), cmap='Set1')
-        for i, tile in enumerate(chip.tiles, start=1):
+        for i, tile in enumerate(chip.tiles, start=0):
             ls = style.logical_style(tile.tag)
             if logical_color_gradient:
                 ls.edgecolor = edgecolor_fn(i)
