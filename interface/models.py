@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field, fields
 from enum import Enum
-from typing import Any, Optional, Self, overload, Tuple, Callable, Dict
-
+from typing import Any, Optional, Self, overload, Tuple, Callable, Dict, List
 @dataclass
 class TileTag():
     distance: Optional[int] = None
@@ -51,9 +50,22 @@ class BoundedFloat:
             )
         setattr(obj, self.private_name, value)
 
-
+# TODO - extend the NoiseProfile to StaticNoiseProfile and DynamicProfile, where static has fixed independent noise profiles from the qubits around it and dynamic allows for noise to evolve or change (i.e., noise profile of a qubit changes over some set amount of time or use in operations)
+# TODO - create an (or find the exisiting STIM) enum for representing the available noise channels and the available operations (that noise channels are appropriate to apply to). 
+#        the noise profile should then map each operation to one (or perhaps multiple, like one channel for before one for after) noise channel. then reference the qubit's specific profile that says what channel and physical error rate should each operation on the qubit use.
 class NoiseProfile:
+    #TODO - start with seperating all operations into 3 buckets: 2-qubit (CNOT, SWAP, etc.), 1-qubit (H, Pauli's (X, Y, Z)), Idle/Measurement (M, MX, R, RX)
+    #       this could be the de facto "default" noise profile of each qubit but implement it in such a way that the noise profile can be set manually so the profile supports each operation having it's own specific value for pre- and post- operation.
     p = BoundedFloat(0.0, 0.75)
+    # _op_2_channel = Dict[]
+    # _channel_2_per = Dict[]
+
+    def for_operation(self, op_name, targs: Optional[List[Qubit]]){
+        '''Return the physical noise for performing the gate on this qubit.'''
+        return NotImplemented
+    }
+
+    def 
 
     def __init__(self, p: float = 0.0):
         self.p = p
