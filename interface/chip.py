@@ -264,7 +264,7 @@ class LogicalTile(Grid):
             self._base_circuit = self._shift_circuit_level_coordinates(initial_shift)
             self._update(new_circuit=self._base_circuit.copy(), new_qubits=None)
         if origin:
-            self._update(new_circuit=self._shift_circuit_level_coordinates(lambda *yx: (yx[1] + origin[1], yx[0] + origin[0])))
+            self._update(new_circuit=self._shift_circuit_level_coordinates(lambda *yx: (yx[0] + origin[0], yx[1] + origin[1])))
             
 
         #Initially all tiles do not have a chip assigned. Modifying the circuit object will work
@@ -273,7 +273,7 @@ class LogicalTile(Grid):
         # initially, set the tile to have the same length and height as the circuit
         # this would represent a tight packing of a tile with no buffer qubits
         circuit_coords = list(self._circuit.get_final_qubit_coordinates().values())
-        dimensions = tuple(int(max(coord)+1) for coord in zip(*circuit_coords))[:2][::-1]
+        dimensions = tuple(int(max(coord)+1) for coord in zip(*circuit_coords))[:2]
 
         super().__init__(length=dimensions[0]+x_buffer, 
                          height=dimensions[1]+y_buffer, 
@@ -300,12 +300,12 @@ class LogicalTile(Grid):
     @property
     def circuit_origin(self) -> Coord:
         coords = list(self._circuit.get_final_qubit_coordinates().values())
-        return tuple(min(coord) for coord in zip(*coords))[:2][::-1]
-    
+        return tuple(min(coord) for coord in zip(*coords))[:2]
+
     @property
     def circuit_bound(self) -> Coord:
         coords = list(self._circuit.get_final_qubit_coordinates().values())
-        return tuple(max(coord) for coord in zip(*coords))[:2][::-1]
+        return tuple(max(coord) for coord in zip(*coords))[:2]
 
     @property
     def chip(self) -> Chip:
@@ -363,7 +363,7 @@ class LogicalTile(Grid):
 
     def _extract_c2i_map(self) -> Dict[Coord, int]:
         i2c = self._circuit.get_final_qubit_coordinates()
-        return {(value[1], value[0]): key for key, value in i2c.items()}
+        return {(value[0], value[1]): key for key, value in i2c.items()}
 
     def _shift_circuit_level_coordinates(self, shift_function: ShiftFunction) -> Circuit:
         shifted_circuit = Circuit()
@@ -397,7 +397,7 @@ class LogicalTile(Grid):
             raise ValueError(f"Invalid shift that violates checkboard indexing. Both x and y must both be even or both be odd, given x = {x}, y = {y}")
         '''Shifts the current tile within the chip by `x` spaces left or right and y units up or down. A (x, y) shift is valid IFF x%2 == y%2.'''
         new_origin = (self.origin[0] + x,  self.origin[1] + y) #(2 - 2, 0 + 2) -> (0, 2)
-        new_circuit = self._shift_circuit_level_coordinates(lambda *coords: (coords[0] + y, coords[1] + x))
+        new_circuit = self._shift_circuit_level_coordinates(lambda *coords: (coords[0] + x, coords[1] + y))
 
         # print(f"Current Origin x Bound: {self.origin} x {self.bound}")
 
