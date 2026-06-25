@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from warnings import warn
-from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 from random import uniform
 
@@ -12,8 +12,6 @@ from stim import Circuit, CircuitInstruction
 from .models import Coord, NoiseProfile, Qubit, Status, ShiftFunction, TileTag
 from visualize import VisualizationStyle, default_style, visualize
 
-if TYPE_CHECKING:
-    from matplotlib.axes import Axes
 
 class Grid:
     """
@@ -179,9 +177,9 @@ class Chip(Grid):
     # Visualization
     # ------------------------------------------------------------------
 
-    def show(self, style: Optional[VisualizationStyle] = None) -> "Axes":
+    def show(self, style: Optional[VisualizationStyle] = None) -> None:
         """Display a visualization of the chip's qubit layout."""
-        return visualize(self, style=style or default_style, show=True)
+        visualize(self, style=style or default_style, show=True)
     
     # ------------------------------------------------------------------
     # Tile operations
@@ -226,8 +224,7 @@ class LogicalTile(Grid):
     `c2i` maps each qubit's (x, y) position (in the circuit's own frame, optionally
     shifted by `shift_function`) to its integer index in the Stim circuit.
 
-    To place a tile on a Chip, use chip.select_rect() or chip.select() with the
-    tile's bounding region to retrieve the corresponding Qubit objects.
+    To place a tile on a Chip, use chip.add_tile() with a specified origin coordinate.
     """
     _base_circuit: Circuit
     _circuit: Circuit

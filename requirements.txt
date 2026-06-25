@@ -1,5 +1,6 @@
 numpy
 stim
-matplotlib
+plotly
+nbformat
 shapely
 ipykernel

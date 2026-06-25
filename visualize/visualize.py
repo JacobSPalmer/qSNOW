@@ -1,28 +1,33 @@
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple, Union
 
 from interface.models import Qubit, Status, TileTag
 
 if TYPE_CHECKING:
     from interface.chip import Chip, Grid
-    from matplotlib.axes import Axes
-    from matplotlib.colors import Colormap, Normalize
+    from plotly.graph_objs._figure import Figure
 
-ColorLike = Union[str, Tuple[float, float, float], Tuple[float, float, float, float]]
+ColorLike = Union[str, float]
+
+_SHAPE_TYPES = {
+    's': 'rect',
+    'o': 'circle',
+}
 
 @dataclass
 class QubitStyle:
     color: ColorLike = 'lightgray'
     marker: str = 's'
-    size: float = 250
+    size: float = .5  # diameter in data (axis) units, so qubits scale naturally on zoom/pan
     alpha: float = 1.0
     edgecolor: str = 'black'
-    linewidths: float = 0.5
+    linewidths: float = 0.75
 
 @dataclass
 class ColorbarSpec:
-    cmap: "Colormap"
-    norm: "Normalize"
+    colorscale: str
+    cmin: float
+    cmax: float
     label: str = ""
 
 #TODO - add options in logical style for text or perhaps add a title style
@@ -61,116 +66,176 @@ def _default_logical_style(tag: TileTag, **kwargs) -> LogicalStyle:
 
 default_style = VisualizationStyle(style_fn=_default_qubit_style, logical_style=_default_logical_style)
 
-def noise_heatmap_style(chip: "Chip", 
-                        cmap: str = "hot_r", 
+def noise_heatmap_style(chip: "Chip",
+                        colorscale: str = "hot_r",
                         limits: Optional[Tuple[float, float]] = None,
                         logical_style: Optional[LogicalStyle] = None) -> VisualizationStyle:
     """Color each qubit by its noise value `p`, normalized across the chip."""
-    import matplotlib as mpl
-    from matplotlib.colors import Normalize
-
     if limits:
-        norm = Normalize(vmin=limits[0], vmax=limits[1])
+        cmin, cmax = limits
     else:
         p_values = [qubit.noise.p for qubit in chip.qubits]
-        norm = Normalize(vmin=min(p_values), vmax=max(p_values))
-
-    colormap = mpl.colormaps[cmap]
+        cmin, cmax = min(p_values), max(p_values)
 
     def style_fn(qubit: Qubit) -> QubitStyle:
-        return QubitStyle(color=colormap(norm(qubit.noise.p)))
+        # raw value; the colorscale mapping is applied trace-wide by `visualize()`
+        return QubitStyle(color=qubit.noise.p)
 
     def logical_style_fn(tag: TileTag) -> LogicalStyle:
         return _default_logical_style(tag, edgecolor='blue')
 
     return VisualizationStyle(
         style_fn=style_fn,
-        colorbar=ColorbarSpec(cmap=colormap, norm=norm, label="Noise (p)"),
+        colorbar=ColorbarSpec(colorscale=colorscale, cmin=cmin, cmax=cmax, label="Noise (p)"),
         logical_style=logical_style_fn
     )
 
-def _discrete_colormap_fn(n_range: Tuple[int, int], cmap: str = 'Set1') -> Callable[[int], ColorLike]:
-    """Map an integer index within `n_range` to a discrete color sampled from `cmap`."""
-    import matplotlib as mpl
-    from matplotlib.colors import Normalize
+def _discrete_colormap_fn(n_range: Tuple[int, int], palette: Optional[List[str]] = None) -> Callable[[int], str]:
+    """Map an integer index within `n_range` to a discrete color sampled from `palette`."""
+    resolved_palette: List[str]
+    if palette is None:
+        from plotly.colors import qualitative
+        resolved_palette = qualitative.Set1
+    else:
+        resolved_palette = palette
 
-    colormap = mpl.colormaps[cmap]
-    norm = Normalize(vmin=n_range[0], vmax=n_range[1])
+    lo, hi = n_range
+    span = max(hi - lo, 1)
 
-    def color_fn(i: int) -> ColorLike:
-        return colormap(norm(i))
+    def color_fn(i: int) -> str:
+        idx = int((i - lo) / span * (len(resolved_palette) - 1)) % len(resolved_palette)
+        return resolved_palette[idx]
 
     return color_fn
 
 def visualize(
     chip: "Chip",
-    ax: "Axes | None" = None,
+    fig: Optional["Figure"] = None,
     style: VisualizationStyle = default_style,
     logical_color_gradient = False,
     show: bool = False,
-) -> "Axes":
-    import matplotlib.pyplot as plt
-    from matplotlib.ticker import MultipleLocator
-    if ax is None:
-        _, ax = plt.subplots(figsize=(max(6,chip.length), max(6, .6*chip.height)))
+) -> "Figure":
+    # Imported from the concrete submodules (not the `plotly.graph_objects` facade) since that
+    # facade lazily resolves attributes via `__getattr__`, which defeats static type narrowing/hover.
+    from plotly.graph_objs._figure import Figure
+    from plotly.graph_objs._scattergl import Scattergl
+    from plotly.colors import sample_colorscale
+
+    if fig is None:
+        fig = Figure()
+
+    xs, ys, raw_colors, fillcolors, hovertext = [], [], [], [], []
     for qubit in chip.qubits:
         if not qubit.loc:
             raise AttributeError(f"Qubit with uninitialized location cannot be visualized.")
         x, y = qubit.loc
         s = style.style_fn(qubit)
-        ax.scatter(x, y, c=[s.color], marker=s.marker, s=s.size, alpha=s.alpha,
-                   edgecolors=s.edgecolor, linewidths=s.linewidths)
+
+        if style.colorbar is not None:
+            span = style.colorbar.cmax - style.colorbar.cmin
+            norm = (float(s.color) - style.colorbar.cmin) / span if span else 0.5
+            fillcolor = sample_colorscale(style.colorbar.colorscale, [max(0.0, min(1.0, norm))])[0]
+        else:
+            fillcolor = s.color
+
+        r = s.size / 2
+        fig.add_shape(
+            type=_SHAPE_TYPES.get(s.marker, 'rect'),
+            x0=x - r, y0=y - r, x1=x + r, y1=y + r,
+            line=dict(color=s.edgecolor, width=s.linewidths),
+            fillcolor=fillcolor,
+            opacity=s.alpha,
+            layer='above',
+        )
+
+        xs.append(x)
+        ys.append(y)
+        raw_colors.append(s.color if style.colorbar is not None else 0)
+        fillcolors.append(fillcolor)
+        hovertext.append(f"({x}, {y})<br>status={qubit.status.name}<br>noise={qubit.noise.p:.4f}")
+
+    # A colorbar eats into the plot's pixel width. Rather than let Plotly auto-shrink the cartesian
+    # domain to fit it (which stretches the data range to preserve the 1:1 aspect ratio), reserve a
+    # fixed pixel strip for it explicitly and pin the plot domain so it never needs to encroach.
+    margin_l, margin_r, margin_t, margin_b = 40, 40, 60, 40
+    base_width = min(900, max(600, chip.length * 60))
+    fig_height = min(900, max(600, chip.height * 60))
+    plot_px_width = base_width - margin_l - margin_r
+    colorbar_px = 100 if style.colorbar is not None else 0
+    domain_frac = plot_px_width / (plot_px_width + colorbar_px) if colorbar_px else 1.0
+
+    # Colorbar `y`/`len` are in *paper* fraction (the whole figure, margins included), not the
+    # cartesian plot's own domain - so without this, the bar overshoots top/bottom by the margins.
+    # Pin it to exactly the vertical span the plot occupies within the figure.
+    colorbar_bottom_frac = margin_b / fig_height
+    colorbar_top_frac = 1 - margin_t / fig_height
+    colorbar_len = colorbar_top_frac - colorbar_bottom_frac
+    colorbar_y = (colorbar_bottom_frac + colorbar_top_frac) / 2
+
+    hover_marker: Dict[str, object] = dict(size=20, opacity=0)
+    if style.colorbar is not None:
+        hover_marker.update(
+            color=raw_colors,
+            colorscale=style.colorbar.colorscale,
+            cmin=style.colorbar.cmin,
+            cmax=style.colorbar.cmax,
+            # title.side='right' (vs the default 'top') keeps the title from eating into `len`,
+            # so the gradient itself - not the title - spans the full computed plot-aligned length.
+            colorbar=dict(title=dict(text=style.colorbar.label, side='right'),
+                           x=domain_frac, xanchor='left',
+                           y=colorbar_y, yanchor='middle', len=colorbar_len),
+            showscale=True,
+        )
+
+    # In the default (non-colorbar) style, tint each hover box to match its qubit's fill color.
+    hoverlabel = None if style.colorbar is not None else dict(bgcolor=fillcolors, font=dict(color='black'))
+
+    fig.add_trace(Scattergl(
+        x=xs, y=ys, mode='markers', marker=hover_marker,
+        hovertext=hovertext, hoverinfo='text', name='qubits',
+        hoverlabel=hoverlabel,
+    ))
 
     if chip.tiles and style.logical_style is not None:
-        from matplotlib.patches import Rectangle
-        edgecolor_fn = _discrete_colormap_fn((3, 17), cmap='Set1')
+        edgecolor_fn = _discrete_colormap_fn((3, 17))
         for i, tile in enumerate(chip.tiles, start=0):
             ls = style.logical_style(tile.tag)
             if logical_color_gradient:
                 ls.edgecolor = edgecolor_fn(i)
-            rect = Rectangle(xy=(tile.origin[0] - .5, tile.origin[1]-.5),
-                             width=tile.length,
-                             height=tile.height,
-                             linewidth=ls.linewidth,
-                             alpha=ls.alpha,
-                             edgecolor=ls.edgecolor,
-                             facecolor=ls.facecolor)
-            ax.add_patch(rect)
-            ax.text(x=tile.origin[0] + tile.length - .55,
-                    y=tile.origin[1] - .43,
-                    s=f"tile {i}",
-                    ha='right',
-                    va='top',
-                    bbox=dict(
-                        facecolor='gray',         # Opaque backing color
-                        edgecolor='gray',          # Border for the text box
-                        boxstyle='square,pad=0.05',  # Style and padding of the box
-                        alpha=.25                # Fully opaque
-                    ),
-                    color=ls.edgecolor,
-                    fontsize=10,
-                    family=['Andale Mono'],
-                    weight='bold')
+            x0, y0 = tile.origin[0] - .5, tile.origin[1] - .5
+            fig.add_shape(
+                type='rect',
+                x0=x0, y0=y0, x1=x0 + tile.length, y1=y0 + tile.height,
+                line=dict(color=ls.edgecolor, width=ls.linewidth),
+                fillcolor=ls.facecolor if ls.facecolor != 'none' else 'rgba(0,0,0,0)',
+                opacity=ls.alpha,
+                layer='above',
+            )
+            fig.add_annotation(
+                x=tile.origin[0] + tile.length - .55,
+                y=tile.origin[1] - .43,
+                text=f"tile {i}",
+                showarrow=False,
+                xanchor='right', yanchor='top',
+                font=dict(color=ls.edgecolor, size=10, family='Andale Mono, monospace'),
+                bgcolor='rgba(128,128,128,0.25)',
+            )
 
-    ax.set_aspect('equal')
-    ax.invert_yaxis()
-    ax.xaxis.tick_top()
-    ax.xaxis.set_label_position('top')
-    ax.xaxis.set_major_locator(MultipleLocator(1))
-    ax.yaxis.set_major_locator(MultipleLocator(1))
-
-    if style.colorbar is not None:
-        from mpl_toolkits.axes_grid1 import make_axes_locatable
-        sm = plt.cm.ScalarMappable(cmap=style.colorbar.cmap, norm=style.colorbar.norm)
-        sm.set_array([])
-        cax = make_axes_locatable(ax).append_axes("right", size="5%", pad=0.1)
-        plt.colorbar(sm, cax=cax, label=style.colorbar.label)
+    fig.update_xaxes(side='top', dtick=1, showgrid=True, zeroline=True,
+                      range=[-.75, chip.length - .25], domain=[0, domain_frac],
+                      showline=True, linecolor='black', linewidth=1, mirror=True)
+    fig.update_yaxes(dtick=1, showgrid=True, zeroline=True,
+                      range=[chip.height - .25, -.75],
+                      scaleanchor='x', scaleratio=1,
+                      showline=True, linecolor='black', linewidth=1, mirror=True)
+    fig.update_layout(
+        width=base_width + colorbar_px,
+        height=fig_height,
+        showlegend=False,
+        margin=dict(l=margin_l, r=margin_r, t=margin_t, b=margin_b),
+    )
 
     if show:
-        if plt.get_backend().lower() == 'agg':
-            from IPython.display import display
-            display(ax.get_figure())
-        else:
-            plt.show()
+        fig.show()
 
-    return ax
+    return fig

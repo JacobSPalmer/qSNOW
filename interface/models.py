@@ -60,12 +60,9 @@ class NoiseProfile:
     # _op_2_channel = Dict[]
     # _channel_2_per = Dict[]
 
-    def for_operation(self, op_name, targs: Optional[List[Qubit]]){
+    def for_operation(self, op_name, targs: "Optional[List[Qubit]]"):
         '''Return the physical noise for performing the gate on this qubit.'''
         return NotImplemented
-    }
-
-    def 
 
     def __init__(self, p: float = 0.0):
         self.p = p
