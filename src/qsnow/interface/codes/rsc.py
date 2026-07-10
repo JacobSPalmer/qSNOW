@@ -13,9 +13,11 @@ from ..rules import ChannelRule, InjectionRule, Ruleset
 class SCTile(LogicalTile):
     def __init__(self, 
                  distance: int, 
-                 rounds: int,
+                 rounds: Optional[int] = None,
                  task: Literal['memory_x', 'memory_z'] = 'memory_z',
                  origin: Coord = (0,0)):
+        if rounds is None:
+            rounds = distance
         generator = lambda t, d, r: Circuit.generated(code_task=f"surface_code:rotated_{t}", distance=d, rounds=r)
         super().__init__(circuit = generator(task, distance, rounds).flattened(), 
                          initial_shift = None, 

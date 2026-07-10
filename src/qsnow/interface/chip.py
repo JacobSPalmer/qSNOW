@@ -106,6 +106,12 @@ class Chip(Grid):
         self.tiles.append(tile)
         return True
 
+    def remove_tile(self, index: int) -> bool:
+        if not index < len(self.tiles):
+            raise ValueError(f'Index {index} out of range for list of tiles with len {len(self.tiles)}')
+        
+        self.tiles[index]._scrub_qubits()
+
     def is_valid_tile_placement(self, origin: Coord, bound: Coord) -> bool:
         # 1. check that the loc is valid for the checkerboard styling
         if not(self._validate_checkerboard_loc(origin)):
