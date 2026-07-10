@@ -17,7 +17,7 @@ from scipy.stats import truncnorm
 from .grid import Grid
 from .models import Coord, NoiseProfile, Qubit, Status, ShiftFunction, TileTag, CSSType, _DEFAULT_CSSTYPE, _DEFAULT_STATUS
 from .rules import Ruleset, InjectionRule, ChannelRule
-from visualize import VisualizationStyle, default_style, visualize
+from qsnow.visualize import VisualizationStyle, default_style, visualize
 
 class Chip(Grid):
     """

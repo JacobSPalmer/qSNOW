@@ -11,7 +11,7 @@ from shapely.strtree import STRtree
 from stim import Circuit, CircuitInstruction
 
 from .models import Coord, NoiseProfile, Qubit, Status, ShiftFunction, TileTag, CSSType
-from visualize import VisualizationStyle, default_style, visualize
+from qsnow.visualize import VisualizationStyle, default_style, visualize
 
 class Grid:
     """

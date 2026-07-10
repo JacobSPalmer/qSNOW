@@ -1,7 +1,7 @@
 from typing import Dict, Any, List, Optional
 
-from interface.models import Qubit, Coord
-from interface.chip import LogicalTile, Chip
+from qsnow.interface.models import Qubit, Coord
+from qsnow.interface.chip import LogicalTile, Chip
 
 # WIP
 class SquarePackingExp():

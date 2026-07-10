@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple, Union, Any
 
-from interface.models import Qubit, Status, TileTag, CSSType
+from qsnow.interface.models import Qubit, Status, TileTag, CSSType
 
 if TYPE_CHECKING:
     from interface.chip import Chip, Grid

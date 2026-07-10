@@ -1,6 +1,7 @@
 .vscode/
 .claude/
 __pycache__/
+*.egg-info/
 uml/
 todo.md
 notes.md

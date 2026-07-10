@@ -2,4 +2,4 @@
 
 uml:
 	mkdir -p uml
-	pyreverse -o png -p qSNOW -d uml interface/chip.py interface/models.py
+	pyreverse -o png -p qSNOW -d uml src/qsnow/interface/chip.py src/qsnow/interface/models.py

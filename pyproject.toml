@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qsnow"
+version = "0.1.0"
+description = "qSNOW (STIM Noise Orchestration Workflow) - orchestrate multiple logicals across a grid/chip of qubits."
+requires-python = ">=3.12"
+dependencies = [
+    "numpy",
+    "stim",
+    "sinter",
+    "plotly",
+    "nbformat",
+    "shapely",
+    "scipy",
+]
+
+[project.optional-dependencies]
+dev = ["ipykernel"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
