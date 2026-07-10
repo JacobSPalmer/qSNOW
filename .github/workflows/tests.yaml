@@ -19,4 +19,12 @@ jobs:
         run: pip install -e ".[test]"
 
       - name: Run tests
-        run: pytest --cov=qsnow --cov-report=term-missing
+        run: pytest --cov=qsnow --cov-report=xml:coverage.xml --junitxml=pytest.xml
+
+      - name: Publish report
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Pytest Results
+          path: ./pytest.xml
+          reporter: java-junit 
