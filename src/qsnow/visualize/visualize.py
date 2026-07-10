@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple, Union, 
 from qsnow.interface.models import Qubit, Status, TileTag, CSSType
 
 if TYPE_CHECKING:
-    from interface.chip import Chip, Grid
+    from qsnow.interface.chip import Chip, Grid
     from plotly.graph_objs._figure import Figure
 
 # ------------------------------------------------------------------
