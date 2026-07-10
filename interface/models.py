@@ -1,12 +1,31 @@
 from dataclasses import dataclass, field, fields
 from enum import Enum
-from typing import Any, Optional, Self, overload, Tuple, Callable, Dict, List
+from typing import Any, Optional, Self, overload, Tuple, Callable, Dict, List, Literal
+
+type Coord = Tuple[float,float]
+type ShiftFunction = Callable[[*tuple[float, ...]], Coord]
+
 @dataclass
 class TileTag():
-    distance: Optional[int] = None
     name: Optional[str] = None
-    generator: Optional[Callable] = None 
-    metadata = {}
+    tile_type: Optional[str] = None
+    initial_shift_fn: Optional[ShiftFunction] = None
+    distance: Optional[int] = None
+    rounds: Optional[int] = None
+    generator: Optional[Callable] = None
+    generator_args: Dict[str, Any] = field(default_factory=dict)
+    metadata: Dict = field(default_factory=dict)
+    #TODO - work thru metadata updates (i.e., default named dictionary and move most attr within (i.e., d, r, generator))
+
+    def to_dict(self) -> Dict:
+        return {
+            'name': self.name,
+            'tile_type': self.tile_type,
+            'initial_shift_fn': self.initial_shift_fn,
+            'generator': str(self.generator),
+            'generator_args': self.generator_args,
+            'metadata': self.metadata
+        }
 
 class Status(Enum):
     INACTIVE = 0 # True if not within a logical patch; default state
@@ -20,8 +39,8 @@ class CSSType(Enum):
     DATA = 3
     BUFFER = 4
 
-type Coord = Tuple[float,float]
-type ShiftFunction = Callable[[*tuple[float, ...]], tuple[float, ...]]
+_DEFAULT_STATUS = Status.INACTIVE
+_DEFAULT_CSSTYPE = CSSType.UNASSIGNED
 
 class BoundedFloat:
     """Descriptor class enforcing min_value <= value <= max_value on assignment."""
@@ -50,22 +69,19 @@ class BoundedFloat:
             )
         setattr(obj, self.private_name, value)
 
-# TODO - extend the NoiseProfile to StaticNoiseProfile and DynamicProfile, where static has fixed independent noise profiles from the qubits around it and dynamic allows for noise to evolve or change (i.e., noise profile of a qubit changes over some set amount of time or use in operations)
-# TODO - create an (or find the exisiting STIM) enum for representing the available noise channels and the available operations (that noise channels are appropriate to apply to). 
-#        the noise profile should then map each operation to one (or perhaps multiple, like one channel for before one for after) noise channel. then reference the qubit's specific profile that says what channel and physical error rate should each operation on the qubit use.
+
 class NoiseProfile:
     #TODO - start with seperating all operations into 3 buckets: 2-qubit (CNOT, SWAP, etc.), 1-qubit (H, Pauli's (X, Y, Z)), Idle/Measurement (M, MX, R, RX)
     #       this could be the de facto "default" noise profile of each qubit but implement it in such a way that the noise profile can be set manually so the profile supports each operation having it's own specific value for pre- and post- operation.
     p = BoundedFloat(0.0, 0.75)
-    # _op_2_channel = Dict[]
-    # _channel_2_per = Dict[]
-
-    def for_operation(self, op_name, targs: "Optional[List[Qubit]]"):
-        '''Return the physical noise for performing the gate on this qubit.'''
-        return NotImplemented
 
     def __init__(self, p: float = 0.0):
         self.p = p
+    
+    def to_dict(self):
+        return {
+            'p': self.p
+        }
 
     def __repr__(self):
         return f"{self.__class__.__name__}(p={self.p})"
@@ -74,15 +90,66 @@ class Qubit:
     def __init__(self,
                  loc: Optional[Coord] = None,
                  noise: Optional[NoiseProfile] = None,
-                 status: Status = Status.INACTIVE,
-                 type: CSSType = CSSType.UNASSIGNED):
+                 status: Status = _DEFAULT_STATUS,
+                 type: CSSType = _DEFAULT_CSSTYPE):
         self.loc: Optional[Coord] = loc
         self.noise = noise if noise is not None else NoiseProfile()
-        self.status = status
-        self.type = type
+        self._status = status
+        self._type = type
+
+    @property
+    def status(self) -> Status:
+        return self._status
+    
+    @status.setter
+    def status(self, new_status):
+        self._status = new_status
+
+    @property
+    def type(self) -> CSSType:
+        return self._type
+    
+    @type.setter
+    def type(self, new_type):
+        self._type = new_type
+
+    def reset(self) -> None:
+        '''Reset qubit's all relevant typing or status attributes, but leaves qubit's noise profile.'''
+        self.reset_status()
+        self.reset_type()
+
+    def reset_status(self) -> None:
+        '''Resets the qubit's status to the default, initially `INACTIVE`'''
+        self._status = _DEFAULT_STATUS
+    
+    def reset_type(self) -> None:
+        '''Resets the qubit's type to the default typing, initially `UNAASSIGNED`'''
+        self._type = _DEFAULT_CSSTYPE
+
+    def is_measure(self) -> bool:
+        # print(f"is either z or x -> {self.is_z_measure() or self.is_x_measure()}")
+        return self.is_z_measure() or self.is_x_measure()
+    
+    def is_z_measure(self) -> bool:
+        return self.type == CSSType.Z_CHECK
+
+    def is_x_measure(self) -> bool:
+        return self.type == CSSType.X_CHECK
+    
+    def is_data(self) -> bool:
+        return self.type == CSSType.DATA
 
     def is_active(self) -> bool:
-        return False if self.status == Status.INACTIVE else True
+        return True if self.status != Status.INACTIVE else False
+
+    def to_dict(self) -> Dict:
+        # could also just do this automatically via {k:v for k, v in vars(self).items()} but might give up control of certain elements
+        return {
+            'loc': self.loc,
+            'status': self.status,
+            'type': self.type,
+            'noise': self.noise.to_dict()
+        }
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(loc={self.loc}, status={self.status}, noise={self.noise})"
+        return f"{self.__class__.__name__}(loc={self.loc}, status={self.status}, type={self.type}, noise={self.noise})"

@@ -1,6 +1,8 @@
 numpy
 stim
+sinter
 plotly
 nbformat
 shapely
 ipykernel
+scipy

@@ -1,11 +1,15 @@
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple, Union, Any
 
-from interface.models import Qubit, Status, TileTag
+from interface.models import Qubit, Status, TileTag, CSSType
 
 if TYPE_CHECKING:
     from interface.chip import Chip, Grid
     from plotly.graph_objs._figure import Figure
+
+# ------------------------------------------------------------------
+# Visualization style classes/types
+# ------------------------------------------------------------------
 
 ColorLike = Union[str, float]
 
@@ -22,6 +26,7 @@ class QubitStyle:
     alpha: float = 1.0
     edgecolor: str = 'black'
     linewidths: float = 0.75
+    custom_hovertext: Optional[str] = None
 
 @dataclass
 class ColorbarSpec:
@@ -51,25 +56,46 @@ _STATUS_COLORS = {
     Status.ANCILLA: 'orange',
 }
 
+_CSS_COLORS = {
+    CSSType.X_CHECK: 'firebrick',
+    CSSType.Z_CHECK: 'dodgerblue',
+    CSSType.DATA: 'dimgrey',
+    CSSType.BUFFER: 'pink',
+    CSSType.UNASSIGNED: 'lightgray'
+}
+
 _STATUS_ALPHA = {
     Status.INACTIVE: 0.5,
     Status.LOGICAL: 1.0,
     Status.ANCILLA: 0.75,
 }
 
-def _default_qubit_style(qubit: Qubit) -> QubitStyle:
+def _hovertext_format(base: str, **kwargs):
+    return f"{base}<br>"+"<br>".join([f"{k}={v}" for k,v in kwargs.items() if v is not None])
+
+def _default_qubit_style_by_css_type(qubit: Qubit) -> QubitStyle:
+    return QubitStyle(color=_CSS_COLORS.get(qubit.type, 'lightgray'),
+                       alpha=_STATUS_ALPHA.get(qubit.status, 0.5),
+                       custom_hovertext=_hovertext_format(f"({qubit.loc[0]}, {qubit.loc[1]})", type=qubit.type.name, noise=f"{qubit.noise.p:.4f}"))
+
+def _default_qubit_style_by_status(qubit: Qubit) -> QubitStyle:
     return QubitStyle(color=_STATUS_COLORS.get(qubit.status, 'lightgray'),
-                       alpha=_STATUS_ALPHA.get(qubit.status, 0.5))
+                       alpha=_STATUS_ALPHA.get(qubit.status, 0.5),
+                       custom_hovertext=_hovertext_format(f"({qubit.loc[0]}, {qubit.loc[1]})", status=qubit.status.name, noise=f"{qubit.noise.p:.4f}"))
 
 def _default_logical_style(tag: TileTag, **kwargs) -> LogicalStyle:
     return LogicalStyle(title = tag.name if tag.name else None, **kwargs)
 
-default_style = VisualizationStyle(style_fn=_default_qubit_style, logical_style=_default_logical_style)
+# ------------------------------------------------------------------
+# Importable visualization styles
+# ------------------------------------------------------------------
+
+default_style = VisualizationStyle(style_fn=_default_qubit_style_by_status, logical_style=_default_logical_style)
+css_style = VisualizationStyle(style_fn=_default_qubit_style_by_css_type, logical_style=_default_logical_style)
 
 def noise_heatmap_style(chip: "Chip",
                         colorscale: str = "hot_r",
-                        limits: Optional[Tuple[float, float]] = None,
-                        logical_style: Optional[LogicalStyle] = None) -> VisualizationStyle:
+                        limits: Optional[Tuple[float, float]] = None) -> VisualizationStyle:
     """Color each qubit by its noise value `p`, normalized across the chip."""
     if limits:
         cmin, cmax = limits
@@ -79,7 +105,8 @@ def noise_heatmap_style(chip: "Chip",
 
     def style_fn(qubit: Qubit) -> QubitStyle:
         # raw value; the colorscale mapping is applied trace-wide by `visualize()`
-        return QubitStyle(color=qubit.noise.p)
+        return QubitStyle(color=qubit.noise.p, 
+                          custom_hovertext=_hovertext_format(f"({qubit.loc[0]}, {qubit.loc[1]})", status=qubit.status.name, noise=f"{qubit.noise.p:.4f}"))
 
     def logical_style_fn(tag: TileTag) -> LogicalStyle:
         return _default_logical_style(tag, edgecolor='blue')
@@ -88,6 +115,33 @@ def noise_heatmap_style(chip: "Chip",
         style_fn=style_fn,
         colorbar=ColorbarSpec(colorscale=colorscale, cmin=cmin, cmax=cmax, label="Noise (p)"),
         logical_style=logical_style_fn
+    )
+
+def packing_profile_style(chip: "Chip",
+                          profiles: Dict[Any, Dict]):
+    def style_fn(qubit: Qubit) -> QubitStyle:
+        profile = profiles.get(qubit.loc, {})
+        valid = True if profile else False
+        return QubitStyle(color='pink' if valid else 'lightgray',
+                          custom_hovertext=_hovertext_format(base=f"{(qubit.loc[0], qubit.loc[1])}", 
+                                                             valid=valid,
+                                                             bound=profile.get('bound', None),
+                                                             ler=profile.get('ler', None)))
+    return VisualizationStyle(
+        style_fn=style_fn
+    )
+
+def area_selection_style(chip: "Chip",
+                         selection: Dict[Any, Qubit],
+                         show_logicals = False):
+    def style_fn(qubit: Qubit) -> QubitStyle:
+        selected = selection.get(qubit.loc, None)
+        return QubitStyle(color='red' if selected else 'lightgray',
+                          custom_hovertext=_hovertext_format(f"({qubit.loc[0]}, {qubit.loc[1]})", status=qubit.status.name, type=qubit.type.name))
+    
+    return VisualizationStyle(
+        style_fn=style_fn,
+        logical_style=_default_logical_style if show_logicals else None
     )
 
 def _discrete_colormap_fn(n_range: Tuple[int, int], palette: Optional[List[str]] = None) -> Callable[[int], str]:
@@ -124,6 +178,7 @@ def visualize(
     if fig is None:
         fig = Figure()
 
+    ## Qubit Style Configuration ##
     xs, ys, raw_colors, fillcolors, hovertext = [], [], [], [], []
     for qubit in chip.qubits:
         if not qubit.loc:
@@ -152,11 +207,12 @@ def visualize(
         ys.append(y)
         raw_colors.append(s.color if style.colorbar is not None else 0)
         fillcolors.append(fillcolor)
-        hovertext.append(f"({x}, {y})<br>status={qubit.status.name}<br>noise={qubit.noise.p:.4f}")
+        hovertext.append(s.custom_hovertext)
 
-    # A colorbar eats into the plot's pixel width. Rather than let Plotly auto-shrink the cartesian
-    # domain to fit it (which stretches the data range to preserve the 1:1 aspect ratio), reserve a
-    # fixed pixel strip for it explicitly and pin the plot domain so it never needs to encroach.
+    ## Misc. Colorbar Spacing Configuration ##
+
+    # NOTE - Reserve a fixed pixel strip for the pesky lil colorbar explicitly and pin the plot domain so it never needs to encroach.
+    # TODO - this still is not fit flush to the side of the plot like it ideally should
     margin_l, margin_r, margin_t, margin_b = 40, 40, 60, 40
     base_width = min(900, max(600, chip.length * 60))
     fig_height = min(900, max(600, chip.height * 60))
@@ -164,9 +220,8 @@ def visualize(
     colorbar_px = 100 if style.colorbar is not None else 0
     domain_frac = plot_px_width / (plot_px_width + colorbar_px) if colorbar_px else 1.0
 
-    # Colorbar `y`/`len` are in *paper* fraction (the whole figure, margins included), not the
+    # NOTE - Colorbar `y`/`len` are in *paper* fraction (the whole figure, margins included), not the
     # cartesian plot's own domain - so without this, the bar overshoots top/bottom by the margins.
-    # Pin it to exactly the vertical span the plot occupies within the figure.
     colorbar_bottom_frac = margin_b / fig_height
     colorbar_top_frac = 1 - margin_t / fig_height
     colorbar_len = colorbar_top_frac - colorbar_bottom_frac
@@ -187,6 +242,7 @@ def visualize(
             showscale=True,
         )
 
+    ## Qubit Hover Box Configuration ##
     # In the default (non-colorbar) style, tint each hover box to match its qubit's fill color.
     hoverlabel = None if style.colorbar is not None else dict(bgcolor=fillcolors, font=dict(color='black'))
 
@@ -196,6 +252,7 @@ def visualize(
         hoverlabel=hoverlabel,
     ))
 
+    ## Logical Tiling Configuration ##
     if chip.tiles and style.logical_style is not None:
         edgecolor_fn = _discrete_colormap_fn((3, 17))
         for i, tile in enumerate(chip.tiles, start=0):
@@ -221,6 +278,8 @@ def visualize(
                 bgcolor='rgba(128,128,128,0.25)',
             )
 
+
+    ## Axis and Layout Configuration ##
     fig.update_xaxes(side='top', dtick=1, showgrid=True, zeroline=True,
                       range=[-.75, chip.length - .25], domain=[0, domain_frac],
                       showline=True, linecolor='black', linewidth=1, mirror=True)

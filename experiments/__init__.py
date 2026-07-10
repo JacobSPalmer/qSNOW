@@ -1,0 +1,1 @@
+from .squarepacking.game import *

@@ -2,3 +2,7 @@
 .claude/
 __pycache__/
 uml/
+todo.md
+notes.md
+requirements.txt
+scratch.ipynb
