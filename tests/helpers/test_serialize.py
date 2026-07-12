@@ -1,16 +1,16 @@
 import pytest
 
-from qsnow.interface.chip import Chip, LogicalTile
-from qsnow.interface.codes.rsc import SCTile
 from qsnow.helpers.serialize import (
     export_json,
+    from_dict,
     import_json,
     import_latest,
     list_exports,
     set_data_dir,
     to_dict,
-    from_dict,
 )
+from qsnow.interface.chip import Chip, LogicalTile
+from qsnow.interface.codes.rsc import SCTile
 
 
 @pytest.fixture
@@ -150,6 +150,7 @@ class TestAutoOrganization:
         chip.generate_random_noise()
         export_json(chip, label="run")
         import os
+
         os.utime(first, (0, 0))  # force distinct mtimes
 
         restored = import_latest("chip_run")

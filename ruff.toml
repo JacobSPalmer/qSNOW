@@ -1,0 +1,34 @@
+# Target Python version alignment
+target-version = "py314"
+line-length = 88
+
+[lint]
+# Select safe, non-destructive rules
+# E/W = Pycodestyle errors/warnings, F = Pyflakes (bugs/dead code), I = Isort (imports)
+# UP = Pyupgrade (safe syntax upgrades), RUF = Ruff internal rules
+select = ["E", "W", "F", "I", "UP", "RUF"]
+
+# Explicitly block rules that modify logic, alter API signatures, or introduce opinionated rewrites
+ignore = [
+    "B008",    # Do not mess with function call defaults
+    "PLR0913", # Do not force argument limits on existing functions
+    "SIM105",  # Ignore try-except-pass to contextlib shortcuts (prevents behavioral edge cases)
+    "UP006",   # Leave older type-hinting structures alone to prevent runtime type-checker crashes
+    "UP007",   
+    "UP045"
+]
+
+# Enable safe, automated fixes
+fixable = ["F401", "F841", "I001", "UP"]
+unfixable = []
+
+[lint.per-file-ignores]
+# Prevent linting tools from breaking test assertions or mock setups
+"tests/**/*" = ["F841", "E501"]
+
+[format]
+# Enforce predictable standard formatting (matches Black specifications)
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

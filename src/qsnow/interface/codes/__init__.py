@@ -1,3 +1,1 @@
-from .rsc import (
-    SCTile
-)
+from .rsc import SCTile

@@ -50,7 +50,9 @@ class TestRuleset:
 
     def test_add_and_list_rules(self):
         ruleset = Ruleset(injection_rules=[])
-        rule = InjectionRule("R", "all_qubits", after=[ChannelRule("X_ERROR", "all_qubits")])
+        rule = InjectionRule(
+            "R", "all_qubits", after=[ChannelRule("X_ERROR", "all_qubits")]
+        )
 
         ruleset.add_rule(rule)
 

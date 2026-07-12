@@ -12,8 +12,12 @@ class TestDefaultQubitStyle:
         assert isinstance(style, QubitStyle)
 
     def test_color_varies_by_status(self):
-        inactive_color = _default_qubit_style_by_status(Qubit(loc=(0, 0), status=Status.INACTIVE)).color
-        logical_color = _default_qubit_style_by_status(Qubit(loc=(0, 0), status=Status.LOGICAL)).color
+        inactive_color = _default_qubit_style_by_status(
+            Qubit(loc=(0, 0), status=Status.INACTIVE)
+        ).color
+        logical_color = _default_qubit_style_by_status(
+            Qubit(loc=(0, 0), status=Status.LOGICAL)
+        ).color
         assert inactive_color != logical_color
 
 

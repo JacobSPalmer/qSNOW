@@ -1,13 +1,11 @@
-import pytest
-
-from qsnow.interface.codes.rsc import SCTile
 from qsnow.interface import Chip
-from qsnow.interface.models import Qubit, CSSType
+from qsnow.interface.codes.rsc import SCTile
+from qsnow.interface.models import CSSType
+
 
 class TestSurfaceCodeTileConstruction:
-
     def test_construct_basic_tile(self, chip: Chip):
-        tile = SCTile(3, rounds=3, task='memory_x')
+        tile = SCTile(3, rounds=3, task="memory_x")
         chip.add_tile(tile)
 
         memory_x = [(2, 0), (2, 4), (4, 2), (4, 6)]
@@ -19,6 +17,3 @@ class TestSurfaceCodeTileConstruction:
         assert all(chip.loc(c).is_z_measure() for c in memory_z)
         assert all(chip.loc(c).is_data() for c in data)
         assert all(chip.loc(c).type == CSSType.BUFFER for c in buffer)
-    
-         
-
