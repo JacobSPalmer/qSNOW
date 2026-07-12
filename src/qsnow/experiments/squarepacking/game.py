@@ -48,7 +48,6 @@ class SquarePackingExp():
             del chip.tiles[0]
 
     def create_profile(self):
-        # profile = self.generate_profile(chip, tile)
         tile = self.tile.copy()
         
         self.chip.add_tile(tile, (0,0))
@@ -57,7 +56,7 @@ class SquarePackingExp():
         for k, v in track(self.profile.items(), description="Generating noise injected circuits..."):
             # print(f"Attempting shift from {tile.origin} to {k}")
             tile.shift_to(k)
-            self.profile[k]['circuit'] = tile.circuit
+            self.profile[k]['circuit'] = tile.circuit.copy()
 
         # clean up
         del self.chip.tiles[0]

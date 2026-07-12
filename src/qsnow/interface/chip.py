@@ -106,11 +106,13 @@ class Chip(Grid):
         self.tiles.append(tile)
         return True
 
-    def remove_tile(self, index: int) -> bool:
+    def remove_tile(self, index: int) -> LogicalTile:
         if not index < len(self.tiles):
             raise ValueError(f'Index {index} out of range for list of tiles with len {len(self.tiles)}')
         
-        self.tiles[index]._scrub_qubits()
+        tile = self.tiles.pop(index)
+        tile.reset()
+        return tile
 
     def is_valid_tile_placement(self, origin: Coord, bound: Coord) -> bool:
         # 1. check that the loc is valid for the checkerboard styling
@@ -175,15 +177,6 @@ class Chip(Grid):
             'tiles': {c:t.to_dict() for c,t in self.tile_map.items()},
             'noise_map': self.noise_map
         }
-    
-    def export_noise_model(self):
-        return NotImplemented
-    
-    def import_noise_model(self):
-        return NotImplemented
-
-    def pickle(self):
-        return NotImplemented
 
 class LogicalTile(Grid):
     """
@@ -193,13 +186,14 @@ class LogicalTile(Grid):
     shifted by `shift_function`) to its integer index in the Stim circuit.
 
     To place a tile on a Chip, use chip.add_tile() with a specified origin coordinate.
-    """
-    _base_circuit: Circuit
-    _circuit: Circuit
-    _chip: Optional[Chip]
-    _c2i: Dict[Coord, int]
 
+    Attributes:
+    _base_circuit (Circuit): Initial circuit used to define the tile
+    _circuit: Circuit -> Noise injected or spatially modified circuit built from the base circuit
+    _chip (Optional[Chip]) -> 
+    _c2i: Dict[Coord, int]
     tag: TileTag
+    """
 
     def __init__(
         self,
@@ -253,8 +247,9 @@ class LogicalTile(Grid):
                          origin=self.circuit_origin)
 
     def __del__(self):
-        if self._qubits:
+        if self.initialized():
             self._scrub_qubits()
+            self.chip.tiles.remove(self)
 
     def _init_tile_qubit_status(self):
         # 2. Change all the new qubits that are now in the scope to the tile to logical
@@ -270,6 +265,7 @@ class LogicalTile(Grid):
 
     def _init_ruleset(self) -> Ruleset:
         return Ruleset()
+    
     # ------------------------------------------------------------------
     # Tile properties
     # ------------------------------------------------------------------
@@ -292,38 +288,50 @@ class LogicalTile(Grid):
     
     @property
     def circuit_origin(self) -> Coord:
+        """
+        The origin (upper leftmost) coordinate of the qubit coordiantes ~within~ the circuit.  
+        """
         coords = list(self._circuit.get_final_qubit_coordinates().values())
         return tuple(min(coord) for coord in zip(*coords))[:2]
 
     @property
     def circuit_bound(self) -> Coord:
+        """
+        The bound (bottom rightmost) coordinate of the qubit coordiantes ~within~ the circuit. 
+        """
         coords = list(self._circuit.get_final_qubit_coordinates().values())
         return tuple(max(coord) for coord in zip(*coords))[:2]
-    
-    def initialized(self) -> bool:
-        return True if self._chip else False
 
     @property
     def chip(self) -> Chip:
-        '''The chip that '''
+        """
+        The chip that the tile is placed on. If the tile is not initialized to a chip yet, an attribute error will be raised.
+        """
         if not self._chip:
             raise AttributeError("Chip not assigned for the requested tile.")
         return self._chip
 
     @property
     def qubits(self) -> List[Qubit]:
-        '''A flat-list of qubits within the tile.'''
+        """
+        A flat-list of qubits within the tile.
+        """
         if not self.initialized():
             raise AttributeError("Tile has no underlying qubits as the tile has not been assigned a chip")
         return super().qubits
     
     def qubit_at_index(self, index: int) -> Optional[Qubit]:
+        """
+        Return qubit cooresponding to the given circuit-level index.
+        """
         coord = self._circuit.get_final_qubit_coordinates().get(index)
         if coord:
             return self.loc((coord[0], coord[1]))
         else:
             return None
 
+    def initialized(self) -> bool:
+        return True if self._chip else False
     # ------------------------------------------------------------------
     # Circuit manipulation
     # ------------------------------------------------------------------
@@ -367,6 +375,10 @@ class LogicalTile(Grid):
             self.chip.loc(n).status = o_metadata.get(o, {}).get('status', _DEFAULT_STATUS)
             self.chip.loc(n).type = o_metadata.get(o, {}).get('type', _DEFAULT_CSSTYPE)
 
+    def _scrub_qubits(self):
+        for q in self.qubits:
+            q.reset()
+
     def _extract_c2i_map(self) -> Dict[Coord, int]:
         i2c = self._circuit.get_final_qubit_coordinates()
         return {(value[0], value[1]): key for key, value in i2c.items()}
@@ -405,11 +417,18 @@ class LogicalTile(Grid):
         self._init_tile_qubit_types()
 
     def copy(self) -> LogicalTile:
+        '''Return a fresh uninitialized copy of the circuit.'''
         return LogicalTile(self.base_circuit, tag=self.tag)
         
-    def _scrub_qubits(self):
-        for q in self.qubits:
-            q.reset()
+    def reset(self) -> None:
+        '''Resets the tile back to uninitialized state, removing it from any active chip and housekeeping qubit statuses.'''
+        self._circuit = self._base_circuit.copy()
+        self._scrub_qubits()
+        #TODO - remove _c2i as a property and just use extract_c2i_map when necessary. It could technically save time to not have to remake the map everytime but
+        #       it's hardly being used as is except just to keep track of updating it when necessary so lil bit of a headache for no purpose as is
+        self._c2i = self._extract_c2i_map()
+        self._chip = None
+
 
     # ------------------------------------------------------------------
     # Import/export

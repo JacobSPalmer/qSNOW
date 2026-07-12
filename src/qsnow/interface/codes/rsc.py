@@ -29,7 +29,7 @@ class SCTile(LogicalTile):
                                        distance = distance,
                                        rounds = rounds,
                                        generator=generator,
-                                       generator_args={'code_task':f"surface_code:rotated_{task}", 'distance': distance, 'rounds': rounds}))
+                                       generator_args={'code_task':f"surface_code:rotated_{task}", 'distance': distance, 'rounds': rounds, 'task': task}))
         
     #super hacky way to get typing and could probably be cleaned up but it should work
     def _init_tile_qubit_types(self):
@@ -39,7 +39,7 @@ class SCTile(LogicalTile):
         z_measures = {}
 
         i2e = self._circuit.get_final_qubit_coordinates()
-        for i in self._circuit:
+        for i in self._yield_circuit_instructions():
             if i.name == "H":
                 x_measures = {(i2e[q.value][0],i2e[q.value][1]):q.value for q in i.targets_copy()}
                 break
@@ -49,7 +49,6 @@ class SCTile(LogicalTile):
                 all_measures[c] = i
 
         z_measures = {k:all_measures[k] for k in all_measures.keys() - x_measures.keys()}
-
 
         self._indices = {
             'all_measures' 
@@ -99,4 +98,4 @@ class SCTile(LogicalTile):
 
     #TODO
     def copy(self) -> SCTile:
-        return SCTile(distance=self.tag.distance, rounds=self.tag.rounds, task=self.tag.metadata['task']) # type: ignore
+        return SCTile(distance=self.tag.generator_args['distance'], rounds=self.tag.generator_args['rounds'], task=self.tag.generator_args['task']) # type: ignore

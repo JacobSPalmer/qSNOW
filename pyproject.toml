@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["ipykernel"]
+dev = ["ipykernel", "ruff"]
 test = ["pytest", "pytest-cov"]
 
 [tool.setuptools]
