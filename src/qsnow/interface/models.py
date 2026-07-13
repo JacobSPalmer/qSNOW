@@ -85,13 +85,16 @@ class NoiseProfile:
 
     def __init__(self, p: float = 0.0):
         self.p = p
-
-    def to_dict(self):
-        return {"p": self.p}
-
+        
     def __repr__(self):
         return f"{self.__class__.__name__}(p={self.p})"
 
+    # NOTE - mildly pointless right now but plan to expand noise profile so adding this now avoids work later
+    def copy(self):
+        return NoiseProfile(self.p)
+
+    def to_dict(self):
+        return {"p": self.p}
 
 class Qubit:
     def __init__(

@@ -11,3 +11,4 @@ requirements.txt
 scratch.ipynb
 data/
 notebooks/scratchbooks/
+.*cache/

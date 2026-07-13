@@ -44,7 +44,7 @@ class TestTriggers:
 
 
 class TestRuleset:
-    # NOTE: Ruleset(injection_rules=[]) is passed explicitly in every test here rather than
+    # NOTE - Ruleset(injection_rules=[]) is passed explicitly in every test here rather than
     # relying on the constructor default, since `Ruleset.__init__`'s `injection_rules: List = []`
     # default argument is mutable and shared across instances that omit it.
 

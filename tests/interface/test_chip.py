@@ -16,9 +16,15 @@ class TestChipConstruction:
     def test_all_qubits_start_inactive(self, chip: Chip):
         assert all(q.status == Status.INACTIVE for q in chip.qubits)
 
+    def test_construct_chip_from_tile(self, logical_tile: LogicalTile):
+        chip = Chip.from_tile(logical_tile)
+        assert chip.length == logical_tile.length
+        assert chip.height == logical_tile.height
+        assert chip.origin == logical_tile.origin == (0, 0)
+
 
 class TestChipClassProperties:
-    def test_noise_map(self, chip: Chip):
+    def test_get_noise_map(self, chip: Chip):
         for q in chip.qubits:
             if q.loc[0] % 2:
                 q.noise.p = 0.05
@@ -26,7 +32,7 @@ class TestChipClassProperties:
         assert all(n.p == 0.05 for c, n in chip.noise_map.items() if c[0] % 2)
         assert all(n.p == 0.0 for c, n in chip.noise_map.items() if not c[0] % 2)
 
-    def test_tile_map(self, logical_tile: LogicalTile):
+    def test_get_tile_map(self, logical_tile: LogicalTile):
         chip = Chip(11, 11)
 
         tile1 = logical_tile.copy()
@@ -37,6 +43,14 @@ class TestChipClassProperties:
         map = chip.tile_map
         assert map.get((0, 0)) == tile1
         assert map.get((8, 8)) == tile2
+
+    def test_set_noise_map(self, chip: Chip):
+        chip.generate_random_noise()
+
+        chip2 = Chip(chip.length // 2, chip.height // 2)
+        chip2.set_noise_map(chip.noise_map)
+
+        assert all(n1.p == n2.p for n1, n2 in zip(chip.noise_map.values(), chip2.noise_map.values()))
 
 
 class TestTileClassProperties:

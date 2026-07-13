@@ -17,9 +17,12 @@ class Chip(Grid):
     """
     Physical qubit chip as a checkerboard integer lattice.
 
-    Chip(L, H) creates a grid spanning (0,0)–(2L, 2H) where valid qubit positions
-    satisfy x % 2 == y % 2 (both even or both odd). Unit cells are 2 coordinate
-    units wide, so a 5×5 logical tile starting at (0,0) covers select_rect(0, 0, 10, 10).
+    Chip(L, H) creates a grid spanning (0,0)–(2L - 1, 2H - 1) where valid qubit positions
+    satisfy x % 2 == y % 2 (both even or both odd). "Unit cells" are 2 coordinate
+    units wide, so a 5×5 logical tile with origin (0,0) has bound of (9, 9)
+    
+    The grid is described using selection spaces of polygons, so the 5x5 logical tile 
+    occupies box(0, 0, 10, 10).
 
     Typical workflow:
       1. Instantiate Chip(L, H) and assign noise to individual qubits.
@@ -27,10 +30,23 @@ class Chip(Grid):
       3. Retrieve and modify noise-injected circuits by accessing `tile.circuit` or shifting tiles to modify underlying Stim circuit.
     """
 
-    def __init__(self, length: int, height: int, rotated: bool = True):
+    def __init__(self, length: int, height: int, 
+                 *, 
+                 noise_map: Optional[Dict[Coord, NoiseProfile]] = None, 
+                 tiles: Optional[Dict[Coord, LogicalTile]] = None):
         super().__init__(2 * length, 2 * height)
         self._fill_checkerboard()
-        self.tiles: List[LogicalTile] = []
+        self.tiles = []
+
+        if noise_map: self.set_noise_map(noise_map)
+        if tiles: self.add_tiles(tiles)
+
+    @classmethod
+    def from_tile(cls, tile: LogicalTile):
+        "Chip constructor that builds a chip fit to a specific"
+        l = tile.length // 2 # Because height and length get converted to 0 indexed 2L x 2H chip
+        h = tile.height // 2
+        return cls(l, h, noise_map = None, tiles = {(0, 0): tile})
 
     # ------------------------------------------------------------------
     # Properties
@@ -61,6 +77,10 @@ class Chip(Grid):
     # ------------------------------------------------------------------
     # Noise manipulation
     # ------------------------------------------------------------------
+
+    def set_noise_map(self, noise_map: Dict[Coord, NoiseProfile] | Dict[Coord, float]):
+        for c, n in noise_map.items():
+            self.loc(c).noise = NoiseProfile(n.p) if isinstance(n, NoiseProfile) else NoiseProfile(n)
 
     def generate_random_noise(self, range: Tuple[float, float] = (0.01, 0.05)):
         for q in self.qubits:
@@ -107,6 +127,19 @@ class Chip(Grid):
         tile.assign_chip(self, region_origin)
         self.tiles.append(tile)
         return True
+    
+    def add_tiles(self, tile_map: Dict[Coord, LogicalTile], *, place_valid_subset = False) -> None:
+        """
+        Add multiple `LogicalTiles` per the provided `Coord` -> `LogicalTile` map provided. 
+        If `place_valid_subset` is `True`, any tile in the map with a valid loc will be placed regardless of if the other tiles validity.
+        """
+
+        if not place_valid_subset and any(not self._validate_tile_placements_with_warnings(t, c) for c, t in tile_map.items()):
+            return
+
+        for c, t in tile_map.items():
+            self.add_tile(t, c)
+            
 
     def remove_tile(self, index: int) -> LogicalTile:
         if not index < len(self.tiles):
