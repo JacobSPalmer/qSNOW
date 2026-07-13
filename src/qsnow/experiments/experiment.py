@@ -57,7 +57,9 @@ class Experiment:
         self.source = serialize.export_json(self, path, label=label)
         return self.source
 
-    def save_results(self, path: Optional[Union[str, Path]] = None, *, label: Optional[str] = None) -> Path:
+    def save_results(
+        self, path: Optional[Union[str, Path]] = None, *, label: Optional[str] = None
+    ) -> Path:
         """
         Export `self.results` as a separate results file referencing this
         experiment, and record the back-link in `results_refs`. If the setup

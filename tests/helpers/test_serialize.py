@@ -66,8 +66,9 @@ class TestChipRoundTrip:
         assert isinstance(restored, Chip)
         assert restored.length == chip.length
         assert restored.height == chip.height
-        assert {c: q.noise.p for c, q in restored.grid.items()} == \
-               {c: q.noise.p for c, q in chip.grid.items()}
+        assert {c: q.noise.p for c, q in restored.grid.items()} == {
+            c: q.noise.p for c, q in chip.grid.items()
+        }
 
     def test_chip_with_tile_restores_placement_and_statuses(self, chip):
         chip.generate_random_noise()
@@ -78,8 +79,9 @@ class TestChipRoundTrip:
 
         assert len(restored.tiles) == 1
         assert restored.tiles[0].origin == (2, 2)
-        assert {c: (q.status, q.type) for c, q in restored.grid.items()} == \
-               {c: (q.status, q.type) for c, q in chip.grid.items()}
+        assert {c: (q.status, q.type) for c, q in restored.grid.items()} == {
+            c: (q.status, q.type) for c, q in chip.grid.items()
+        }
 
     def test_placed_tile_circuit_matches_after_reimport(self, chip):
         chip.generate_random_noise()
@@ -105,8 +107,9 @@ class TestExperimentRoundTrip:
         assert restored.bad == 0.01
         assert restored.desc == "square packing on a 5x5 chip"
         assert restored.profile.keys() == exp.profile.keys()
-        assert {c: q.noise.p for c, q in restored.chip.grid.items()} == \
-               {c: q.noise.p for c, q in chip.grid.items()}
+        assert {c: q.noise.p for c, q in restored.chip.grid.items()} == {
+            c: q.noise.p for c, q in chip.grid.items()
+        }
 
     def test_square_packing_payload_nests_under_experiment_headings(self, chip):
         from qsnow.experiments.experiment import Experiment
@@ -117,7 +120,14 @@ class TestExperimentRoundTrip:
 
         data = to_dict(exp)
 
-        assert set(data.keys()) == {"__qsnow__", "format_version", "desc", "config", "results_refs", "exp"}
+        assert set(data.keys()) == {
+            "__qsnow__",
+            "format_version",
+            "desc",
+            "config",
+            "results_refs",
+            "exp",
+        }
         assert set(data["exp"].keys()) == {"chip", "tile", "bad", "profile"}
 
     def test_generic_experiment_round_trips(self):
@@ -231,8 +241,9 @@ class TestAutoOrganization:
 
         restored = import_latest("chip_run")
 
-        assert {c: q.noise.p for c, q in restored.grid.items()} == \
-               {c: q.noise.p for c, q in chip.grid.items()}
+        assert {c: q.noise.p for c, q in restored.grid.items()} == {
+            c: q.noise.p for c, q in chip.grid.items()
+        }
 
     def test_list_exports_filters_by_kind_and_pattern(self, data_dir, chip):
         export_json(chip)

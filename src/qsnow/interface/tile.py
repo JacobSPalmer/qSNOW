@@ -127,7 +127,7 @@ class LogicalTile(Grid):
         """
         if not self.initialized():
             raise AttributeError(
-                f"Tile has not been initialized to a chip. To access underlying circuit before initialization, use `tile.base_circuit`."
+                "Tile has not been initialized to a chip. To access underlying circuit before initialization, use `tile.base_circuit`."
             )
         return self._inject_circuit_noise()
 
@@ -324,14 +324,14 @@ class LogicalTile(Grid):
             )
 
         if not self.chip._validate_chip_bounds(new_origin, new_bound):
-            raise ValueError(f"Invalid shift that violates chip boundaries. ")
+            raise ValueError("Invalid shift that violates chip boundaries. ")
 
         if not self.chip.is_empty_region_subset(
             new_origin, new_bound, self.origin, self.bound
         ):
             # print(f"Current (O:{self.origin}, B:{self.bound}) ->  New (O:{new_origin}, B:{new_bound})")
             raise ValueError(
-                f"Invalid shift operation that violates tile overlap constraints. This shift results in the tile overlapping an existing tile on chip."
+                "Invalid shift operation that violates tile overlap constraints. This shift results in the tile overlapping an existing tile on chip."
             )
 
         new_qubits = self.chip.select_rect(

@@ -50,7 +50,10 @@ class TestChipClassProperties:
         chip2 = Chip(chip.length // 2, chip.height // 2)
         chip2.set_noise_map(chip.noise_map)
 
-        assert all(n1.p == n2.p for n1, n2 in zip(chip.noise_map.values(), chip2.noise_map.values()))
+        assert all(
+            n1.p == n2.p
+            for n1, n2 in zip(chip.noise_map.values(), chip2.noise_map.values())
+        )
 
 
 class TestTileClassProperties:

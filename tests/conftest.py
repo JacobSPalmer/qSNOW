@@ -20,6 +20,7 @@ def surface_code_circuit() -> stim.Circuit:
         code_task="surface_code:rotated_memory_z", distance=3, rounds=3
     )
 
+
 @pytest.fixture
 def logical_tile(surface_code_circuit) -> LogicalTile:
     return LogicalTile(surface_code_circuit)

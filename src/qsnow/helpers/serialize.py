@@ -82,8 +82,9 @@ def _migration(from_version: int):
 
     return register
 
+
 # NOTE - This migration process is necessary so that when (inevitably) some sort of attribute change takes place the serialize function doesn't shit the bed
-#        Below is a demo patch as if 
+#        Below is a demo patch as if
 #   @_migration(1)
 #   def _v1_to_v2(data: Dict) -> Dict:
 #       """v2 changed chip 'noise' values from a bare p float to {'p', 'scale'}."""
@@ -91,9 +92,10 @@ def _migration(from_version: int):
 #           data["noise"] = {k: {"p": p, "scale": 1.0} for k, p in data["noise"].items()}
 #       return data
 
+
 def _migrate(data: Dict) -> Dict:
     """Upgrade a persisted dict to the current FORMAT_VERSION before deserialization."""
-    version = data.get('format_version', 1)  # earliest exports are v1
+    version = data.get("format_version", 1)  # earliest exports are v1
     if version > FORMAT_VERSION:
         raise ValueError(
             f"Export uses format v{version}, newer than this qSNOW install (v{FORMAT_VERSION}). "
@@ -102,7 +104,7 @@ def _migrate(data: Dict) -> Dict:
     while version < FORMAT_VERSION:
         data = _MIGRATIONS[version](data)
         version += 1
-        data['format_version'] = version
+        data["format_version"] = version
     return data
 
 
@@ -499,7 +501,9 @@ def export_results(
     """
     if path is None:
         stamp = datetime.now().strftime(_TIMESTAMP_FORMAT)
-        path = _DATA_DIR / _subfolder(exp) / f"results_{label or _label(exp)}_{stamp}.json"
+        path = (
+            _DATA_DIR / _subfolder(exp) / f"results_{label or _label(exp)}_{stamp}.json"
+        )
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
@@ -621,5 +625,7 @@ def import_latest(pattern: str = "*", kind: Optional[str] = None) -> Any:
             f"No snowflakes matching '{pattern}'{f' in {kind}/' if kind else ''} under {_DATA_DIR}/."
         )
     if matches:
-        print(f'Found {len(matches)} matching snowflakes...\nImporting flake at {matches[0]}')
+        print(
+            f"Found {len(matches)} matching snowflakes...\nImporting flake at {matches[0]}"
+        )
     return import_json(matches[0])

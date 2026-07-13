@@ -85,7 +85,7 @@ class NoiseProfile:
 
     def __init__(self, p: float = 0.0):
         self.p = p
-        
+
     def __repr__(self):
         return f"{self.__class__.__name__}(p={self.p})"
 
@@ -95,6 +95,7 @@ class NoiseProfile:
 
     def to_dict(self):
         return {"p": self.p}
+
 
 class Qubit:
     def __init__(

@@ -237,7 +237,7 @@ def visualize(
     for qubit in chip.qubits:
         if not qubit.loc:
             raise AttributeError(
-                f"Qubit with uninitialized location cannot be visualized."
+                "Qubit with uninitialized location cannot be visualized."
             )
         x, y = qubit.loc
         s = style.style_fn(qubit)

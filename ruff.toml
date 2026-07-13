@@ -19,7 +19,7 @@ ignore = [
 ]
 
 # Enable safe, automated fixes
-fixable = ["F401", "F841", "I001", "UP"]
+fixable = ["F401", "F841", "I001", "UP", "F541", "E501", "W292"]
 unfixable = []
 
 [lint.per-file-ignores]
