@@ -307,18 +307,6 @@ class LogicalTile(Grid):
         self._chip = None
 
     # ------------------------------------------------------------------
-    # Import/export
-    # ------------------------------------------------------------------
-
-    def to_dict(self):
-        return {
-            "origin": self.origin,
-            "bound": self.bound,
-            "tag": self.tag.to_dict(),
-            "circuit": self.circuit,
-        }
-
-    # ------------------------------------------------------------------
     # Tile spatial movements
     # ------------------------------------------------------------------
 

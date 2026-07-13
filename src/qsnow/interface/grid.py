@@ -79,18 +79,6 @@ class Grid:
             raise KeyError(f"No qubit at coordinate {coord}.")
 
     # ------------------------------------------------------------------
-    # Import/export
-    # ------------------------------------------------------------------
-
-    def to_dict(self):
-        return {
-            "origin": self.origin,
-            "length": self.length,
-            "height": self.length,
-            "qubits": {c: q.to_dict() for c, q in self._qubits.items()},
-        }
-
-    # ------------------------------------------------------------------
     # Region selection
     # ------------------------------------------------------------------
     def select(self, region: Polygon, predicate="covers") -> Dict[Coord, Qubit]:

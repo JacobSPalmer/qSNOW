@@ -1,0 +1,11 @@
+{
+  "__qsnow__": "Experiment",
+  "format_version": 1,
+  "desc": "golden fixture for format v1",
+  "config": {
+    "shots": 1000,
+    "decoder": "pymatching"
+  },
+  "results_refs": [],
+  "exp": {}
+}

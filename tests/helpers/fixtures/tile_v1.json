@@ -1,0 +1,132 @@
+{
+  "__qsnow__": "SCTile",
+  "format_version": 1,
+  "circuit": "QUBIT_COORDS(1, 1) 1\nQUBIT_COORDS(2, 0) 2\nQUBIT_COORDS(3, 1) 3\nQUBIT_COORDS(5, 1) 5\nQUBIT_COORDS(1, 3) 8\nQUBIT_COORDS(2, 2) 9\nQUBIT_COORDS(3, 3) 10\nQUBIT_COORDS(4, 2) 11\nQUBIT_COORDS(5, 3) 12\nQUBIT_COORDS(6, 2) 13\nQUBIT_COORDS(0, 4) 14\nQUBIT_COORDS(1, 5) 15\nQUBIT_COORDS(2, 4) 16\nQUBIT_COORDS(3, 5) 17\nQUBIT_COORDS(4, 4) 18\nQUBIT_COORDS(5, 5) 19\nQUBIT_COORDS(4, 6) 25\nRX 1 3 5 8 10 12 15 17 19\nR 2 9 11 13 14 16 18 25\nTICK\nH 2 11 16 25\nTICK\nCX 2 3 16 17 11 12 15 14 10 9 19 18\nTICK\nCX 2 1 16 15 11 10 8 14 3 9 12 18\nTICK\nCX 16 10 11 5 25 19 8 9 17 18 12 13\nTICK\nCX 16 8 11 3 25 17 1 9 10 18 5 13\nTICK\nH 2 11 16 25\nTICK\nMR 2 9 11 13 14 16 18 25\nDETECTOR(2, 0, 0) rec[-8]\nDETECTOR(2, 4, 0) rec[-3]\nDETECTOR(4, 2, 0) rec[-6]\nDETECTOR(4, 6, 0) rec[-1]\nTICK\nH 2 11 16 25\nTICK\nCX 2 3 16 17 11 12 15 14 10 9 19 18\nTICK\nCX 2 1 16 15 11 10 8 14 3 9 12 18\nTICK\nCX 16 10 11 5 25 19 8 9 17 18 12 13\nTICK\nCX 16 8 11 3 25 17 1 9 10 18 5 13\nTICK\nH 2 11 16 25\nTICK\nMR 2 9 11 13 14 16 18 25\nDETECTOR(2, 0, 1) rec[-8] rec[-16]\nDETECTOR(2, 2, 1) rec[-7] rec[-15]\nDETECTOR(4, 2, 1) rec[-6] rec[-14]\nDETECTOR(6, 2, 1) rec[-5] rec[-13]\nDETECTOR(0, 4, 1) rec[-4] rec[-12]\nDETECTOR(2, 4, 1) rec[-3] rec[-11]\nDETECTOR(4, 4, 1) rec[-2] rec[-10]\nDETECTOR(4, 6, 1) rec[-1] rec[-9]\nMX 1 3 5 8 10 12 15 17 19\nDETECTOR(2, 0, 2) rec[-8] rec[-9] rec[-17]\nDETECTOR(2, 4, 2) rec[-2] rec[-3] rec[-5] rec[-6] rec[-12]\nDETECTOR(4, 2, 2) rec[-4] rec[-5] rec[-7] rec[-8] rec[-15]\nDETECTOR(4, 6, 2) rec[-1] rec[-2] rec[-10]\nOBSERVABLE_INCLUDE(0) rec[-3] rec[-6] rec[-9]",
+  "origin": [
+    0.0,
+    0.0
+  ],
+  "construct_origin": [
+    0.0,
+    0.0
+  ],
+  "x_buffer": 1,
+  "y_buffer": 1,
+  "tag": {
+    "name": "rsc_memory_x_d3",
+    "tile_type": "SCTile",
+    "distance": 3,
+    "rounds": 2,
+    "generator_args": {
+      "code_task": "surface_code:rotated_memory_x",
+      "distance": 3,
+      "rounds": 2,
+      "task": "memory_x"
+    },
+    "metadata": {}
+  },
+  "ruleset": {
+    "rules": [
+      {
+        "operation": "R",
+        "trigger": "all_qubits",
+        "before": [],
+        "after": [
+          {
+            "channel": "X_ERROR",
+            "filter": "all_qubits",
+            "scalar": 1.0,
+            "name": null
+          }
+        ],
+        "exclusive": false,
+        "name": null
+      },
+      {
+        "operation": "H",
+        "trigger": "x_measures",
+        "before": [],
+        "after": [
+          {
+            "channel": "DEPOLARIZE1",
+            "filter": "all_qubits",
+            "scalar": 1.0,
+            "name": null
+          }
+        ],
+        "exclusive": false,
+        "name": null
+      },
+      {
+        "operation": "CX",
+        "trigger": "any",
+        "before": [],
+        "after": [
+          {
+            "channel": "DEPOLARIZE2",
+            "filter": "active",
+            "scalar": 1.0,
+            "name": null
+          },
+          {
+            "channel": "DEPOLARIZE1",
+            "filter": "idle",
+            "scalar": 1.0,
+            "name": null
+          }
+        ],
+        "exclusive": false,
+        "name": null
+      },
+      {
+        "operation": "MR",
+        "trigger": "all_measures",
+        "before": [
+          {
+            "channel": "X_ERROR",
+            "filter": "all_measures",
+            "scalar": 1.0,
+            "name": null
+          },
+          {
+            "channel": "DEPOLARIZE1",
+            "filter": "data",
+            "scalar": 1.0,
+            "name": null
+          }
+        ],
+        "after": [
+          {
+            "channel": "X_ERROR",
+            "filter": "all_measures",
+            "scalar": 1.0,
+            "name": null
+          },
+          {
+            "channel": "DEPOLARIZE1",
+            "filter": "data",
+            "scalar": 1.0,
+            "name": null
+          }
+        ],
+        "exclusive": false,
+        "name": null
+      },
+      {
+        "operation": "M",
+        "trigger": "data",
+        "before": [
+          {
+            "channel": "X_ERROR",
+            "filter": "all_qubits",
+            "scalar": 1.0,
+            "name": null
+          }
+        ],
+        "after": [],
+        "exclusive": false,
+        "name": null
+      }
+    ]
+  }
+}

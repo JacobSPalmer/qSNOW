@@ -216,17 +216,3 @@ class Chip(Grid):
         """Display a visualization of the chip's qubit layout."""
         visualize(self, style=style or default_style, show=True)
 
-    # ------------------------------------------------------------------
-    # Import/Export
-    # ------------------------------------------------------------------
-
-    def to_dict(self):
-        return {
-            "dims": (
-                self.length / 2,
-                self.height / 2,
-            ),  # the original input length/height used to initialize the chip (not the 2l x 2h checkerboard size although that is saved in the underlying grid)
-            "grid": super().to_dict(),
-            "tiles": {c: t.to_dict() for c, t in self.tile_map.items()},
-            "noise_map": self.noise_map,
-        }

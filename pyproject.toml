@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qsnow"
-version = "0.1.0"
+version = "0.1.1"
 description = "qSNOW (Simulated Noise Orchestration Workflow) - orchestrate multiple logicals across a grid/chip of qubits."
 requires-python = ">=3.14"
 dependencies = [
@@ -15,6 +15,7 @@ dependencies = [
     "nbformat",
     "shapely",
     "scipy",
+    "pymatching",
 ]
 
 [project.optional-dependencies]

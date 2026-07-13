@@ -1,7 +1,6 @@
 def default_configuration():
     return NotImplemented
 
-
 # [WIP]
 def from_arguements():
     config = default_configuration()

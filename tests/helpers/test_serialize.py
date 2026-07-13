@@ -1,6 +1,9 @@
+from pathlib import Path
+
 import pytest
 
 from qsnow.helpers.serialize import (
+    FORMAT_VERSION,
     export_json,
     from_dict,
     import_json,
@@ -94,23 +97,96 @@ class TestExperimentRoundTrip:
 
         chip.generate_random_noise()
         exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3), bad=0.01)
+        exp.desc = "square packing on a 5x5 chip"
 
         restored = from_dict(to_dict(exp))
 
         assert isinstance(restored, SquarePackingExp)
         assert restored.bad == 0.01
+        assert restored.desc == "square packing on a 5x5 chip"
         assert restored.profile.keys() == exp.profile.keys()
         assert {c: q.noise.p for c, q in restored.chip.grid.items()} == \
                {c: q.noise.p for c, q in chip.grid.items()}
 
+    def test_square_packing_payload_nests_under_experiment_headings(self, chip):
+        from qsnow.experiments.experiment import Experiment
+        from qsnow.experiments.squarepacking.game import SquarePackingExp
+
+        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        assert isinstance(exp, Experiment)
+
+        data = to_dict(exp)
+
+        assert set(data.keys()) == {"__qsnow__", "format_version", "desc", "config", "results_refs", "exp"}
+        assert set(data["exp"].keys()) == {"chip", "tile", "bad", "profile"}
+
     def test_generic_experiment_round_trips(self):
         from qsnow.experiments.experiment import Experiment
 
-        exp = Experiment(shots=1000, decoder="pymatching")
+        exp = Experiment(desc="a note", shots=1000, decoder="pymatching")
         restored = from_dict(to_dict(exp))
 
         assert isinstance(restored, Experiment)
+        assert restored.desc == "a note"
         assert restored.config == {"shots": 1000, "decoder": "pymatching"}
+
+
+class TestResultsFlow:
+    def test_save_run_save_results_round_trip(self, data_dir, chip):
+        from qsnow.experiments.experiment import ExperimentResults
+        from qsnow.experiments.squarepacking.game import SquarePackingExp
+
+        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        setup_path = exp.save()
+        assert exp.source == setup_path
+
+        # reimport the setup, fake a run, save its results separately
+        restored = import_json(setup_path)
+        assert restored.source == setup_path
+        restored.results = {(0.0, 0.0): {"ler": 0.001, "shots": 1000}}
+        restored.config.update(shots=1000, max_errors=100)
+        results_path = restored.save_results()
+
+        record = import_json(results_path)
+
+        assert isinstance(record, ExperimentResults)
+        assert record.experiment_ref == setup_path.name
+        assert record.results == {(0, 0): {"ler": 0.001, "shots": 1000}}
+        assert record.run_config["shots"] == 1000
+        # the setup file itself was never replaced by the results export
+        assert results_path != setup_path
+
+    def test_save_with_desc_updates_description(self, data_dir, chip):
+        from qsnow.experiments.squarepacking.game import SquarePackingExp
+
+        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        path = exp.save(desc="testing desc at save time")
+
+        assert exp.desc == "testing desc at save time"
+        assert import_json(path).desc == "testing desc at save time"
+
+    def test_save_results_backlinks_saved_setup(self, data_dir, chip):
+        from qsnow.experiments.squarepacking.game import SquarePackingExp
+
+        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        setup_path = exp.save()
+        exp.results = {(0.0, 0.0): {"ler": 0.001}}
+        results_path = exp.save_results()
+
+        assert exp.results_refs == [results_path.name]
+        # the additive re-export refreshed the on-disk setup's refs
+        assert import_json(setup_path).results_refs == [results_path.name]
+
+    def test_save_results_without_saved_setup_warns(self, data_dir, chip):
+        from qsnow.experiments.squarepacking.game import SquarePackingExp
+
+        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        exp.results = {(0.0, 0.0): {"ler": 0.001}}
+
+        with pytest.warns(UserWarning, match="call exp.save"):
+            results_path = exp.save_results()
+
+        assert import_json(results_path).experiment_ref is None
 
 
 class TestJsonFileRoundTrip:
@@ -166,6 +242,75 @@ class TestAutoOrganization:
         assert len(list_exports(kind="tiles")) == 1
         assert len(list_exports("chip*")) == 1
 
+    def test_label_only_pattern_falls_back_to_substring_match(self, data_dir, chip):
+        from qsnow.experiments.squarepacking.game import SquarePackingExp
+
+        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        exp.save(label="d3-20x20chip")
+
+        # filename starts with "experiment_", but the bare label still matches
+        restored = import_latest("d3-20x20chip", kind="experiments")
+
+        assert isinstance(restored, SquarePackingExp)
+
     def test_import_latest_missing_raises(self, data_dir):
         with pytest.raises(FileNotFoundError):
             import_latest("nonexistent")
+
+
+class TestFormatVersioning:
+    FIXTURES = Path(__file__).parent / "fixtures"
+
+    def test_v1_chip_golden_file_imports(self):
+        chip = import_json(self.FIXTURES / "chip_v1.json")
+
+        assert isinstance(chip, Chip)
+        assert (chip.length, chip.height) == (10, 10)
+        assert len(chip.tiles) == 1
+        assert chip.tiles[0].origin == (2, 2)
+
+    def test_v1_tile_golden_file_imports(self):
+        tile = import_json(self.FIXTURES / "tile_v1.json")
+
+        assert isinstance(tile, SCTile)
+        assert tile.tag.distance == 3
+        assert tile.tag.rounds == 2
+
+    def test_v1_experiment_golden_file_imports(self):
+        exp = import_json(self.FIXTURES / "experiment_v1.json")
+
+        assert exp.config == {"shots": 1000, "decoder": "pymatching"}
+
+    def test_future_version_raises_clear_error(self, chip):
+        data = to_dict(chip)
+        data["format_version"] = FORMAT_VERSION + 1
+
+        with pytest.raises(ValueError, match="Upgrade qsnow"):
+            from_dict(data)
+
+    def test_missing_version_defaults_to_v1(self, chip):
+        data = to_dict(chip)
+        del data["format_version"]
+
+        restored = from_dict(data)
+
+        assert isinstance(restored, Chip)
+
+    def test_migration_steps_chain_to_current_version(self, monkeypatch, chip):
+        import qsnow.helpers.serialize as serialize
+
+        applied = []
+        monkeypatch.setattr(serialize, "FORMAT_VERSION", FORMAT_VERSION + 2)
+        monkeypatch.setitem(
+            serialize._MIGRATIONS, FORMAT_VERSION, lambda d: applied.append(1) or d
+        )
+        monkeypatch.setitem(
+            serialize._MIGRATIONS, FORMAT_VERSION + 1, lambda d: applied.append(2) or d
+        )
+
+        data = to_dict(chip)
+        data["format_version"] = FORMAT_VERSION
+        restored = from_dict(data)
+
+        assert applied == [1, 2]
+        assert isinstance(restored, Chip)

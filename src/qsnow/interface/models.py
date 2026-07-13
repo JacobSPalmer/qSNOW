@@ -154,14 +154,5 @@ class Qubit:
     def is_active(self) -> bool:
         return True if self.status != Status.INACTIVE else False
 
-    def to_dict(self) -> Dict:
-        # could also just do this automatically via {k:v for k, v in vars(self).items()} but might give up control of certain elements
-        return {
-            "loc": self.loc,
-            "status": self.status,
-            "type": self.type,
-            "noise": self.noise.to_dict(),
-        }
-
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(loc={self.loc}, status={self.status}, type={self.type}, noise={self.noise})"

@@ -27,6 +27,10 @@ Notes:
   - Code subclasses (e.g. `SCTile`) are rebuilt through their own constructor
     using the tag's `generator_args`. Additional subclasseses registered with
     `register_tile_type()`.
+  - Exports are stamped with `format_version`; older files are upgraded in
+    memory on import. Any change to an export's structure must bump
+    FORMAT_VERSION, register a matching `@_migration` step, and check in a new
+    golden fixture under tests/helpers/fixtures/ (see the migration section).
 """
 
 from __future__ import annotations
@@ -40,7 +44,7 @@ from warnings import warn
 
 from stim import Circuit
 
-from qsnow.experiments.experiment import Experiment
+from qsnow.experiments.experiment import Experiment, ExperimentResults
 from qsnow.experiments.squarepacking.game import SquarePackingExp
 from qsnow.interface.chip import Chip, LogicalTile
 from qsnow.interface.codes.rsc import SCTile
@@ -54,6 +58,52 @@ from qsnow.interface.rules import (
 )
 
 FORMAT_VERSION = 1
+
+# ------------------------------------------------------------------
+# Format versioning / migrations
+#
+# Every exported dict is stamped with 'format_version'. When an export's
+# structure changes, bump FORMAT_VERSION by one and register a @_migration(N)
+# step that upgrades a dict from version N to N+1 (branching on the dict's
+# '__qsnow__' kind if the change only affects one object type), and check in a
+# new golden fixture under tests/helpers/fixtures/. Old files are upgraded in
+# memory on import, one step at a time, and are never rewritten on disk.
+# ------------------------------------------------------------------
+
+_MIGRATIONS: Dict[int, Callable[[Dict], Dict]] = {}
+
+
+def _migration(from_version: int):
+    """Decorator registering an upgrade step from `from_version` to `from_version + 1`."""
+
+    def register(fn: Callable[[Dict], Dict]) -> Callable[[Dict], Dict]:
+        _MIGRATIONS[from_version] = fn
+        return fn
+
+    return register
+
+# NOTE - This migration process is necessary so that when (inevitably) some sort of attribute change takes place the serialize function doesn't shit the bed
+#        Below is a demo patch as if 
+#   @_migration(1)
+#   def _v1_to_v2(data: Dict) -> Dict:
+#       """v2 changed chip 'noise' values from a bare p float to {'p', 'scale'}."""
+#       if data.get("__qsnow__") == "Chip":
+#           data["noise"] = {k: {"p": p, "scale": 1.0} for k, p in data["noise"].items()}
+#       return data
+
+def _migrate(data: Dict) -> Dict:
+    """Upgrade a persisted dict to the current FORMAT_VERSION before deserialization."""
+    version = data.get('format_version', 1)  # earliest exports are v1
+    if version > FORMAT_VERSION:
+        raise ValueError(
+            f"Export uses format v{version}, newer than this qSNOW install (v{FORMAT_VERSION}). "
+            f"Upgrade qsnow to import this file."
+        )
+    while version < FORMAT_VERSION:
+        data = _MIGRATIONS[version](data)
+        version += 1
+        data['format_version'] = version
+    return data
 
 
 def _find_repo_root() -> Path:
@@ -80,6 +130,11 @@ def set_data_dir(path: Optional[Union[str, Path]] = None) -> None:
     """
     global _DATA_DIR
     _DATA_DIR = Path(path) if path is not None else _DEFAULT_DATA_DIR
+
+
+def get_data_dir() -> Path:
+    """The current root folder used for automatic export paths."""
+    return _DATA_DIR
 
 
 def _subfolder(obj: Any) -> str:
@@ -283,6 +338,7 @@ def register_tile_type(name: str, importer: Callable[[Dict], LogicalTile]) -> No
 
 
 def tile_from_dict(data: Dict) -> LogicalTile:
+    data = _migrate(data)
     tile_type = data["__qsnow__"]
     importer = _TILE_IMPORTERS.get(tile_type)
     if importer is None:
@@ -313,6 +369,7 @@ def chip_to_dict(chip: Chip) -> Dict:
 
 
 def chip_from_dict(data: Dict) -> Chip:
+    data = _migrate(data)
     chip = Chip(data["length"], data["height"])
     for key, p in data["noise"].items():
         chip.loc(_key_to_coord(key)).noise.p = p
@@ -331,10 +388,24 @@ def chip_from_dict(data: Dict) -> Chip:
 # ------------------------------------------------------------------
 
 
-def square_packing_to_dict(exp: SquarePackingExp) -> Dict:
+def _experiment_headings(exp: Experiment, kind: str) -> Dict:
+    """
+    The envelope shared by every `Experiment` export: the config object, the
+    freeform `desc` text, and an 'exp' subdict holding subclass-specific state.
+    """
     return {
-        "__qsnow__": "SquarePackingExp",
+        "__qsnow__": kind,
         "format_version": FORMAT_VERSION,
+        "desc": exp.desc,
+        "config": exp.config,
+        "results_refs": exp.results_refs,
+        "exp": {},
+    }
+
+
+def square_packing_to_dict(exp: SquarePackingExp) -> Dict:
+    data = _experiment_headings(exp, "SquarePackingExp")
+    data["exp"] = {
         "chip": chip_to_dict(exp.chip),
         "tile": tile_to_dict(exp.tile),
         "bad": exp.bad,
@@ -343,42 +414,97 @@ def square_packing_to_dict(exp: SquarePackingExp) -> Dict:
                 "origin": list(p["origin"]),
                 "bound": list(p["bound"]),
                 "circuit": str(p["circuit"]) if p.get("circuit") is not None else None,
-                "ler": p.get("ler", "N/A"),
-                "time": p.get("time"),
             }
             for loc, p in exp.profile.items()
         },
     }
+    return data
 
 
 def square_packing_from_dict(data: Dict) -> SquarePackingExp:
-    return SquarePackingExp(
-        chip=chip_from_dict(data["chip"]),
-        tile=tile_from_dict(data["tile"]),
-        bad=data["bad"],
+    data = _migrate(data)
+    payload = data["exp"]
+    exp = SquarePackingExp(
+        chip=chip_from_dict(payload["chip"]),
+        tile=tile_from_dict(payload["tile"]),
+        bad=payload["bad"],
         profile={
             _key_to_coord(key): {
                 "origin": tuple(p["origin"]),
                 "bound": tuple(p["bound"]),
                 "circuit": Circuit(p["circuit"]) if p["circuit"] is not None else None,
-                "ler": p["ler"],
-                "time": p["time"],
             }
-            for key, p in data["profile"].items()
+            for key, p in payload["profile"].items()
         },
     )
+    exp.desc = data["desc"]
+    exp.config = data["config"]
+    exp.results_refs = data["results_refs"]
+    return exp
 
 
 def experiment_to_dict(exp: Experiment) -> Dict:
-    return {
-        "__qsnow__": "Experiment",
-        "format_version": FORMAT_VERSION,
-        "config": exp.config,
-    }
+    return _experiment_headings(exp, "Experiment")
 
 
 def experiment_from_dict(data: Dict) -> Experiment:
-    return Experiment(**data["config"])
+    data = _migrate(data)
+    exp = Experiment(desc=data["desc"], **data["config"])
+    exp.results_refs = data["results_refs"]
+    return exp
+
+
+def results_to_dict(exp: Experiment) -> Dict:
+    """Serialize an experiment's `results` as a standalone record referencing its setup."""
+    if exp.source is None:
+        warn(
+            "Experiment has no saved setup file, so these results will not reference "
+            "a saved experiment; call exp.save() first to link them.",
+            stacklevel=2,
+        )
+    return {
+        "__qsnow__": "ExperimentResults",
+        "format_version": FORMAT_VERSION,
+        "experiment": exp.source.name if exp.source is not None else None,
+        "desc": exp.desc,
+        "run_config": exp.config,
+        "results": {
+            _coord_to_key(loc) if isinstance(loc, tuple) else str(loc): r
+            for loc, r in exp.results.items()
+        },
+    }
+
+
+def results_from_dict(data: Dict) -> ExperimentResults:
+    data = _migrate(data)
+    return ExperimentResults(
+        experiment_ref=data["experiment"],
+        run_config=data["run_config"],
+        results={_key_to_coord(key): r for key, r in data["results"].items()},
+        desc=data["desc"],
+    )
+
+
+def export_results(
+    exp: Experiment,
+    path: Optional[Union[str, Path]] = None,
+    *,
+    label: Optional[str] = None,
+    indent: Optional[int] = 2,
+) -> Path:
+    """
+    Write an experiment's `results` to their own JSON file, separate from the
+    setup export. Auto-organized as `data/experiments/results_<label>_<ts>.json`.
+    Prefer `exp.save_results()`, which also records the back-link on the experiment.
+    """
+    if path is None:
+        stamp = datetime.now().strftime(_TIMESTAMP_FORMAT)
+        path = _DATA_DIR / _subfolder(exp) / f"results_{label or _label(exp)}_{stamp}.json"
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(results_to_dict(exp), f, indent=indent)
+    return path
 
 
 # ------------------------------------------------------------------
@@ -403,6 +529,7 @@ def to_dict(obj: Any) -> Dict:
 
 def from_dict(data: Dict) -> Any:
     """Rebuild a qSNOW object from a dict produced by `to_dict`."""
+    data = _migrate(data)
     kind = data.get("__qsnow__")
     match kind:
         case "Chip":
@@ -411,6 +538,8 @@ def from_dict(data: Dict) -> Any:
             return square_packing_from_dict(data)
         case "Experiment":
             return experiment_from_dict(data)
+        case "ExperimentResults":
+            return results_from_dict(data)
         case str() if kind in _TILE_IMPORTERS or kind is not None and "circuit" in data:
             return tile_from_dict(data)
         case _:
@@ -453,19 +582,30 @@ def export_json(
 def import_json(path: Union[str, Path]) -> Any:
     """Load a JSON file written by `export_json` and rebuild the object."""
     with open(path) as f:
-        return from_dict(json.load(f))
+        obj = from_dict(json.load(f))
+    if isinstance(obj, Experiment):
+        obj.source = Path(path)
+    return obj
 
 
 def list_exports(pattern: str = "*", kind: Optional[str] = None) -> List[Path]:
     """
     List exported JSON files under the data root, newest first.
 
-    `pattern` glob-matches the label portion of filenames (e.g. "chip*", "rsc*d3").
+    `pattern` glob-matches from the start of the filename (e.g. "chip*", "tile_rsc*d3").
+    If nothing matches, it is retried as a substring match (`*<pattern>*`) so
+    label-only searches like "d3-20x20chip" find `experiment_d3-20x20chip_...`.
     `kind` restricts the search to one subfolder ('chips', 'tiles', 'experiments').
     """
     root = _DATA_DIR / kind if kind else _DATA_DIR
-    name = f"{pattern}.json" if pattern.endswith("*") else f"{pattern}*.json"
-    matches = root.glob(f"**/{name}" if kind is None else name)
+
+    def _glob(pat: str) -> List[Path]:
+        name = f"{pat}.json" if pat.endswith("*") else f"{pat}*.json"
+        return list(root.glob(f"**/{name}" if kind is None else name))
+
+    matches = _glob(pattern)
+    if not matches and not pattern.startswith("*"):
+        matches = _glob(f"*{pattern}")
     return sorted(matches, key=lambda p: p.stat().st_mtime, reverse=True)
 
 
@@ -478,6 +618,8 @@ def import_latest(pattern: str = "*", kind: Optional[str] = None) -> Any:
     matches = list_exports(pattern, kind)
     if not matches:
         raise FileNotFoundError(
-            f"No exports matching '{pattern}'{f' in {kind}/' if kind else ''} under {_DATA_DIR}/."
+            f"No snowflakes matching '{pattern}'{f' in {kind}/' if kind else ''} under {_DATA_DIR}/."
         )
+    if matches:
+        print(f'Found {len(matches)} matching snowflakes...\nImporting flake at {matches[0]}')
     return import_json(matches[0])
