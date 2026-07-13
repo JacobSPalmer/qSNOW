@@ -16,6 +16,7 @@ dependencies = [
     "shapely",
     "scipy",
     "pymatching",
+    "rich"
 ]
 
 [project.optional-dependencies]

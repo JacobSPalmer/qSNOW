@@ -33,9 +33,9 @@ chip.add_tile(d5Tile.copy(),loc=(12,8))
 ## Visualize the chip layout
 chip.show(css_style)
 ```
-<img src="images/demo_packing.png" style="display: block; margin: 0 auto;" alt="Square packing of rotated surface code tiles on a 12 x 12 chip" width="50%">
+<img src="demo/images/demo_packing.png" style="display: block; margin: 0 auto;" alt="Square packing of rotated surface code tiles on a 12 x 12 chip" width="90%">
 
-See the [demo notebook](demo.ipynb) for a full overview of tool.
+See the [demo notebook](demo/demo.ipynb) for a full overview of tool.
 
 ## Installation
 The package is intended for wider distribution at some point, but can be installed locally. If your interested in using the tool, I'd personally recommend creating a python env (i.e., conda, venv, etc.) and installing it as a local development package, like such:
