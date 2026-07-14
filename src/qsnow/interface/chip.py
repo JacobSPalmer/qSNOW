@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from random import uniform
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List
 from warnings import warn
 
 from scipy.stats import truncnorm
@@ -40,7 +40,7 @@ class Chip(Grid):
     ):
         super().__init__(2 * length, 2 * height)
         self._fill_checkerboard()
-        self.tiles = []
+        self.tiles: List[LogicalTile] = []
 
         if noise_map:
             self.set_noise_map(noise_map)
@@ -155,7 +155,20 @@ class Chip(Grid):
         for c, t in tile_map.items():
             self.add_tile(t, c)
 
-    def remove_tile(self, index: int) -> LogicalTile:
+    def clear_tiles(self) -> None:
+        """
+        Remove and clean all tiles currently on the chip.
+        """
+        for i, t in enumerate(self.tiles):
+            self.pop_tile(i)
+
+    def pop_tile(self, index: int) -> LogicalTile:
+        """
+        Pop and clean the tile at specified index in `Chip.tiles` list.
+
+        Important to note, this does not delete the tile object but instead scrubs the qubits 
+        within the tile, removes the chip from the tile (and vice versa), and returns the clean tile.
+        """
         if not index < len(self.tiles):
             raise ValueError(
                 f"Index {index} out of range for list of tiles with len {len(self.tiles)}"

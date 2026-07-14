@@ -62,7 +62,7 @@ class SquarePackingExp(Experiment):
             tile.shift_to(k)
             self.profile[k]["circuit"] = tile.circuit.copy()
 
-        self.chip.remove_tile(0)
+        self.chip.pop_tile(0)
 
     # ------------------------------------------------------------------
     # Simulation

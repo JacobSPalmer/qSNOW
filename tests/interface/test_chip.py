@@ -128,5 +128,5 @@ class TestChipTilePlacement:
 
         t2_region = lg_chip.select_rect(*tile2.origin, *tile2.bound)
         assert all(q.is_active() for q in t2_region.values())
-        assert tile2 == lg_chip.remove_tile(1)
+        assert tile2 == lg_chip.pop_tile(1)
         assert all(not q.is_active() for q in t2_region.values())

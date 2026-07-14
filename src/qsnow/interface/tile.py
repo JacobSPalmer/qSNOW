@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from statistics import mean
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 from stim import Circuit
 
@@ -173,6 +173,11 @@ class LogicalTile(Grid):
                 "Tile has no underlying qubits as the tile has not been assigned a chip"
             )
         return super().qubits
+
+    @property
+    def dims(self) -> Tuple[int, int]:
+        return (self.length // 2, self.height //2)
+
 
     def qubit_at_index(self, index: int) -> Optional[Qubit]:
         """

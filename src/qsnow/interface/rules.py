@@ -12,7 +12,7 @@ from .models import Qubit
 # ------------------------------------------------------------------
 # Relevant gate name refs
 # ------------------------------------------------------------------
-
+# TODO - move these into a the default typing/object file for the when refactor to the /rules subfolder
 _NOISE_CHANNEL_OPS = [
     "CORRELATED_ERROR",
     "DEPOLARIZE1",
@@ -82,7 +82,6 @@ _ANNOTATION_OPS = [
 # Operational bool helpers
 # ------------------------------------------------------------------
 
-
 def is_noise_channel(name) -> bool:
     return name in _NOISE_CHANNEL_OPS
 
@@ -119,7 +118,7 @@ def is_annotation(name) -> bool:
 # Rule triggers -> When to trigger the rule
 # ------------------------------------------------------------------
 
-
+# TODO - move these to a _default_triggers/_default_filters file or something along those lines
 def _blank_trigger(targ_indexes: List[List[int]], qubits: Dict[int, Qubit]) -> bool:
     return False
 
@@ -228,10 +227,12 @@ def _z_measures_filter(
 # Basic rule setups
 # ------------------------------------------------------------------
 
-type TriggerFunc = Callable[[List[List[int]], Dict[int, Qubit]], bool]  # species when
+
+# TODO - move these to a rule_types or something along those lines
+type TriggerFunc = Callable[[List[List[int]], Dict[int, Qubit]], bool]  # specifies when to trigger rule
 type FilterFunc = Callable[
     [List[List[int]], Dict[int, Qubit]], List[List[int]]
-]  # specifies what
+]  # specifies what (qubits) to trigger the rule on
 
 
 @dataclass
