@@ -50,9 +50,7 @@ class Chip(Grid):
     @classmethod
     def from_tile(cls, tile: LogicalTile):
         "Chip constructor that builds a chip fit to a specific"
-        l = (
-            tile.length // 2
-        )  # Because height and length get converted to 0 indexed 2L x 2H chip
+        l = tile.length // 2   # Because height and length get converted to 0 indexed 2L x 2H chip
         h = tile.height // 2
         return cls(l, h, noise_map=None, tiles={(0, 0): tile})
 

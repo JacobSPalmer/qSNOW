@@ -2,7 +2,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
-from qsnow.interface.models import CSSType, Qubit, Status, TileTag
+from qsnow.interface.models import CSSType, Qubit, Status, Tag
 
 if TYPE_CHECKING:
     from plotly.graph_objs._figure import Figure
@@ -56,7 +56,7 @@ class LogicalStyle:
 class VisualizationStyle:
     style_fn: Callable[[Qubit], QubitStyle]
     colorbar: Optional[ColorbarSpec] = None
-    logical_style: Optional[Callable[[TileTag], LogicalStyle]] = None
+    logical_style: Optional[Callable[[Tag], LogicalStyle]] = None
 
 
 _STATUS_COLORS = {
@@ -110,7 +110,7 @@ def _default_qubit_style_by_status(qubit: Qubit) -> QubitStyle:
     )
 
 
-def _default_logical_style(tag: TileTag, **kwargs) -> LogicalStyle:
+def _default_logical_style(tag: Tag, **kwargs) -> LogicalStyle:
     return LogicalStyle(title=tag.name if tag.name else None, **kwargs)
 
 
@@ -147,7 +147,7 @@ def noise_heatmap_style(
             ),
         )
 
-    def logical_style_fn(tag: TileTag) -> LogicalStyle:
+    def logical_style_fn(tag: Tag) -> LogicalStyle:
         return _default_logical_style(tag, edgecolor="blue")
 
     return VisualizationStyle(

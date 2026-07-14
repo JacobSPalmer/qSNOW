@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
+from qsnow.interface.models import Tag
+
 
 class Experiment:
     """
@@ -11,8 +13,9 @@ class Experiment:
     experiment; subclass-specific state lives on the subclass itself.
 
     Shared properties:
-      - `desc`: freeform text description for recording what the experiment is
-        and any context or details not tracked elsewhere.
+      - `tag`: generic annotation (name/desc/metadata); `desc` is the freeform
+        text description for recording what the experiment is and any context
+        or details not tracked elsewhere.
       - `config`: general configuration values (including run parameters).
       - `results`: output of the latest `run()`.
       - `source`: path this experiment was last saved to / loaded from.
@@ -24,11 +27,20 @@ class Experiment:
     """
 
     def __init__(self, desc: str = "", **config):
-        self.desc: str = desc
+        self.tag: Tag = Tag(desc=desc)
         self.config: Dict = config
         self.results: Dict = {}
         self.source: Optional[Path] = None
         self.results_refs: List[str] = []
+
+    @property
+    def desc(self) -> Optional[str]:
+        """Freeform description; convenience accessor for `self.tag.desc`."""
+        return self.tag.desc
+
+    @desc.setter
+    def desc(self, value: Optional[str]) -> None:
+        self.tag.desc = value
 
     def run(self, *args, **kwargs) -> Dict:
         """Execute the experiment, populating and returning `self.results`.

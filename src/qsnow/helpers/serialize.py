@@ -19,13 +19,15 @@ Notes:
     re-placing each tile via `chip.add_tile()`, which is how they were set
     originally.
   - Tile circuits are stored as Stim program text from `tile.base_circuit`
-    (initial shift already baked in), so `initial_shift_fn` is not needed on
-    reimport and is dropped from the tag.
+    (initial shift already baked in), so the spec's callables (`generator`,
+    `initial_shift_fn`) are not serialized.
+  - Every object's `Tag` (name/desc/metadata) round-trips; tiles additionally
+    carry a `TileSpec` with the reconstruction fields code reads.
   - Ruleset injection rules are fully serialized. Custom triggers/filters
     (beyond the built-in defaults) hold arbitrary callables and cannot be
     serialized; a warning is raised if any are present at export.
   - Code subclasses (e.g. `SCTile`) are rebuilt through their own constructor
-    using the tag's `generator_args`. Additional subclasseses registered with
+    using the spec's `generator_args`. Additional subclasses are registered with
     `register_tile_type()`.
   - Exports are stamped with `format_version`; older files are upgraded in
     memory on import. Any change to an export's structure must bump
@@ -48,7 +50,7 @@ from qsnow.experiments.experiment import Experiment, ExperimentResults
 from qsnow.experiments.squarepacking.game import SquarePackingExp
 from qsnow.interface.chip import Chip, LogicalTile
 from qsnow.interface.codes.rsc import SCTile
-from qsnow.interface.models import Coord, TileTag
+from qsnow.interface.models import Coord, Tag, TileSpec
 from qsnow.interface.rules import (
     _DEFAULT_FILTERS,
     _DEFAULT_TRIGGERS,
@@ -170,7 +172,7 @@ def _label(obj: Any) -> str:
         case Chip():
             return f"{obj.length // 2}x{obj.height // 2}"
         case LogicalTile():
-            return obj.tag.name or type(obj).__name__.lower()
+            return obj.tag.name or obj.spec.tile_type or type(obj).__name__.lower()
         case SquarePackingExp():
             return (
                 f"squarepacking_{obj.tile.tag.name or type(obj.tile).__name__.lower()}"
@@ -253,29 +255,43 @@ def ruleset_from_dict(data: Dict) -> Ruleset:
 
 
 # ------------------------------------------------------------------
-# TileTag
+# Tag / TileSpec
 # ------------------------------------------------------------------
 
 
-def tag_to_dict(tag: TileTag) -> Dict:
+def tag_to_dict(tag: Tag) -> Dict:
     return {
         "name": tag.name,
-        "tile_type": tag.tile_type,
-        "distance": tag.distance,
-        "rounds": tag.rounds,
-        "generator_args": tag.generator_args,
+        "desc": tag.desc,
         "metadata": tag.metadata,
     }
 
 
-def tag_from_dict(data: Dict) -> TileTag:
-    return TileTag(
+def tag_from_dict(data: Dict) -> Tag:
+    return Tag(
         name=data["name"],
+        desc=data["desc"],
+        metadata=data["metadata"],
+    )
+
+
+def spec_to_dict(spec: TileSpec) -> Dict:
+    # callables (generator, initial_shift_fn) are not serialized: the generator is
+    # rebuilt by code-subclass constructors and the shift is baked into base_circuit
+    return {
+        "tile_type": spec.tile_type,
+        "distance": spec.distance,
+        "rounds": spec.rounds,
+        "generator_args": spec.generator_args,
+    }
+
+
+def spec_from_dict(data: Dict) -> TileSpec:
+    return TileSpec(
         tile_type=data["tile_type"],
         distance=data["distance"],
         rounds=data["rounds"],
         generator_args=data["generator_args"],
-        metadata=data["metadata"],
     )
 
 
@@ -301,6 +317,7 @@ def tile_to_dict(tile: LogicalTile) -> Dict:
         "x_buffer": tile.length - dims[0],
         "y_buffer": tile.height - dims[1],
         "tag": tag_to_dict(tile.tag),
+        "spec": spec_to_dict(tile.spec),
         "ruleset": ruleset_to_dict(tile._ruleset),
     }
 
@@ -313,13 +330,13 @@ def _logical_tile_from_dict(data: Dict) -> LogicalTile:
         y_buffer=data["y_buffer"],
         ruleset=ruleset_from_dict(data["ruleset"]),
         tag=tag_from_dict(data["tag"]),
+        spec=spec_from_dict(data["spec"]),
     )
 
 
 def _sc_tile_from_dict(data: Dict) -> SCTile:
-    args = data["tag"]["generator_args"]
-    # code_task is e.g. "surface_code:rotated_memory_z" -> task "memory_z"
-    task = args["code_task"].split("rotated_", 1)[1]
+    args = data["spec"]["generator_args"]
+    task = args["task"]
     return SCTile(
         distance=args["distance"],
         rounds=args["rounds"],
@@ -350,7 +367,12 @@ def tile_from_dict(data: Dict) -> LogicalTile:
             stacklevel=2,
         )
         importer = _logical_tile_from_dict
-    return importer(data)
+    tile = importer(data)
+    # subclass importers rebuild through their constructor, which regenerates the
+    # tag; restore the stored annotations so they survive the round trip (the spec
+    # is owned by the constructor and matches the stored one by construction)
+    tile.tag = tag_from_dict(data["tag"])
+    return tile
 
 
 # ------------------------------------------------------------------
@@ -362,6 +384,7 @@ def chip_to_dict(chip: Chip) -> Dict:
     return {
         "__qsnow__": "Chip",
         "format_version": FORMAT_VERSION,
+        "tag": tag_to_dict(chip.tag),
         # the original constructor arguments (grid is 2L x 2H internally)
         "length": chip.length // 2,
         "height": chip.height // 2,
@@ -373,6 +396,7 @@ def chip_to_dict(chip: Chip) -> Dict:
 def chip_from_dict(data: Dict) -> Chip:
     data = _migrate(data)
     chip = Chip(data["length"], data["height"])
+    chip.tag = tag_from_dict(data["tag"])
     for key, p in data["noise"].items():
         chip.loc(_key_to_coord(key)).noise.p = p
     # Re-placing each tile rebuilds qubit statuses/types exactly as add_tile did originally.
@@ -398,7 +422,7 @@ def _experiment_headings(exp: Experiment, kind: str) -> Dict:
     return {
         "__qsnow__": kind,
         "format_version": FORMAT_VERSION,
-        "desc": exp.desc,
+        "tag": tag_to_dict(exp.tag),
         "config": exp.config,
         "results_refs": exp.results_refs,
         "exp": {},
@@ -439,7 +463,7 @@ def square_packing_from_dict(data: Dict) -> SquarePackingExp:
             for key, p in payload["profile"].items()
         },
     )
-    exp.desc = data["desc"]
+    exp.tag = tag_from_dict(data["tag"])
     exp.config = data["config"]
     exp.results_refs = data["results_refs"]
     return exp
@@ -451,7 +475,8 @@ def experiment_to_dict(exp: Experiment) -> Dict:
 
 def experiment_from_dict(data: Dict) -> Experiment:
     data = _migrate(data)
-    exp = Experiment(desc=data["desc"], **data["config"])
+    exp = Experiment(**data["config"])
+    exp.tag = tag_from_dict(data["tag"])
     exp.results_refs = data["results_refs"]
     return exp
 
@@ -557,6 +582,7 @@ def export_json(
     path: Optional[Union[str, Path]] = None,
     *,
     label: Optional[str] = None,
+    desc: Optional[str] = None,
     indent: Optional[int] = 2,
 ) -> Path:
     """
@@ -568,7 +594,14 @@ def export_json(
     experiment), and <label> defaults to a descriptor derived from the object
     (e.g. `chip_5x5_...`, `tile_rsc_memory_z_d3_...`). Pass `label` to override
     the descriptor, or `path` for full control.
+
+    `desc` sets a freeform description on the object's tag before writing, so
+    it is stored in the export and survives reimport.
     """
+    if desc is not None:
+        # every serializable kind carries a Tag; desc is object state so it round-trips
+        # TODO - should this overwrite or append desc. circle back once solidified v1 exporter and see what works best
+        obj.tag.desc = desc
     if path is None:
         stamp = datetime.now().strftime(_TIMESTAMP_FORMAT)
         path = (
@@ -611,6 +644,19 @@ def list_exports(pattern: str = "*", kind: Optional[str] = None) -> List[Path]:
     if not matches and not pattern.startswith("*"):
         matches = _glob(f"*{pattern}")
     return sorted(matches, key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def summarize_exports(pattern: str = "*", kind: Optional[str] = None) -> Dict[Path, Optional[str]]:
+    """
+    Map each export matching `pattern`/`kind` (newest first) to its tag `desc`,
+    making the data folder browsable without opening files.
+    """
+    summary: Dict[Path, Optional[str]] = {}
+    for path in list_exports(pattern, kind):
+        with open(path) as f:
+            data = json.load(f)
+        summary[path] = data.get("tag", {}).get("desc") or data.get("desc")
+    return summary
 
 
 def import_latest(pattern: str = "*", kind: Optional[str] = None) -> Any:

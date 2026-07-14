@@ -1,7 +1,11 @@
 {
   "__qsnow__": "Experiment",
   "format_version": 1,
-  "desc": "golden fixture for format v1",
+  "tag": {
+    "name": null,
+    "desc": "golden fixture for format v1",
+    "metadata": {}
+  },
   "config": {
     "shots": 1000,
     "decoder": "pymatching"

@@ -1,6 +1,6 @@
 import pytest
 
-from qsnow.interface.models import CSSType, NoiseProfile, Qubit, Status, TileTag
+from qsnow.interface.models import CSSType, NoiseProfile, Qubit, Status, Tag, TileSpec
 
 
 class TestNoiseProfile:
@@ -61,9 +61,24 @@ class TestQubit:
         assert qubit.noise.p == 0.2
 
 
-class TestTileTag:
-    def test_to_dict_includes_expected_keys(self):
-        tag = TileTag(name="d3", distance=3, rounds=1)
-        result = tag.to_dict()
-        assert result["name"] == "d3"
-        assert result["metadata"] == {}
+class TestTag:
+    def test_defaults(self):
+        tag = Tag()
+        assert tag.name is None
+        assert tag.desc is None
+        assert tag.metadata == {}
+
+    def test_default_metadata_not_shared_between_instances(self):
+        assert Tag().metadata is not Tag().metadata
+
+
+class TestTileSpec:
+    def test_defaults(self):
+        spec = TileSpec()
+        assert spec.tile_type is None
+        assert spec.distance is None
+        assert spec.rounds is None
+        assert spec.generator_args == {}
+
+    def test_default_generator_args_not_shared_between_instances(self):
+        assert TileSpec().generator_args is not TileSpec().generator_args

@@ -6,7 +6,7 @@ from shapely import difference
 from shapely.geometry import Point, Polygon, box
 from shapely.strtree import STRtree
 
-from .models import Coord, Qubit
+from .models import Coord, Qubit, Tag
 
 
 class Grid:
@@ -16,15 +16,19 @@ class Grid:
 
     Backed by a Shapely STRtree for efficient arbitrary-region selection.
     The index is built lazily on first query and cached until invalidated.
+
+    Every grid carries a `Tag` for annotation (name/desc/metadata), which
+    round-trips through serialization.
     """
 
     origin: Coord
     height: int
     length: int
+    tag: Tag
     _qubits: Dict[Coord, Qubit]
     _index: Optional[Tuple[List[Coord], STRtree]]
 
-    def __init__(self, length: int, height: int, origin: Coord = (0, 0)):
+    def __init__(self, length: int, height: int, origin: Coord = (0, 0), tag: Optional[Tag] = None):
         if length < 1 or height < 1:
             raise ValueError(
                 f"Grid length and height must be >= 1. Got length={length}, height={height}."
@@ -32,6 +36,7 @@ class Grid:
         self.origin = origin
         self.length = length
         self.height = height
+        self.tag = tag if tag is not None else Tag()
         self._qubits: Dict[Coord, Qubit] = {}
         self._index: Optional[Tuple[List[Coord], STRtree]] = None
 

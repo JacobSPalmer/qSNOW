@@ -5,7 +5,7 @@ from typing import List, Literal, Optional
 from stim import Circuit
 
 from ..chip import LogicalTile
-from ..models import Coord, CSSType, TileTag
+from ..models import Coord, CSSType, Tag, TileSpec
 from ..rules import ChannelRule, InjectionRule, Ruleset
 
 
@@ -28,8 +28,8 @@ class SCTile(LogicalTile):
             x_buffer=1,
             y_buffer=1,
             origin=origin,
-            tag=TileTag(
-                name=f"rsc_{task}_d{distance}",
+            tag=Tag(name=f"rsc_{task}_d{distance}"),
+            spec=TileSpec(
                 tile_type=type(self).__name__,
                 distance=distance,
                 rounds=rounds,
@@ -132,10 +132,9 @@ class SCTile(LogicalTile):
             + custom_rules
         )
 
-    # TODO
     def copy(self) -> SCTile:
         return SCTile(
-            distance=self.tag.generator_args["distance"],
-            rounds=self.tag.generator_args["rounds"],
-            task=self.tag.generator_args["task"],
-        )  # type: ignore
+            distance=self.spec.generator_args["distance"],
+            rounds=self.spec.generator_args["rounds"],
+            task=self.spec.generator_args["task"],
+        )

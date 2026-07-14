@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from statistics import mean
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
@@ -13,7 +14,8 @@ from .models import (
     Qubit,
     ShiftFunction,
     Status,
-    TileTag,
+    Tag,
+    TileSpec,
 )
 from .rules import Ruleset
 
@@ -35,8 +37,11 @@ class LogicalTile(Grid):
     _circuit: Circuit -> Noise injected or spatially modified circuit built from the base circuit
     _chip (Optional[Chip]) ->
     _c2i: Dict[Coord, int]
-    tag: TileTag
+    tag (Tag) -> annotation (name/desc/metadata), same plain Tag as every Grid
+    spec (TileSpec) -> reconstruction fields read by serialize importers and copy()
     """
+
+    spec: TileSpec
 
     def __init__(
         self,
@@ -47,15 +52,18 @@ class LogicalTile(Grid):
         x_buffer: int = 1,
         y_buffer: int = 1,
         ruleset: Optional[Ruleset] = None,
-        tag: TileTag = TileTag(),
+        tag: Optional[Tag] = None,
+        spec: Optional[TileSpec] = None,
     ):
         if x_buffer < 0 or y_buffer < 0:
             raise ValueError(
                 f"Buffer values cannot be lower than 0. Given x_buffer of {x_buffer} and y_buffer of {y_buffer}"
             )
 
-        # TODO - expand the tagging system to be more formal
-        self.tag = tag
+        # Resolved here (before the Grid super().__init__ below) so they are usable
+        # during init; the tag is passed through to Grid, which stores this same object.
+        self.tag = tag if tag is not None else Tag()
+        self.spec = spec if spec is not None else TileSpec(tile_type=type(self).__name__)
 
         # NOTE - This initial update is made outside _update since the circuit must be initialized first
         self._base_circuit = circuit.without_noise().copy()
@@ -94,6 +102,7 @@ class LogicalTile(Grid):
             length=dimensions[0] + x_buffer,
             height=dimensions[1] + y_buffer,
             origin=self.circuit_origin,
+            tag=self.tag,
         )
 
     def __del__(self):
@@ -109,6 +118,7 @@ class LogicalTile(Grid):
         for c in self._c2i.keys():
             self.chip.loc(c).status = Status.LOGICAL
 
+    # TODO - formalize the inheritance structure/relation between parent class (LogicalTile) and child (implementable code-specific tiles)
     # NOTE - default logicaltile does not deal with typing. typing is dependent on specific code constructions. this could change, likely to use a default noise ruleset like the `SCTile`
     def _init_tile_qubit_types(self):
         pass
@@ -300,7 +310,8 @@ class LogicalTile(Grid):
 
     def copy(self) -> LogicalTile:
         """Return a fresh uninitialized copy of the circuit."""
-        return LogicalTile(self.base_circuit, tag=self.tag)
+        # deepcopy so the copy never shares mutable tag/spec state (dicts included)
+        return LogicalTile(self.base_circuit, tag=deepcopy(self.tag), spec=deepcopy(self.spec))
 
     def reset(self) -> None:
         """Resets the tile back to uninitialized state, removing it from any active chip and housekeeping qubit statuses."""

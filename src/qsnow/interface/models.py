@@ -8,26 +8,34 @@ type ShiftFunction = Callable[[*tuple[float, ...]], Coord]
 
 
 @dataclass
-class TileTag:
+class Tag:
+    """
+    Generic annotation attached to serializable objects (grids, tiles, experiments):
+    a short `name`, a freeform `desc` for context not tracked elsewhere, and a
+    `metadata` dict for anything structured that only humans read. Fields that
+    code reads belong in a typed spec (see `TileSpec`), never in `metadata`.
+    """
+
     name: Optional[str] = None
+    desc: Optional[str] = None
+    metadata: Dict = field(default_factory=dict)
+
+
+@dataclass
+class TileSpec:
+    """
+    How to rebuild a tile: read by the serialize importers and `copy()`.
+    Callable fields (`generator`, `initial_shift_fn`) are not serialized — the
+    generator is recreated by code-subclass constructors and the initial shift
+    is already baked into the tile's base circuit.
+    """
+
     tile_type: Optional[str] = None
-    initial_shift_fn: Optional[ShiftFunction] = None
     distance: Optional[int] = None
     rounds: Optional[int] = None
     generator: Optional[Callable] = None
     generator_args: Dict[str, Any] = field(default_factory=dict)
-    metadata: Dict = field(default_factory=dict)
-    # TODO - work thru metadata updates (i.e., default named dictionary and move most attr within (i.e., d, r, generator))
-
-    def to_dict(self) -> Dict:
-        return {
-            "name": self.name,
-            "tile_type": self.tile_type,
-            "initial_shift_fn": self.initial_shift_fn,
-            "generator": str(self.generator),
-            "generator_args": self.generator_args,
-            "metadata": self.metadata,
-        }
+    initial_shift_fn: Optional[ShiftFunction] = None
 
 
 class Status(Enum):

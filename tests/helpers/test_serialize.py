@@ -53,8 +53,8 @@ class TestTileRoundTrip:
         restored = from_dict(to_dict(tile))
 
         assert isinstance(restored, SCTile)
-        assert restored.tag.distance == 3
-        assert restored.tag.rounds == 2
+        assert restored.spec.distance == 3
+        assert restored.spec.rounds == 2
         assert str(restored.base_circuit) == str(tile.base_circuit)
 
 
@@ -123,7 +123,7 @@ class TestExperimentRoundTrip:
         assert set(data.keys()) == {
             "__qsnow__",
             "format_version",
-            "desc",
+            "tag",
             "config",
             "results_refs",
             "exp",
@@ -139,6 +139,55 @@ class TestExperimentRoundTrip:
         assert isinstance(restored, Experiment)
         assert restored.desc == "a note"
         assert restored.config == {"shots": 1000, "decoder": "pymatching"}
+
+
+class TestTagAnnotations:
+    def test_chip_tag_round_trips(self, chip):
+        chip.tag.name = "baseline"
+        chip.tag.desc = "5x5 chip for BAD sweeps"
+        chip.tag.metadata = {"campaign": 1}
+
+        restored = from_dict(to_dict(chip))
+
+        assert restored.tag.name == "baseline"
+        assert restored.tag.desc == "5x5 chip for BAD sweeps"
+        assert restored.tag.metadata == {"campaign": 1}
+
+    def test_tile_tag_desc_round_trips(self):
+        tile = SCTile(distance=3)
+        tile.tag.desc = "d3 memory-z tile"
+
+        restored = from_dict(to_dict(tile))
+
+        assert restored.tag.desc == "d3 memory-z tile"
+
+    def test_export_json_desc_persists_through_reimport(self, data_dir, chip):
+        path = export_json(chip, desc="written at export time")
+
+        restored = import_json(path)
+
+        assert chip.tag.desc == "written at export time"
+        assert restored.tag.desc == "written at export time"
+
+    def test_experiment_desc_lives_on_tag(self, chip):
+        from qsnow.experiments.squarepacking.game import SquarePackingExp
+
+        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        exp.desc = "via the property"
+
+        assert exp.tag.desc == "via the property"
+        assert from_dict(to_dict(exp)).desc == "via the property"
+
+    def test_summarize_exports_maps_paths_to_descs(self, data_dir, chip):
+        from qsnow.helpers.serialize import summarize_exports
+
+        chip_path = export_json(chip, desc="a described chip")
+        tile_path = export_json(SCTile(distance=3))
+
+        summary = summarize_exports()
+
+        assert summary[chip_path] == "a described chip"
+        assert summary[tile_path] is None
 
 
 class TestResultsFlow:
@@ -284,8 +333,8 @@ class TestFormatVersioning:
         tile = import_json(self.FIXTURES / "tile_v1.json")
 
         assert isinstance(tile, SCTile)
-        assert tile.tag.distance == 3
-        assert tile.tag.rounds == 2
+        assert tile.spec.distance == 3
+        assert tile.spec.rounds == 2
 
     def test_v1_experiment_golden_file_imports(self):
         exp = import_json(self.FIXTURES / "experiment_v1.json")

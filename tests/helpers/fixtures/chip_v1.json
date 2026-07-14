@@ -1,6 +1,11 @@
 {
   "__qsnow__": "Chip",
   "format_version": 1,
+  "tag": {
+    "name": null,
+    "desc": "golden chip fixture for format v1",
+    "metadata": {}
+  },
   "length": 5,
   "height": 5,
   "noise": {
@@ -72,6 +77,10 @@
       "y_buffer": 1,
       "tag": {
         "name": "rsc_memory_z_d3",
+        "desc": null,
+        "metadata": {}
+      },
+      "spec": {
         "tile_type": "SCTile",
         "distance": 3,
         "rounds": 3,
@@ -80,8 +89,7 @@
           "distance": 3,
           "rounds": 3,
           "task": "memory_z"
-        },
-        "metadata": {}
+        }
       },
       "ruleset": {
         "rules": [
