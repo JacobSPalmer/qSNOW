@@ -1,9 +1,9 @@
 from .serialize import (
-    export_json,
+    export_flake,
     export_results,
     from_dict,
     get_data_dir,
-    import_json,
+    import_flake,
     import_latest,
     list_exports,
     register_tile_type,
@@ -13,11 +13,11 @@ from .serialize import (
 )
 
 __all__ = [
-    "export_json",
+    "export_flake",
     "export_results",
     "from_dict",
     "get_data_dir",
-    "import_json",
+    "import_flake",
     "import_latest",
     "list_exports",
     "register_tile_type",

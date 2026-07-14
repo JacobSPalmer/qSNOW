@@ -1,18 +1,21 @@
 """
-JSON import/export for qSNOW objects.
+JSON import/export for qSNOW objects as flakes.
 
-Supports round-tripping `Chip`, `LogicalTile` (and code subclasses like `SCTile`),
-`SquarePackingExp`, and the generic `Experiment` through plain JSON files, capturing
-everything needed to rebuild the object with the exact same setup:
+All qSNOW objects support exporting as .flake files, which is a serialized qSNOW configuration 
+file containing all relevant attributes and information used to 1:1 regenerate the qSNOW object.
+
+The qSNOW serialization library supports round-tripping (1:1 import-export) of `Chip`, `LogicalTile` 
+(and code subclasses like `SCTile`), `SquarePackingExp`, and the generic `Experiment` through JSON 
+files (.flake) files, capturing everything needed to rebuild the object with the exact same setup:
 
     from qsnow.helpers.serialize import export_json, import_json, import_latest
 
-    export_json(chip)                      # -> data/chips/chip_5x5_<timestamp>.json
-    export_json(tile)                      # -> data/tiles/tile_rsc_memory_z_d3_<timestamp>.json
-    export_json(experiment, label='exp1')  # -> data/experiment/
-    chip = import_latest("chip")           # newest matching export
-    chip = import_json("data/chips/chip_5x5_2026-07-10_12-00-00.json")
-    export_json(chip, "somewhere/else.json")  # explicit path still works
+    export_flake(chip)                      # -> data/chips/chip_5x5_<timestamp>.flake
+    export_flake(tile)                      # -> data/tiles/tile_rsc_memory_z_d3_<timestamp>.flake
+    export_flake(experiment, label='exp1')  # -> data/experiment/
+    chip = import_latest("chip")            # newest matching export
+    chip = import_flake("data/chips/chip_5x5_2026-07-10_12-00-00.flake")
+    export_flake(chip, "somewhere/else.flake")  # explicit path still works, but will not use default naming scheme
 
 Notes:
   - Chip qubit statuses/types are not stored directly; they are re-derived by
@@ -22,17 +25,23 @@ Notes:
     (initial shift already baked in), so the spec's callables (`generator`,
     `initial_shift_fn`) are not serialized.
   - Every object's `Tag` (name/desc/metadata) round-trips; tiles additionally
-    carry a `TileSpec` with the reconstruction fields code reads.
+    carry a `TileSpec` which contains tile-specific information. Specifically,
+    the arguements to the generator/generation function that produced the underlying 
+    tile are passed here and used to regenerate the flake upon import.
   - Ruleset injection rules are fully serialized. Custom triggers/filters
     (beyond the built-in defaults) hold arbitrary callables and cannot be
-    serialized; a warning is raised if any are present at export.
+    serialized; a warning is raised if any are present at export (the handling of 
+    serializing arbitrary callables is a TODO feature down the line)
   - Code subclasses (e.g. `SCTile`) are rebuilt through their own constructor
     using the spec's `generator_args`. Additional subclasses are registered with
     `register_tile_type()`.
-  - Exports are stamped with `format_version`; older files are upgraded in
-    memory on import. Any change to an export's structure must bump
-    FORMAT_VERSION, register a matching `@_migration` step, and check in a new
-    golden fixture under tests/helpers/fixtures/ (see the migration section).
+  - Exports are stamped with `format_version`; older flakes are upgraded in
+    memory on import if the exist within the default data configuration file. 
+
+Any change to an export's structure must:
+    1. Bump FORMAT_VERSION, 
+    2. Register a matching `@_migration` step, and 
+    3. Check in a new golden fixture under tests/helpers/fixtures/ (see the migration section).
 """
 
 from __future__ import annotations
@@ -63,17 +72,18 @@ FORMAT_VERSION = 1
 
 # ------------------------------------------------------------------
 # Format versioning / migrations
-#
-# Every exported dict is stamped with 'format_version'. When an export's
+# ------------------------------------------------------------------
+
+# NOTE - Every exported dict is stamped with 'format_version'. When an export's
 # structure changes, bump FORMAT_VERSION by one and register a @_migration(N)
 # step that upgrades a dict from version N to N+1 (branching on the dict's
 # '__qsnow__' kind if the change only affects one object type), and check in a
 # new golden fixture under tests/helpers/fixtures/. Old files are upgraded in
 # memory on import, one step at a time, and are never rewritten on disk.
-# ------------------------------------------------------------------
 
+
+# TODO - move migrations to seperate folder, similar to the setup for the PHP Laravel model migrations (1 migration -> 1 file perhaps)
 _MIGRATIONS: Dict[int, Callable[[Dict], Dict]] = {}
-
 
 def _migration(from_version: int):
     """Decorator registering an upgrade step from `from_version` to `from_version + 1`."""
@@ -119,7 +129,9 @@ def _find_repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
-# Default export root: `data/` at the repo root. Override with set_data_dir()
+#TODO - consider moving this to platform specific cache location (like .)
+#TODO - move the default to be a part of the package-wide configuration file when refactoring for package distribution
+# Default export root: `.qsnow/` at the repo root. Override with set_data_dir()
 # for tests, notebooks, or an absolute location.
 _DEFAULT_DATA_DIR = _find_repo_root() / "data"
 _DATA_DIR = _DEFAULT_DATA_DIR
@@ -137,7 +149,9 @@ def set_data_dir(path: Optional[Union[str, Path]] = None) -> None:
 
 
 def get_data_dir() -> Path:
-    """The current root folder used for automatic export paths."""
+    """
+    The current root folder used for automatic export paths.
+    """
     return _DATA_DIR
 
 
@@ -154,7 +168,9 @@ def _subfolder(obj: Any) -> str:
 
 
 def _prefix(obj: Any) -> str:
-    """Object-kind prefix that starts every auto-generated filename."""
+    """
+    Object-kind prefix that starts every auto-generated filename.
+    """
     match obj:
         case Chip():
             return "chip"
@@ -167,7 +183,9 @@ def _prefix(obj: Any) -> str:
 
 
 def _label(obj: Any) -> str:
-    """Default descriptor used when no explicit label is given."""
+    """
+    Default descriptor/name used when no explicit label is given.
+    """
     match obj:
         case Chip():
             return f"{obj.length // 2}x{obj.height // 2}"
@@ -182,6 +200,7 @@ def _label(obj: Any) -> str:
         case _:
             raise TypeError(f"Cannot serialize object of type {type(obj).__name__}.")
 
+#TODO - add docstrings to public functions (and relevant private functions if appropriate)
 
 # ------------------------------------------------------------------
 # Coordinate helpers (JSON object keys must be strings)
@@ -304,8 +323,7 @@ def tile_to_dict(tile: LogicalTile) -> Dict:
     # A tile's grid dimensions are fixed at construction (circuit extent at the construction origin + buffers), while `add_tile`/`shift_by` move the tile
     # without resizing it. So a placed tile is exported against its base circuit and reconstructed fresh at (0, 0); `chip_from_dict` then
     # re-places it at 'origin' via `add_tile`, mirroring the original workflow. An unplaced tile keeps its constructor origin directly.
-    placed = tile.initialized()
-    ref_circuit = tile._base_circuit if placed else tile._circuit
+    ref_circuit = tile._base_circuit if tile.initialized() else tile._circuit
     coords = list(ref_circuit.get_final_qubit_coordinates().values())
     dims = tuple(int(max(c) + 1) for c in zip(*coords))[:2]
     return {
@@ -313,7 +331,7 @@ def tile_to_dict(tile: LogicalTile) -> Dict:
         "format_version": FORMAT_VERSION,
         "circuit": str(tile.base_circuit),
         "origin": list(tile.origin),
-        "construct_origin": [0, 0] if placed else list(tile.origin),
+        "construct_origin": [0, 0] if tile.initialized() else list(tile.origin),
         "x_buffer": tile.length - dims[0],
         "y_buffer": tile.height - dims[1],
         "tag": tag_to_dict(tile.tag),
@@ -397,9 +415,12 @@ def chip_from_dict(data: Dict) -> Chip:
     data = _migrate(data)
     chip = Chip(data["length"], data["height"])
     chip.tag = tag_from_dict(data["tag"])
+
+    # TODO - move all this to have noise map to dict using the NoiseMap "type"
     for key, p in data["noise"].items():
         chip.loc(_key_to_coord(key)).noise.p = p
     # Re-placing each tile rebuilds qubit statuses/types exactly as add_tile did originally.
+    # TODO - same for TileMap when/if typing becomes explicit
     for tile_data in data["tiles"]:
         tile = tile_from_dict(tile_data)
         if not chip.add_tile(tile, tuple(tile_data["origin"])):
@@ -520,14 +541,14 @@ def export_results(
     indent: Optional[int] = 2,
 ) -> Path:
     """
-    Write an experiment's `results` to their own JSON file, separate from the
-    setup export. Auto-organized as `data/experiments/results_<label>_<ts>.json`.
+    Write an experiment's `results` to their own flake file, separate from the
+    setup export. Auto-organized as `data/experiments/results_<label>_<ts>.flake`.\n
     Prefer `exp.save_results()`, which also records the back-link on the experiment.
     """
     if path is None:
         stamp = datetime.now().strftime(_TIMESTAMP_FORMAT)
         path = (
-            _DATA_DIR / _subfolder(exp) / f"results_{label or _label(exp)}_{stamp}.json"
+            _DATA_DIR / _subfolder(exp) / f"results_{label or _label(exp)}_{stamp}.flake"
         )
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -542,7 +563,7 @@ def export_results(
 
 
 def to_dict(obj: Any) -> Dict:
-    """Serialize a supported qSNOW object into a JSON-safe dict."""
+    """Serialize a supported qSNOW object into a .flake JSON-safe dict."""
     match obj:
         case Chip():
             return chip_to_dict(obj)
@@ -557,7 +578,7 @@ def to_dict(obj: Any) -> Dict:
 
 
 def from_dict(data: Dict) -> Any:
-    """Rebuild a qSNOW object from a dict produced by `to_dict`."""
+    """Rebuild a qSNOW obj from a dict produced by `to_dict`."""
     data = _migrate(data)
     kind = data.get("__qsnow__")
     match kind:
@@ -575,9 +596,9 @@ def from_dict(data: Dict) -> Any:
             raise ValueError(
                 f"Unrecognized or missing '__qsnow__' type marker: {kind!r}."
             )
+        
 
-
-def export_json(
+def export_flake(
     obj: Any,
     path: Optional[Union[str, Path]] = None,
     *,
@@ -586,17 +607,22 @@ def export_json(
     indent: Optional[int] = 2,
 ) -> Path:
     """
-    Serialize `obj` and write it as JSON. Returns the written path.
+    Serialize `obj` and export it as a `.flake` file, a JSON serialization of the qSNOW object. 
+    
+    The function returns the written path.
 
     With no `path`, the file is auto-organized under the data root as
-    `data/<kind>/<obj name>_<label>_<timestamp>.json`, where <kind> is
-    chips/tiles/experiments, <obj name> is always the object kind (chip/tile/
-    experiment), and <label> defaults to a descriptor derived from the object
-    (e.g. `chip_5x5_...`, `tile_rsc_memory_z_d3_...`). Pass `label` to override
-    the descriptor, or `path` for full control.
+    `data/<kind>/<obj name>_<label>_<timestamp>.flake`, where:
+     - `<kind>` is the general plural categorization of the object (e.g., chips/tiles/experiments, etc.), 
+     - `<obj name>`is always the object type (e.g., chip/tile/experiment)
+     - `<label>` defaults to a descriptor derived from the object (e.g. `chip_5x5_...`, `tile_rsc_memory_z_d3_...`).
+     - `<timestamp> is (shockingly) the timestamp of when object was saved.
+
+    Pass `label` to override the descriptor, or `path` for full control. Importantly, if `path` is specified then the default 
+    naming (inc. `.flake` file extension) will not be applied.
 
     `desc` sets a freeform description on the object's tag before writing, so
-    it is stored in the export and survives reimport.
+    it is stored in the export and survives reimport within the object's tag.
     """
     if desc is not None:
         # every serializable kind carries a Tag; desc is object state so it round-trips
@@ -607,7 +633,7 @@ def export_json(
         path = (
             _DATA_DIR
             / _subfolder(obj)
-            / f"{_prefix(obj)}_{label or _label(obj)}_{stamp}.json"
+            / f"{_prefix(obj)}_{label or _label(obj)}_{stamp}.flake"
         )
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -616,8 +642,8 @@ def export_json(
     return path
 
 
-def import_json(path: Union[str, Path]) -> Any:
-    """Load a JSON file written by `export_json` and rebuild the object."""
+def import_flake(path: Union[str, Path]) -> Any:
+    """Load a .flake file written by `export_flake` and rebuild the qSNOW object."""
     with open(path) as f:
         obj = from_dict(json.load(f))
     if isinstance(obj, Experiment):
@@ -627,7 +653,7 @@ def import_json(path: Union[str, Path]) -> Any:
 
 def list_exports(pattern: str = "*", kind: Optional[str] = None) -> List[Path]:
     """
-    List exported JSON files under the data root, newest first.
+    List exported .flake files under the data root, newest first.
 
     `pattern` glob-matches from the start of the filename (e.g. "chip*", "tile_rsc*d3").
     If nothing matches, it is retried as a substring match (`*<pattern>*`) so
@@ -637,7 +663,7 @@ def list_exports(pattern: str = "*", kind: Optional[str] = None) -> List[Path]:
     root = _DATA_DIR / kind if kind else _DATA_DIR
 
     def _glob(pat: str) -> List[Path]:
-        name = f"{pat}.json" if pat.endswith("*") else f"{pat}*.json"
+        name = f"{pat}.flake" if pat.endswith("*") else f"{pat}*.flake"
         return list(root.glob(f"**/{name}" if kind is None else name))
 
     matches = _glob(pattern)
@@ -668,10 +694,10 @@ def import_latest(pattern: str = "*", kind: Optional[str] = None) -> Any:
     matches = list_exports(pattern, kind)
     if not matches:
         raise FileNotFoundError(
-            f"No snowflakes matching '{pattern}'{f' in {kind}/' if kind else ''} under {_DATA_DIR}/."
+            f"No flakes matching '{pattern}'{f' in {kind}/' if kind else ''} under {_DATA_DIR}/."
         )
     if matches:
         print(
-            f"Found {len(matches)} matching snowflakes...\nImporting flake at {matches[0]}"
+            f"Found {len(matches)} matching flakes...\nImporting flake at {matches[0]}"
         )
-    return import_json(matches[0])
+    return import_flake(matches[0])

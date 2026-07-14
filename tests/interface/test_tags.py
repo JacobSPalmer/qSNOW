@@ -13,7 +13,7 @@ import pytest
 
 from qsnow.experiments.experiment import Experiment
 from qsnow.experiments.squarepacking.game import SquarePackingExp
-from qsnow.helpers.serialize import export_json, import_json, set_data_dir
+from qsnow.helpers.serialize import export_flake, import_flake, set_data_dir
 from qsnow.interface.chip import Chip, LogicalTile
 from qsnow.interface.codes.rsc import SCTile
 from qsnow.interface.models import Tag, TileSpec
@@ -92,7 +92,7 @@ class TestInterfaceContract:
     @pytest.mark.parametrize("kind", SERIALIZABLE_KINDS)
     def test_export_json_desc_contract(self, kind, data_dir):
         obj = TAGGED_KINDS[kind]()
-        export_json(obj, desc="set at export")
+        export_flake(obj, desc="set at export")
         assert obj.tag.desc == "set at export"
 
 
@@ -117,15 +117,15 @@ class TestRoundTripPreservation:
         obj.tag.desc = "described"
         obj.tag.metadata = {"campaign": 1}
 
-        restored = import_json(export_json(obj))
+        restored = import_flake(export_flake(obj))
 
         assert restored.tag.name == "named"
         assert restored.tag.desc == "described"
         assert restored.tag.metadata == {"campaign": 1}
 
     def test_double_import_yields_independent_tags(self, data_dir):
-        path = export_json(SCTile(distance=3), desc="original")
-        a, b = import_json(path), import_json(path)
+        path = export_flake(SCTile(distance=3), desc="original")
+        a, b = import_flake(path), import_flake(path)
 
         assert a.tag is not b.tag
         a.tag.desc = "mutated"
@@ -134,7 +134,7 @@ class TestRoundTripPreservation:
     def test_sc_tile_spec_round_trips(self, data_dir):
         tile = SCTile(distance=3, rounds=2, task="memory_x")
 
-        restored = import_json(export_json(tile))
+        restored = import_flake(export_flake(tile))
 
         assert restored.spec.distance == 3
         assert restored.spec.rounds == 2

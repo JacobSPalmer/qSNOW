@@ -66,7 +66,7 @@ class Experiment:
 
         if desc is not None:
             self.desc = desc
-        self.source = serialize.export_json(self, path, label=label)
+        self.source = serialize.export_flake(self, path, label=label)
         return self.source
 
     def save_results(
@@ -83,13 +83,13 @@ class Experiment:
         results_path = serialize.export_results(self, path, label=label)
         self.results_refs.append(results_path.name)
         if self.source is not None:
-            serialize.export_json(self, self.source)
+            serialize.export_flake(self, self.source)
         return results_path
 
 
 @dataclass(frozen=True)
 class ExperimentResults:
-    """A persisted experiment run: the results plus the setup that produced them."""
+    """A persisted experiment run: the results plus the setup/experiment that produced them."""
 
     experiment_ref: Optional[str]
     run_config: Dict

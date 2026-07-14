@@ -4,9 +4,9 @@ import pytest
 
 from qsnow.helpers.serialize import (
     FORMAT_VERSION,
-    export_json,
+    export_flake,
     from_dict,
-    import_json,
+    import_flake,
     import_latest,
     list_exports,
     set_data_dir,
@@ -162,9 +162,9 @@ class TestTagAnnotations:
         assert restored.tag.desc == "d3 memory-z tile"
 
     def test_export_json_desc_persists_through_reimport(self, data_dir, chip):
-        path = export_json(chip, desc="written at export time")
+        path = export_flake(chip, desc="written at export time")
 
-        restored = import_json(path)
+        restored = import_flake(path)
 
         assert chip.tag.desc == "written at export time"
         assert restored.tag.desc == "written at export time"
@@ -181,8 +181,8 @@ class TestTagAnnotations:
     def test_summarize_exports_maps_paths_to_descs(self, data_dir, chip):
         from qsnow.helpers.serialize import summarize_exports
 
-        chip_path = export_json(chip, desc="a described chip")
-        tile_path = export_json(SCTile(distance=3))
+        chip_path = export_flake(chip, desc="a described chip")
+        tile_path = export_flake(SCTile(distance=3))
 
         summary = summarize_exports()
 
@@ -200,13 +200,13 @@ class TestResultsFlow:
         assert exp.source == setup_path
 
         # reimport the setup, fake a run, save its results separately
-        restored = import_json(setup_path)
+        restored = import_flake(setup_path)
         assert restored.source == setup_path
         restored.results = {(0.0, 0.0): {"ler": 0.001, "shots": 1000}}
         restored.config.update(shots=1000, max_errors=100)
         results_path = restored.save_results()
 
-        record = import_json(results_path)
+        record = import_flake(results_path)
 
         assert isinstance(record, ExperimentResults)
         assert record.experiment_ref == setup_path.name
@@ -222,7 +222,7 @@ class TestResultsFlow:
         path = exp.save(desc="testing desc at save time")
 
         assert exp.desc == "testing desc at save time"
-        assert import_json(path).desc == "testing desc at save time"
+        assert import_flake(path).desc == "testing desc at save time"
 
     def test_save_results_backlinks_saved_setup(self, data_dir, chip):
         from qsnow.experiments.squarepacking.game import SquarePackingExp
@@ -234,7 +234,7 @@ class TestResultsFlow:
 
         assert exp.results_refs == [results_path.name]
         # the additive re-export refreshed the on-disk setup's refs
-        assert import_json(setup_path).results_refs == [results_path.name]
+        assert import_flake(setup_path).results_refs == [results_path.name]
 
     def test_save_results_without_saved_setup_warns(self, data_dir, chip):
         from qsnow.experiments.squarepacking.game import SquarePackingExp
@@ -245,7 +245,7 @@ class TestResultsFlow:
         with pytest.warns(UserWarning, match="call exp.save"):
             results_path = exp.save_results()
 
-        assert import_json(results_path).experiment_ref is None
+        assert import_flake(results_path).experiment_ref is None
 
 
 class TestJsonFileRoundTrip:
@@ -253,8 +253,8 @@ class TestJsonFileRoundTrip:
         chip.generate_random_noise()
         chip.add_tile(SCTile(distance=3), (2, 2))
 
-        path = export_json(chip, tmp_path / "chip.json")
-        restored = import_json(path)
+        path = export_flake(chip, tmp_path / "chip.flake")
+        restored = import_flake(path)
 
         assert isinstance(restored, Chip)
         assert str(restored.tiles[0].circuit) == str(chip.tiles[0].circuit)
@@ -268,8 +268,8 @@ class TestAutoOrganization:
     def test_auto_paths_by_kind(self, data_dir, chip):
         tile = SCTile(distance=3)
 
-        chip_path = export_json(chip)
-        tile_path = export_json(tile)
+        chip_path = export_flake(chip)
+        tile_path = export_flake(tile)
 
         assert chip_path.parent == data_dir / "chips"
         assert chip_path.name.startswith("chip_5x5_")
@@ -277,13 +277,13 @@ class TestAutoOrganization:
         assert tile_path.name.startswith("tile_rsc_memory_z_d3_")
 
     def test_custom_label_keeps_obj_name_prefix(self, data_dir, chip):
-        path = export_json(chip, label="baseline")
+        path = export_flake(chip, label="baseline")
         assert path.name.startswith("chip_baseline_")
 
     def test_import_latest_finds_newest(self, data_dir, chip):
-        first = export_json(chip, label="run")
+        first = export_flake(chip, label="run")
         chip.generate_random_noise()
-        export_json(chip, label="run")
+        export_flake(chip, label="run")
         import os
 
         os.utime(first, (0, 0))  # force distinct mtimes
@@ -295,8 +295,8 @@ class TestAutoOrganization:
         }
 
     def test_list_exports_filters_by_kind_and_pattern(self, data_dir, chip):
-        export_json(chip)
-        export_json(SCTile(distance=3))
+        export_flake(chip)
+        export_flake(SCTile(distance=3))
 
         assert len(list_exports()) == 2
         assert len(list_exports(kind="tiles")) == 1
@@ -322,7 +322,7 @@ class TestFormatVersioning:
     FIXTURES = Path(__file__).parent / "fixtures"
 
     def test_v1_chip_golden_file_imports(self):
-        chip = import_json(self.FIXTURES / "chip_v1.json")
+        chip = import_flake(self.FIXTURES / "chip_v1.flake")
 
         assert isinstance(chip, Chip)
         assert (chip.length, chip.height) == (10, 10)
@@ -330,14 +330,14 @@ class TestFormatVersioning:
         assert chip.tiles[0].origin == (2, 2)
 
     def test_v1_tile_golden_file_imports(self):
-        tile = import_json(self.FIXTURES / "tile_v1.json")
+        tile = import_flake(self.FIXTURES / "tile_v1.flake")
 
         assert isinstance(tile, SCTile)
         assert tile.spec.distance == 3
         assert tile.spec.rounds == 2
 
     def test_v1_experiment_golden_file_imports(self):
-        exp = import_json(self.FIXTURES / "experiment_v1.json")
+        exp = import_flake(self.FIXTURES / "experiment_v1.flake")
 
         assert exp.config == {"shots": 1000, "decoder": "pymatching"}
 
