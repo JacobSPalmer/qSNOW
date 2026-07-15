@@ -1,13 +1,12 @@
 import os
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Dict, List
 
 import sinter
 from rich.progress import (
     BarColumn,
     Progress,
     TextColumn,
-    TimeElapsedColumn,
     TimeRemainingColumn,
     track,
 )
@@ -32,7 +31,7 @@ class SquarePackingExp(Experiment):
     # ------------------------------------------------------------------
     # Profile generation
     # ------------------------------------------------------------------
-    
+
     def _generate_profile(self, chip: Chip, tile: LogicalTile) -> List[Coord]:
         profile = []
         for i in range(chip.length - 1):
@@ -51,14 +50,16 @@ class SquarePackingExp(Experiment):
             self.chip.add_tile(self.tile, loc)
 
         return self.tile.circuit
-        
+
     # ------------------------------------------------------------------
     # Simulation
     # ------------------------------------------------------------------
 
-    def run(self, shots:int=50_000, max_errors:int=5_000, decoder:str = 'pymatching'):
+    def run(
+        self, shots: int = 50_000, max_errors: int = 5_000, decoder: str = "pymatching"
+    ):
         tasks = []
-        for loc in track(self.profile,description='Generating circuits...'):
+        for loc in track(self.profile, description="Generating circuits..."):
             tasks.append(
                 sinter.Task(
                     circuit=self._circuit_for_profile_loc(loc),
@@ -79,7 +80,9 @@ class SquarePackingExp(Experiment):
             BarColumn(),
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("/"),
-            TimeRemainingColumn(elapsed_when_finished=True),  # Shows estimated time left
+            TimeRemainingColumn(
+                elapsed_when_finished=True
+            ),  # Shows estimated time left
         ) as progress:
             task = progress.add_task("[cyan]Sampling...", total=shots)
 
@@ -88,7 +91,9 @@ class SquarePackingExp(Experiment):
             collected_stats: List[sinter.TaskStats] = sinter.collect(
                 num_workers=os.process_cpu_count() or os.cpu_count() or 1,
                 tasks=tasks,
-                decoders=[decoder], #TODO - move to package or experiment configuration file at some point 
+                decoders=[
+                    decoder
+                ],  # TODO - move to package or experiment configuration file at some point
                 max_shots=shots,
                 max_errors=max_errors,
                 progress_callback=prog_callback,

@@ -1,11 +1,11 @@
 """
 JSON import/export for qSNOW objects as flakes.
 
-All qSNOW objects support exporting as .flake files, which is a serialized qSNOW configuration 
+All qSNOW objects support exporting as .flake files, which is a serialized qSNOW configuration
 file containing all relevant attributes and information used to 1:1 regenerate the qSNOW object.
 
-The qSNOW serialization library supports round-tripping (1:1 import-export) of `Chip`, `LogicalTile` 
-(and code subclasses like `SCTile`), `SquarePackingExp`, and the generic `Experiment` through JSON 
+The qSNOW serialization library supports round-tripping (1:1 import-export) of `Chip`, `LogicalTile`
+(and code subclasses like `SCTile`), `SquarePackingExp`, and the generic `Experiment` through JSON
 files (.flake) files, capturing everything needed to rebuild the object with the exact same setup:
 
     from qsnow.helpers.serialize import export_json, import_json, import_latest
@@ -26,21 +26,21 @@ Notes:
     `initial_shift_fn`) are not serialized.
   - Every object's `Tag` (name/desc/metadata) round-trips; tiles additionally
     carry a `TileSpec` which contains tile-specific information. Specifically,
-    the arguements to the generator/generation function that produced the underlying 
+    the arguements to the generator/generation function that produced the underlying
     tile are passed here and used to regenerate the flake upon import.
   - Ruleset injection rules are fully serialized. Custom triggers/filters
     (beyond the built-in defaults) hold arbitrary callables and cannot be
-    serialized; a warning is raised if any are present at export (the handling of 
+    serialized; a warning is raised if any are present at export (the handling of
     serializing arbitrary callables is a TODO feature down the line)
   - Code subclasses (e.g. `SCTile`) are rebuilt through their own constructor
     using the spec's `generator_args`. Additional subclasses are registered with
     `register_tile_type()`.
   - Exports are stamped with `format_version`; older flakes are upgraded in
-    memory on import if the exist within the default data configuration file. 
+    memory on import if the exist within the default data configuration file.
 
 Any change to an export's structure must:
-    1. Bump FORMAT_VERSION, 
-    2. Register a matching `@_migration` step, and 
+    1. Bump FORMAT_VERSION,
+    2. Register a matching `@_migration` step, and
     3. Check in a new golden fixture under tests/helpers/fixtures/ (see the migration section).
 """
 
@@ -84,6 +84,7 @@ FORMAT_VERSION = 1
 
 # TODO - move migrations to seperate folder, similar to the setup for the PHP Laravel model migrations (1 migration -> 1 file perhaps)
 _MIGRATIONS: Dict[int, Callable[[Dict], Dict]] = {}
+
 
 def _migration(from_version: int):
     """Decorator registering an upgrade step from `from_version` to `from_version + 1`."""
@@ -129,8 +130,8 @@ def _find_repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
-#TODO - consider moving this to platform specific cache location (like .)
-#TODO - move the default to be a part of the package-wide configuration file when refactoring for package distribution
+# TODO - consider moving this to platform specific cache location (like .)
+# TODO - move the default to be a part of the package-wide configuration file when refactoring for package distribution
 # Default export root: `.qsnow/` at the repo root. Override with set_data_dir()
 # for tests, notebooks, or an absolute location.
 _DEFAULT_DATA_DIR = _find_repo_root() / "data"
@@ -200,7 +201,8 @@ def _label(obj: Any) -> str:
         case _:
             raise TypeError(f"Cannot serialize object of type {type(obj).__name__}.")
 
-#TODO - add docstrings to public functions (and relevant private functions if appropriate)
+
+# TODO - add docstrings to public functions (and relevant private functions if appropriate)
 
 # ------------------------------------------------------------------
 # Coordinate helpers (JSON object keys must be strings)
@@ -447,10 +449,11 @@ def _experiment_headings(exp: Experiment, kind: str) -> Dict:
         "tag": tag_to_dict(exp.tag),
         "config": exp.config,
         "exp": {},
-        "results_refs": exp.results_refs
+        "results_refs": exp.results_refs,
     }
 
-#TODO - remove or move this full noise-injected circuit to a compressed export format
+
+# TODO - remove or move this full noise-injected circuit to a compressed export format
 # def square_packing_to_dict(exp: SquarePackingExp) -> Dict:
 #     data = _experiment_headings(exp, "SquarePackingExp")
 #     data["exp"] = {
@@ -489,6 +492,7 @@ def _experiment_headings(exp: Experiment, kind: str) -> Dict:
 #     exp.results_refs = data["results_refs"]
 #     return exp
 
+
 def square_packing_to_dict(exp: SquarePackingExp) -> Dict:
     data = _experiment_headings(exp, "SquarePackingExp")
     data["exp"] = {
@@ -505,7 +509,7 @@ def square_packing_from_dict(data: Dict) -> SquarePackingExp:
     exp = SquarePackingExp(
         chip=chip_from_dict(payload["chip"]),
         tile=tile_from_dict(payload["tile"]),
-        profile=payload["profile"]
+        profile=payload["profile"],
     )
     exp.tag = tag_from_dict(data["tag"])
     exp.config = data["config"]
@@ -571,7 +575,9 @@ def export_results(
     if path is None:
         stamp = datetime.now().strftime(_TIMESTAMP_FORMAT)
         path = (
-            _DATA_DIR / _subfolder(exp) / f"results_{label or _label(exp)}_{stamp}.flake"
+            _DATA_DIR
+            / _subfolder(exp)
+            / f"results_{label or _label(exp)}_{stamp}.flake"
         )
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -613,13 +619,15 @@ def from_dict(data: Dict) -> Any:
             return experiment_from_dict(data)
         case "ExperimentResults":
             return results_from_dict(data)
-        case str() if kind in _TILE_IMPORTERS or kind is not None and "base_circuit" in data:
+        case str() if (
+            kind in _TILE_IMPORTERS or kind is not None and "base_circuit" in data
+        ):
             return tile_from_dict(data)
         case _:
             raise ValueError(
                 f"Unrecognized or missing '__qsnow__' type marker: {kind!r}."
             )
-        
+
 
 def export_flake(
     obj: Any,
@@ -630,18 +638,18 @@ def export_flake(
     indent: Optional[int] = 2,
 ) -> Path:
     """
-    Serialize `obj` and export it as a `.flake` file, a JSON serialization of the qSNOW object. 
-    
+    Serialize `obj` and export it as a `.flake` file, a JSON serialization of the qSNOW object.
+
     The function returns the written path.
 
     With no `path`, the file is auto-organized under the data root as
     `data/<kind>/<obj name>_<label>_<timestamp>.flake`, where:
-     - `<kind>` is the general plural categorization of the object (e.g., chips/tiles/experiments, etc.), 
+     - `<kind>` is the general plural categorization of the object (e.g., chips/tiles/experiments, etc.),
      - `<obj name>`is always the object type (e.g., chip/tile/experiment)
      - `<label>` defaults to a descriptor derived from the object (e.g. `chip_5x5_...`, `tile_rsc_memory_z_d3_...`).
      - `<timestamp> is (shockingly) the timestamp of when object was saved.
 
-    Pass `label` to override the descriptor, or `path` for full control. Importantly, if `path` is specified then the default 
+    Pass `label` to override the descriptor, or `path` for full control. Importantly, if `path` is specified then the default
     naming (inc. `.flake` file extension) will not be applied.
 
     `desc` sets a freeform description on the object's tag before writing, so
@@ -695,7 +703,9 @@ def list_exports(pattern: str = "*", kind: Optional[str] = None) -> List[Path]:
     return sorted(matches, key=lambda p: p.stat().st_mtime, reverse=True)
 
 
-def summarize_exports(pattern: str = "*", kind: Optional[str] = None) -> Dict[Path, Optional[str]]:
+def summarize_exports(
+    pattern: str = "*", kind: Optional[str] = None
+) -> Dict[Path, Optional[str]]:
     """
     Map each export matching `pattern`/`kind` (newest first) to its tag `desc`,
     making the data folder browsable without opening files.

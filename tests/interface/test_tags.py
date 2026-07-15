@@ -8,8 +8,8 @@ shared one tag instance. The tests here assert identity and isolation directly,
 parametrized over every tagged kind, so the bug class cannot reappear silently.
 """
 
-import stim
 import pytest
+import stim
 
 from qsnow.experiments.experiment import Experiment
 from qsnow.experiments.squarepacking.game import SquarePackingExp

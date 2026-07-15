@@ -28,7 +28,13 @@ class Grid:
     _qubits: Dict[Coord, Qubit]
     _index: Optional[Tuple[List[Coord], STRtree]]
 
-    def __init__(self, length: int, height: int, origin: Coord = (0, 0), tag: Optional[Tag] = None):
+    def __init__(
+        self,
+        length: int,
+        height: int,
+        origin: Coord = (0, 0),
+        tag: Optional[Tag] = None,
+    ):
         if length < 1 or height < 1:
             raise ValueError(
                 f"Grid length and height must be >= 1. Got length={length}, height={height}."

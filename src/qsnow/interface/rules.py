@@ -82,6 +82,7 @@ _ANNOTATION_OPS = [
 # Operational bool helpers
 # ------------------------------------------------------------------
 
+
 def is_noise_channel(name) -> bool:
     return name in _NOISE_CHANNEL_OPS
 
@@ -117,6 +118,7 @@ def is_annotation(name) -> bool:
 # ------------------------------------------------------------------
 # Rule triggers -> When to trigger the rule
 # ------------------------------------------------------------------
+
 
 # TODO - move these to a _default_triggers/_default_filters file or something along those lines
 def _blank_trigger(targ_indexes: List[List[int]], qubits: Dict[int, Qubit]) -> bool:
@@ -229,7 +231,9 @@ def _z_measures_filter(
 
 
 # TODO - move these to a rule_types or something along those lines
-type TriggerFunc = Callable[[List[List[int]], Dict[int, Qubit]], bool]  # specifies when to trigger rule
+type TriggerFunc = Callable[
+    [List[List[int]], Dict[int, Qubit]], bool
+]  # specifies when to trigger rule
 type FilterFunc = Callable[
     [List[List[int]], Dict[int, Qubit]], List[List[int]]
 ]  # specifies what (qubits) to trigger the rule on

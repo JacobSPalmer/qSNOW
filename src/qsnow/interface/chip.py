@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from random import uniform
-from typing import Dict, Optional, Tuple, List
+from typing import Dict, List, Optional, Tuple
 from warnings import warn
 
 from scipy.stats import truncnorm
@@ -50,7 +50,9 @@ class Chip(Grid):
     @classmethod
     def from_tile(cls, tile: LogicalTile):
         "Chip constructor that builds a chip fit to a specific"
-        l = tile.length // 2   # Because height and length get converted to 0 indexed 2L x 2H chip
+        l = (
+            tile.length // 2
+        )  # Because height and length get converted to 0 indexed 2L x 2H chip
         h = tile.height // 2
         return cls(l, h, noise_map=None, tiles={(0, 0): tile})
 
@@ -164,7 +166,7 @@ class Chip(Grid):
         """
         Pop and clean the tile at specified index in `Chip.tiles` list.
 
-        Important to note, this does not delete the tile object but instead scrubs the qubits 
+        Important to note, this does not delete the tile object but instead scrubs the qubits
         within the tile, removes the chip from the tile (and vice versa), and returns the clean tile.
         """
         if not index < len(self.tiles):

@@ -63,7 +63,9 @@ class LogicalTile(Grid):
         # Resolved here (before the Grid super().__init__ below) so they are usable
         # during init; the tag is passed through to Grid, which stores this same object.
         self.tag = tag if tag is not None else Tag()
-        self.spec = spec if spec is not None else TileSpec(tile_type=type(self).__name__)
+        self.spec = (
+            spec if spec is not None else TileSpec(tile_type=type(self).__name__)
+        )
 
         # NOTE - This initial update is made outside _update since the circuit must be initialized first
         self._base_circuit = base_circuit.without_noise().copy()
@@ -186,8 +188,7 @@ class LogicalTile(Grid):
 
     @property
     def dims(self) -> Tuple[int, int]:
-        return (self.length // 2, self.height //2)
-
+        return (self.length // 2, self.height // 2)
 
     def qubit_at_index(self, index: int) -> Optional[Qubit]:
         """
@@ -285,10 +286,10 @@ class LogicalTile(Grid):
                     shifted_circuit.append_from_stim_program_text(
                         self._format_instruction_to_str(
                             name=instr.name,
-                            targets=[q.qubit_value for q in instr.targets_copy()], # type: ignore
-                            arg=list(shift_function(*instr.gate_args_copy())), # type: ignore
+                            targets=[q.qubit_value for q in instr.targets_copy()],  # type: ignore
+                            arg=list(shift_function(*instr.gate_args_copy())),  # type: ignore
                         )
-                    )  
+                    )
                 case _:
                     shifted_circuit.append(instr)
         return shifted_circuit
@@ -311,7 +312,9 @@ class LogicalTile(Grid):
     def copy(self) -> LogicalTile:
         """Return a fresh uninitialized copy of the circuit."""
         # deepcopy so the copy never shares mutable tag/spec state (dicts included)
-        return LogicalTile(self.base_circuit, tag=deepcopy(self.tag), spec=deepcopy(self.spec))
+        return LogicalTile(
+            self.base_circuit, tag=deepcopy(self.tag), spec=deepcopy(self.spec)
+        )
 
     def reset(self) -> None:
         """Resets the tile back to uninitialized state, removing it from any active chip and housekeeping qubit statuses."""
@@ -378,7 +381,7 @@ class LogicalTile(Grid):
     # ------------------------------------------------------------------
 
     # TODO - make debug_tags a global configuration flag when that refactor is up
-    def _inject_circuit_noise(self, debug_tags = False) -> Circuit:
+    def _inject_circuit_noise(self, debug_tags=False) -> Circuit:
         circ = Circuit()
         i2q = self._extract_i2q_map()
         for instr in self._yield_circuit_instructions(flatten=True):
@@ -401,10 +404,12 @@ class LogicalTile(Grid):
                                         targets=[i for i in l],
                                         # TODO - move the determination of noise value to be handled by ruleset to enable arbitrary granular control of scaling
                                         arg=[
-                                            mean([i2q.get(i).noise.p for i in l]) # type: ignore
+                                            mean([i2q.get(i).noise.p for i in l])  # type: ignore
                                             * c.scalar
-                                        ],  
-                                        tag=f"{rule.operation}:{rule.trigger} -> {c.channel}:{c.filter}" if debug_tags else None
+                                        ],
+                                        tag=f"{rule.operation}:{rule.trigger} -> {c.channel}:{c.filter}"
+                                        if debug_tags
+                                        else None
                                         if rule.name is None
                                         else rule.name,
                                     )
@@ -419,10 +424,12 @@ class LogicalTile(Grid):
                                         name=c.channel,
                                         targets=l,
                                         arg=[
-                                            mean([i2q.get(i).noise.p for i in l]) # type: ignore
+                                            mean([i2q.get(i).noise.p for i in l])  # type: ignore
                                             * c.scalar
                                         ],  # type: ignore
-                                        tag=f"{rule.operation}:{rule.trigger} -> {c.channel}:{c.filter}" if debug_tags else None
+                                        tag=f"{rule.operation}:{rule.trigger} -> {c.channel}:{c.filter}"
+                                        if debug_tags
+                                        else None
                                         if rule.name is None
                                         else rule.name,
                                     )
