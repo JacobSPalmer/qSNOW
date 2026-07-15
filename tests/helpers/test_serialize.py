@@ -98,15 +98,14 @@ class TestExperimentRoundTrip:
         from qsnow.experiments.squarepacking.game import SquarePackingExp
 
         chip.generate_random_noise()
-        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3), bad=0.01)
+        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
         exp.desc = "square packing on a 5x5 chip"
 
         restored = from_dict(to_dict(exp))
 
         assert isinstance(restored, SquarePackingExp)
-        assert restored.bad == 0.01
         assert restored.desc == "square packing on a 5x5 chip"
-        assert restored.profile.keys() == exp.profile.keys()
+        assert restored.profile == exp.profile
         assert {c: q.noise.p for c, q in restored.chip.grid.items()} == {
             c: q.noise.p for c, q in chip.grid.items()
         }
@@ -128,7 +127,7 @@ class TestExperimentRoundTrip:
             "results_refs",
             "exp",
         }
-        assert set(data["exp"].keys()) == {"chip", "tile", "bad", "profile"}
+        assert set(data["exp"].keys()) == {"chip", "tile", "profile"}
 
     def test_generic_experiment_round_trips(self):
         from qsnow.experiments.experiment import Experiment

@@ -45,7 +45,7 @@ class LogicalTile(Grid):
 
     def __init__(
         self,
-        circuit: Circuit,
+        base_circuit: Circuit,
         origin: Coord = (0, 0),
         *,
         initial_shift: Optional[ShiftFunction] = None,
@@ -66,8 +66,8 @@ class LogicalTile(Grid):
         self.spec = spec if spec is not None else TileSpec(tile_type=type(self).__name__)
 
         # NOTE - This initial update is made outside _update since the circuit must be initialized first
-        self._base_circuit = circuit.without_noise().copy()
-        self._circuit = circuit.without_noise().copy()
+        self._base_circuit = base_circuit.without_noise().copy()
+        self._circuit = base_circuit.without_noise().copy()
         self._c2i = self._extract_c2i_map()
 
         # NOTE - This is the only time that _base_circuit should ever be updated is with the initial_shift, as it is used in copying this tile as a template for another
@@ -285,10 +285,10 @@ class LogicalTile(Grid):
                     shifted_circuit.append_from_stim_program_text(
                         self._format_instruction_to_str(
                             name=instr.name,
-                            targets=[q.qubit_value for q in instr.targets_copy()],
-                            arg=list(shift_function(*instr.gate_args_copy())),
+                            targets=[q.qubit_value for q in instr.targets_copy()], # type: ignore
+                            arg=list(shift_function(*instr.gate_args_copy())), # type: ignore
                         )
-                    )  # type: ignore
+                    )  
                 case _:
                     shifted_circuit.append(instr)
         return shifted_circuit
@@ -377,7 +377,8 @@ class LogicalTile(Grid):
     # Noise channel injection
     # ------------------------------------------------------------------
 
-    def _inject_circuit_noise(self) -> Circuit:
+    # TODO - make debug_tags a global configuration flag when that refactor is up
+    def _inject_circuit_noise(self, debug_tags = False) -> Circuit:
         circ = Circuit()
         i2q = self._extract_i2q_map()
         for instr in self._yield_circuit_instructions(flatten=True):
@@ -400,10 +401,10 @@ class LogicalTile(Grid):
                                         targets=[i for i in l],
                                         # TODO - move the determination of noise value to be handled by ruleset to enable arbitrary granular control of scaling
                                         arg=[
-                                            mean([i2q.get(i).noise.p for i in l])
+                                            mean([i2q.get(i).noise.p for i in l]) # type: ignore
                                             * c.scalar
-                                        ],  # type: ignore
-                                        tag=f"{rule.operation}:{rule.trigger} -> {c.channel}:{c.filter}"
+                                        ],  
+                                        tag=f"{rule.operation}:{rule.trigger} -> {c.channel}:{c.filter}" if debug_tags else None
                                         if rule.name is None
                                         else rule.name,
                                     )
@@ -418,10 +419,10 @@ class LogicalTile(Grid):
                                         name=c.channel,
                                         targets=l,
                                         arg=[
-                                            mean([i2q.get(i).noise.p for i in l])
+                                            mean([i2q.get(i).noise.p for i in l]) # type: ignore
                                             * c.scalar
                                         ],  # type: ignore
-                                        tag=f"{rule.operation}:{rule.trigger} -> {c.channel}:{c.filter}"
+                                        tag=f"{rule.operation}:{rule.trigger} -> {c.channel}:{c.filter}" if debug_tags else None
                                         if rule.name is None
                                         else rule.name,
                                     )

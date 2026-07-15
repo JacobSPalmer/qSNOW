@@ -1,0 +1,12 @@
+{
+    "__qsnow__": "ExperimentResults",
+    "format_version": 1,
+    "experiment": "experiment_squarepacking_rsc_memory_z_d3_2026-07-14_15-05-46.flake",
+    "desc": "",
+    "run_config": {
+        "shots": 50000,
+        "max_errors": 5000
+    },
+    "results": {},
+    "stats": {}
+}

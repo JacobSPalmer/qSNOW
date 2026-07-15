@@ -21,8 +21,7 @@ from qsnow.interface.models import Coord
 class SquarePackingExp(Experiment):
     chip: Chip
     tile: LogicalTile
-    bad: float = 0.005
-    profile: Dict[Coord, Any] = field(default_factory=dict)
+    profile: List[Coord] = field(default_factory=list)
     results: Dict = field(default_factory=dict)
 
     def __post_init__(self):
@@ -33,49 +32,39 @@ class SquarePackingExp(Experiment):
     # ------------------------------------------------------------------
     # Profile generation
     # ------------------------------------------------------------------
-
-    def _generate_profile(self, chip: Chip, tile: LogicalTile):
-        profile = {}
+    
+    def _generate_profile(self, chip: Chip, tile: LogicalTile) -> List[Coord]:
+        profile = []
         for i in range(chip.length - 1):
             for j in range(chip.height - 1):
                 origin = (i, j)
                 bound = (i + tile.length, j + tile.height)
                 if chip.is_valid_tile_placement(origin, bound):
-                    profile[(float(origin[0]), float(origin[1]))] = {
-                        "origin": origin,
-                        "bound": (bound[0] - 1, bound[1] - 1),
-                        "circuit": None,
-                    }
+                    profile.append(origin)
         print(f"{len(profile)} possible valid placements will be simulated!")
         return profile
 
-    def create_profile(self):
-        tile = self.tile.copy()
+    def _circuit_for_profile_loc(self, loc: Coord):
+        if self.tile.initialized() and self.tile.chip == self.chip:
+            self.tile.shift_to(loc)
+        else:
+            self.chip.add_tile(self.tile, loc)
 
-        self.chip.add_tile(tile, (0, 0))
-        self.profile[(0, 0)]["circuit"] = tile.circuit
-
-        for k, v in track(
-            self.profile.items(),
-            description=f"Generating {len(self.profile)} noise-injected circuits ...",
-        ):
-            tile.shift_to(k)
-            self.profile[k]["circuit"] = tile.circuit.copy()
-
-        self.chip.pop_tile(0)
-
+        return self.tile.circuit
+        
     # ------------------------------------------------------------------
     # Simulation
     # ------------------------------------------------------------------
 
-    def run(self, shots=50_000, max_errors=5_000):
-        tasks = [
-            sinter.Task(
-                circuit=p["circuit"],
-                json_metadata={"loc": loc, "shots": shots, "max_errors": max_errors},
+    def run(self, shots:int=50_000, max_errors:int=5_000, decoder:str = 'pymatching'):
+        tasks = []
+        for loc in track(self.profile,description='Generating circuits...'):
+            tasks.append(
+                sinter.Task(
+                    circuit=self._circuit_for_profile_loc(loc),
+                    json_metadata={"loc": loc},
+                )
             )
-            for loc, p in self.profile.items()
-        ]
 
         def _create_sinter_progress_callback(progress: Progress, task_id):
             def callback(progress_data: sinter.Progress):
@@ -84,22 +73,22 @@ class SquarePackingExp(Experiment):
 
             return callback
 
+        # TODO - have timer convert from estimated time left to elapsed time when finished
         with Progress(
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-            TimeElapsedColumn(),  # Shows time spent so far
             TextColumn("/"),
-            TimeRemainingColumn(),  # Shows estimated time left
+            TimeRemainingColumn(elapsed_when_finished=True),  # Shows estimated time left
         ) as progress:
             task = progress.add_task("[cyan]Sampling...", total=shots)
 
             prog_callback = _create_sinter_progress_callback(progress, task)
 
             collected_stats: List[sinter.TaskStats] = sinter.collect(
-                num_workers=os.cpu_count(),
+                num_workers=os.process_cpu_count() or os.cpu_count() or 1,
                 tasks=tasks,
-                decoders=["pymatching"],
+                decoders=[decoder], #TODO - move to package or experiment configuration file at some point 
                 max_shots=shots,
                 max_errors=max_errors,
                 progress_callback=prog_callback,
@@ -109,16 +98,13 @@ class SquarePackingExp(Experiment):
         self.results = {
             tuple(s.json_metadata["loc"]): {
                 "strong_id": s.strong_id,
-                "decoder": s.decoder,
-                "json_metadata": s.json_metadata,
                 "shots": s.shots,
-                "ler": s.errors / s.shots,
                 "errors": s.errors,
+                "ler": s.errors / s.shots,
                 "discards": s.discards,
-                "seconds": s.seconds,
+                "seconds": round(s.seconds, 3),
             }
             for s in collected_stats
         }
-
-        self.config.update(shots=shots, max_errors=max_errors)
+        self.config.update(shots=shots, max_errors=max_errors, decoder=decoder)
         return self.results

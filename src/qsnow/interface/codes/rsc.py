@@ -23,7 +23,7 @@ class SCTile(LogicalTile):
             code_task=f"surface_code:rotated_{t}", distance=d, rounds=r
         )
         super().__init__(
-            circuit=generator(task, distance, rounds).flattened(),
+            base_circuit=generator(task, distance, rounds).flattened(),
             initial_shift=None,
             x_buffer=1,
             y_buffer=1,

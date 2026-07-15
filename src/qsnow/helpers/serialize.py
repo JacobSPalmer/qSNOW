@@ -323,13 +323,14 @@ def tile_to_dict(tile: LogicalTile) -> Dict:
     # A tile's grid dimensions are fixed at construction (circuit extent at the construction origin + buffers), while `add_tile`/`shift_by` move the tile
     # without resizing it. So a placed tile is exported against its base circuit and reconstructed fresh at (0, 0); `chip_from_dict` then
     # re-places it at 'origin' via `add_tile`, mirroring the original workflow. An unplaced tile keeps its constructor origin directly.
+    # TODO - consider always setting to base_circuit and standarizing this everywhere
     ref_circuit = tile._base_circuit if tile.initialized() else tile._circuit
     coords = list(ref_circuit.get_final_qubit_coordinates().values())
     dims = tuple(int(max(c) + 1) for c in zip(*coords))[:2]
     return {
         "__qsnow__": type(tile).__name__,
         "format_version": FORMAT_VERSION,
-        "circuit": str(tile.base_circuit),
+        "base_circuit": str(tile.base_circuit),
         "origin": list(tile.origin),
         "construct_origin": [0, 0] if tile.initialized() else list(tile.origin),
         "x_buffer": tile.length - dims[0],
@@ -342,7 +343,7 @@ def tile_to_dict(tile: LogicalTile) -> Dict:
 
 def _logical_tile_from_dict(data: Dict) -> LogicalTile:
     return LogicalTile(
-        circuit=Circuit(data["circuit"]),
+        base_circuit=Circuit(data["base_circuit"]),
         origin=tuple(data["construct_origin"]),
         x_buffer=data["x_buffer"],
         y_buffer=data["y_buffer"],
@@ -445,25 +446,55 @@ def _experiment_headings(exp: Experiment, kind: str) -> Dict:
         "format_version": FORMAT_VERSION,
         "tag": tag_to_dict(exp.tag),
         "config": exp.config,
-        "results_refs": exp.results_refs,
         "exp": {},
+        "results_refs": exp.results_refs
     }
 
+#TODO - remove or move this full noise-injected circuit to a compressed export format
+# def square_packing_to_dict(exp: SquarePackingExp) -> Dict:
+#     data = _experiment_headings(exp, "SquarePackingExp")
+#     data["exp"] = {
+#         "chip": chip_to_dict(exp.chip),
+#         "tile": tile_to_dict(exp.tile),
+#         "bad": exp.bad,
+#         "profile": {
+#             _coord_to_key(loc): {
+#                 "origin": list(p["origin"]),
+#                 "bound": list(p["bound"]),
+#                 "circuit": str(p["circuit"]) if p.get("circuit") is not None else None,
+#             }
+#             for loc, p in exp.profile.items()
+#         },
+#     }
+#     return data
+
+# def square_packing_from_dict(data: Dict) -> SquarePackingExp:
+#     data = _migrate(data)
+#     payload = data["exp"]
+#     exp = SquarePackingExp(
+#         chip=chip_from_dict(payload["chip"]),
+#         tile=tile_from_dict(payload["tile"]),
+#         bad=payload["bad"],
+#         profile={
+#             _key_to_coord(key): {
+#                 "origin": tuple(p["origin"]),
+#                 "bound": tuple(p["bound"]),
+#                 "circuit": Circuit(p["circuit"]) if p["circuit"] is not None else None,
+#             }
+#             for key, p in payload["profile"].items()
+#         },
+#     )
+#     exp.tag = tag_from_dict(data["tag"])
+#     exp.config = data["config"]
+#     exp.results_refs = data["results_refs"]
+#     return exp
 
 def square_packing_to_dict(exp: SquarePackingExp) -> Dict:
     data = _experiment_headings(exp, "SquarePackingExp")
     data["exp"] = {
         "chip": chip_to_dict(exp.chip),
         "tile": tile_to_dict(exp.tile),
-        "bad": exp.bad,
-        "profile": {
-            _coord_to_key(loc): {
-                "origin": list(p["origin"]),
-                "bound": list(p["bound"]),
-                "circuit": str(p["circuit"]) if p.get("circuit") is not None else None,
-            }
-            for loc, p in exp.profile.items()
-        },
+        "profile": exp.profile,
     }
     return data
 
@@ -474,15 +505,7 @@ def square_packing_from_dict(data: Dict) -> SquarePackingExp:
     exp = SquarePackingExp(
         chip=chip_from_dict(payload["chip"]),
         tile=tile_from_dict(payload["tile"]),
-        bad=payload["bad"],
-        profile={
-            _key_to_coord(key): {
-                "origin": tuple(p["origin"]),
-                "bound": tuple(p["bound"]),
-                "circuit": Circuit(p["circuit"]) if p["circuit"] is not None else None,
-            }
-            for key, p in payload["profile"].items()
-        },
+        profile=payload["profile"]
     )
     exp.tag = tag_from_dict(data["tag"])
     exp.config = data["config"]
@@ -590,7 +613,7 @@ def from_dict(data: Dict) -> Any:
             return experiment_from_dict(data)
         case "ExperimentResults":
             return results_from_dict(data)
-        case str() if kind in _TILE_IMPORTERS or kind is not None and "circuit" in data:
+        case str() if kind in _TILE_IMPORTERS or kind is not None and "base_circuit" in data:
             return tile_from_dict(data)
         case _:
             raise ValueError(
