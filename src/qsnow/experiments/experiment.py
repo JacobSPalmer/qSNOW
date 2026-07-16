@@ -2,8 +2,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
+from qsnow.experiments.progress import PhasedProgress
 from qsnow.interface.models import Tag
-
 
 class Experiment:
     """
@@ -41,6 +41,26 @@ class Experiment:
     @desc.setter
     def desc(self, value: Optional[str]) -> None:
         self.tag.desc = value
+
+    def progress(
+        self, phases: Optional[int] = None, title: Optional[str] = None, **kwargs
+    ) -> PhasedProgress:
+        """
+        Create the shared phased progress display for this experiment's `run()`.
+
+        `phases` sizes the overall bar (one unit per phase; omit for an
+        indeterminate overall row). Subclasses open each sequential phase via
+        `PhasedProgress.phase()` / `PhasedProgress.track()`::
+
+            with self.progress(phases=2) as prog:
+                for item in prog.track(items, "Generating circuits"):
+                    ...
+                with prog.phase("Sampling circuits", total=shots) as ph:
+                    ...  # ph.advance(n) from a callback
+        """
+        return PhasedProgress(
+            title or f"Experiment: {type(self).__name__}", phases=phases, **kwargs
+        )
 
     def run(self, *args, **kwargs) -> Dict:
         """Execute the experiment, populating and returning `self.results`.
@@ -85,6 +105,9 @@ class Experiment:
         if self.source is not None:
             serialize.export_flake(self, self.source)
         return results_path
+    
+    def show(self, results, style_fn):
+        pass
 
 
 @dataclass(frozen=True)

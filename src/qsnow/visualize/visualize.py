@@ -175,6 +175,34 @@ def packing_profile_style(chip: Chip, profiles: Dict[Any, Dict]):
 
     return VisualizationStyle(style_fn=style_fn)
 
+def custom_heatmap_style(
+    chip: Chip, coord_float_map: Dict[Tuple[float, float], float], *, colorscale: str = "hot_r", limits: Optional[Tuple[float, float]] = None
+) -> VisualizationStyle:
+    if limits:
+        cmin, cmax = limits
+    else:
+        cmin, cmax = min(coord_float_map.values()), max(coord_float_map.values())
+
+    def qubit_style_fn(qubit: Qubit) -> QubitStyle:
+        # raw value; the colorscale mapping is applied trace-wide by `visualize()`
+        ler = coord_float_map.get(qubit.loc)
+        return QubitStyle(
+            color=ler or 'lightgray',
+            custom_hovertext=_hovertext_format(
+                f"({qubit.loc[0]}, {qubit.loc[1]})",
+                ler=f"{ler:.4f}" if ler else None,
+            ),
+        )
+    
+    return VisualizationStyle(
+        style_fn=qubit_style_fn,
+        colorbar=ColorbarSpec(
+            colorscale=colorscale, cmin=cmin, cmax=cmax, label="Noise (p)"
+        ),
+        logical_style=None,
+    )
+    
+
 
 def area_selection_style(chip: Chip, selection: Dict[Any, Qubit], show_logicals=False):
     def style_fn(qubit: Qubit) -> QubitStyle:
@@ -242,7 +270,7 @@ def visualize(
         x, y = qubit.loc
         s = style.style_fn(qubit)
 
-        if style.colorbar is not None:
+        if style.colorbar is not None and not isinstance(s.color, str):
             span = style.colorbar.cmax - style.colorbar.cmin
             norm = (float(s.color) - style.colorbar.cmin) / span if span else 0.5
             fillcolor = sample_colorscale(

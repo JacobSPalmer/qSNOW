@@ -9,7 +9,7 @@ from scipy.stats import truncnorm
 from qsnow.visualize import VisualizationStyle, default_style, visualize
 
 from .grid import Grid
-from .models import Coord, NoiseProfile, Qubit
+from .models import Coord, NoiseProfile, Qubit, Tag
 from .tile import LogicalTile
 
 
@@ -25,10 +25,14 @@ class Chip(Grid):
     occupies box(0, 0, 10, 10).
 
     Typical workflow:
-      1. Instantiate Chip(L, H) and assign noise to individual qubits.
-      2. Build and place LogicalTiles within the chip by specifying origin points within the (2L x 2H) chip.
-      3. Retrieve and modify noise-injected circuits by accessing `tile.circuit` or shifting tiles to modify underlying Stim circuit.
+      1. Instantiate Chip(L, H) and assign noise to individual qubits (or using the pre-defined noise samplers).
+      2. Build, place, and shift LogicalTiles within the chip by specifying origin points or movement shifts within the (2L x 2H) chip.
+      3. Retrieve and modify noise-injected circuits by accessing `tile.circuit`.
     """
+
+    # ------------------------------------------------------------------
+    # Initialization
+    # ------------------------------------------------------------------
 
     def __init__(
         self,
@@ -37,8 +41,9 @@ class Chip(Grid):
         *,
         noise_map: Optional[Dict[Coord, NoiseProfile]] = None,
         tiles: Optional[Dict[Coord, LogicalTile]] = None,
+        tag: Optional[Tag] = None,
     ):
-        super().__init__(2 * length, 2 * height)
+        super().__init__(2 * length, 2 * height, tag=tag)
         self._fill_checkerboard()
         self.tiles: List[LogicalTile] = []
 
@@ -56,6 +61,14 @@ class Chip(Grid):
         h = tile.height // 2
         return cls(l, h, noise_map=None, tiles={(0, 0): tile})
 
+    def _fill_checkerboard(self) -> None:
+        """Populate all valid checkerboard positions with default Qubits."""
+        for x in range(self.length):
+            for y in range(self.height):
+                if x % 2 == y % 2:
+                    coord: Coord = (x, y)
+                    self._qubits[coord] = Qubit(loc=coord)
+                    
     # ------------------------------------------------------------------
     # Properties
     # ------------------------------------------------------------------
@@ -69,18 +82,6 @@ class Chip(Grid):
     def tile_map(self) -> Dict[Coord, LogicalTile]:
         """Returns a map of chip's logical tile by the respective tile origin as dict."""
         return {t.origin: t for t in self.tiles}
-
-    # ------------------------------------------------------------------
-    # Initialization
-    # ------------------------------------------------------------------
-
-    def _fill_checkerboard(self) -> None:
-        """Populate all valid checkerboard positions with default Qubits."""
-        for x in range(self.length):
-            for y in range(self.height):
-                if x % 2 == y % 2:
-                    coord: Coord = (x, y)
-                    self._qubits[coord] = Qubit(loc=coord)
 
     # ------------------------------------------------------------------
     # Noise manipulation
@@ -98,7 +99,7 @@ class Chip(Grid):
 
     def generate_gaussian_noise(self, mean, deviation, rng=None):  # base26 "argonne"
         dist = truncnorm(
-            (0.000001 - mean) / deviation,
+            (0.0000000001 - mean) / deviation,
             (1 - mean) / deviation,
             loc=mean,
             scale=deviation,
@@ -242,3 +243,19 @@ class Chip(Grid):
     def show(self, style: Optional[VisualizationStyle] = None) -> None:
         """Display a visualization of the chip's qubit layout."""
         visualize(self, style=style or default_style, show=True)
+
+
+    # ------------------------------------------------------------------
+    # Input/ouput
+    # ------------------------------------------------------------------
+
+    def copy(self, copy_tiles: bool = False) -> Chip:
+        """
+        Returns a deepcopy of the chip with all parameters. 
+        
+        Optionally, the tiles placed on the chips can be deep copied as well.
+        """
+        new_chip = Chip(self.length // 2, self.height // 2, noise_map=self.noise_map, tag=self.tag)
+        if copy_tiles:
+            new_chip.add_tiles({c:t.copy() for c, t in self.tile_map.items()})
+        return new_chip
