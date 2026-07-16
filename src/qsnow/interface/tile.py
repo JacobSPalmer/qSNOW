@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import logging
 from copy import deepcopy
 from statistics import mean
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
-import logging
 logger = logging.getLogger(__name__)
 
 from stim import Circuit
@@ -351,7 +351,9 @@ class LogicalTile(Grid):
         if not self.chip.is_empty_region_subset(
             new_origin, new_bound, self.origin, self.bound
         ):
-            logger.debug(f"Current (O:{self.origin}, B:{self.bound}) ->  New (O:{new_origin}, B:{new_bound})")
+            logger.debug(
+                f"Current (O:{self.origin}, B:{self.bound}) ->  New (O:{new_origin}, B:{new_bound})"
+            )
             raise ValueError(
                 "Invalid shift operation that violates tile overlap constraints. This shift results in the tile overlapping an existing tile on chip."
             )

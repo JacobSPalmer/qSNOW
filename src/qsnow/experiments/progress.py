@@ -12,8 +12,9 @@ only how many phases it has (for the overall bar) and opens them one at a
 time with `phase()` or `track()`.
 """
 
+from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
-from typing import Any, Iterable, Iterator, Optional, Sequence, TypeVar
+from typing import Any, Optional, TypeVar
 
 from rich.progress import (
     BarColumn,
@@ -96,7 +97,7 @@ class PhasedProgress:
         self._phases = phases
         self._overall: Optional[TaskID] = None
 
-    def __enter__(self) -> "PhasedProgress":
+    def __enter__(self) -> PhasedProgress:
         self._progress.start()
         self._overall = self._progress.add_task(
             f"[bold]{self._title}", total=self._phases, overall=True

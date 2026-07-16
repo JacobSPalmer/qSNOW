@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, Union
 from qsnow.experiments.progress import PhasedProgress
 from qsnow.interface.models import Tag
 
+
 class Experiment:
     """
     Base class for all experiments.
@@ -105,7 +106,7 @@ class Experiment:
         if self.source is not None:
             serialize.export_flake(self, self.source)
         return results_path
-    
+
     def show(self, results, style_fn):
         pass
 

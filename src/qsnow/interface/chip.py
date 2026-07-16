@@ -68,7 +68,7 @@ class Chip(Grid):
                 if x % 2 == y % 2:
                     coord: Coord = (x, y)
                     self._qubits[coord] = Qubit(loc=coord)
-                    
+
     # ------------------------------------------------------------------
     # Properties
     # ------------------------------------------------------------------
@@ -244,18 +244,19 @@ class Chip(Grid):
         """Display a visualization of the chip's qubit layout."""
         visualize(self, style=style or default_style, show=True)
 
-
     # ------------------------------------------------------------------
     # Input/ouput
     # ------------------------------------------------------------------
 
     def copy(self, copy_tiles: bool = False) -> Chip:
         """
-        Returns a deepcopy of the chip with all parameters. 
-        
+        Returns a deepcopy of the chip with all parameters.
+
         Optionally, the tiles placed on the chips can be deep copied as well.
         """
-        new_chip = Chip(self.length // 2, self.height // 2, noise_map=self.noise_map, tag=self.tag)
+        new_chip = Chip(
+            self.length // 2, self.height // 2, noise_map=self.noise_map, tag=self.tag
+        )
         if copy_tiles:
-            new_chip.add_tiles({c:t.copy() for c, t in self.tile_map.items()})
+            new_chip.add_tiles({c: t.copy() for c, t in self.tile_map.items()})
         return new_chip

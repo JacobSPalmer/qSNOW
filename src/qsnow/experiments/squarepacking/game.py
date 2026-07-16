@@ -1,17 +1,17 @@
+import logging
 import os
-from dataclasses import dataclass, field, InitVar
-from typing import Dict, List, Literal, Optional
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
 
 import sinter
 
-import logging
 logger = logging.getLogger(__name__)
 
 from qsnow.experiments.experiment import Experiment, ExperimentResults
 from qsnow.experiments.progress import Phase
 from qsnow.interface.chip import Chip, LogicalTile
-from qsnow.interface.models import Coord, Tag
-from qsnow.visualize import visualize, VisualizationStyle, custom_heatmap_style
+from qsnow.interface.models import Coord
+from qsnow.visualize import VisualizationStyle, custom_heatmap_style, visualize
 
 
 @dataclass
@@ -20,9 +20,9 @@ class SquarePackingExp(Experiment):
     tile: LogicalTile
     profile: List[Coord] = field(default_factory=list)
     results: Dict = field(default_factory=dict)
-    
+
     def __post_init__(self):
-        #TODO - probably a better way to do this, but safest to always create a copy so as to not accidentally work on the same chip
+        # TODO - probably a better way to do this, but safest to always create a copy so as to not accidentally work on the same chip
         self.tile = self.tile.copy()
         self.chip = self.chip.copy()
         super().__init__()
@@ -41,8 +41,8 @@ class SquarePackingExp(Experiment):
                 bound = (i + tile.length, j + tile.height)
                 if chip.is_valid_tile_placement(origin, bound):
                     profile.append(origin)
-        
-        logger.info(f'{len(profile)} valid placements to sample')
+
+        logger.info(f"{len(profile)} valid placements to sample")
         return profile
 
     # ------------------------------------------------------------------
@@ -88,7 +88,7 @@ class SquarePackingExp(Experiment):
                     max_errors=max_errors,
                     progress_callback=_sinter_progress_callback(phase),
                 )
-            
+
             # sinter round-trips json_metadata through JSON, so 'loc' comes back as a list
             self.results = {
                 tuple(s.json_metadata["loc"]): {
@@ -105,6 +105,11 @@ class SquarePackingExp(Experiment):
 
         return self.results
 
-    def show(self, results: ExperimentResults, style_fn: Optional[VisualizationStyle] = None):
-        style = custom_heatmap_style(chip=self.chip, coord_float_map={k:v['ler'] for k, v in results.results.items()})
+    def show(
+        self, results: ExperimentResults, style_fn: Optional[VisualizationStyle] = None
+    ):
+        style = custom_heatmap_style(
+            chip=self.chip,
+            coord_float_map={k: v["ler"] for k, v in results.results.items()},
+        )
         visualize(chip=self.chip, style=style, show=True)
