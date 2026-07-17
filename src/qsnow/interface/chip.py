@@ -1,17 +1,20 @@
 from __future__ import annotations
 
-from random import uniform
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 from warnings import warn
 
-from scipy.stats import truncnorm
+from numpy.random import default_rng, SeedSequence
+from scipy.stats import truncnorm, uniform
 
 from qsnow.visualize import VisualizationStyle, default_style, visualize
 
+import qsnow as qsnow
 from .grid import Grid
 from .models import Coord, NoiseProfile, Qubit, Tag
 from .tile import LogicalTile
 
+if TYPE_CHECKING:
+    from numpy.random import Generator
 
 class Chip(Grid):
     """
@@ -86,6 +89,8 @@ class Chip(Grid):
     # ------------------------------------------------------------------
     # Noise manipulation
     # ------------------------------------------------------------------
+    def _generate_rng_seed(self):
+        return SeedSequence().entropy
 
     def set_noise_map(self, noise_map: Dict[Coord, NoiseProfile] | Dict[Coord, float]):
         for c, n in noise_map.items():
@@ -93,11 +98,42 @@ class Chip(Grid):
                 NoiseProfile(n.p) if isinstance(n, NoiseProfile) else NoiseProfile(n)
             )
 
-    def generate_random_noise(self, range: Tuple[float, float] = (0.01, 0.05)):
-        for q in self.qubits:
-            q.noise.p = round(uniform(range[0], range[1]), 5)
+    def generate_random_noise(self, range: Tuple[float, float] = (0.01, 0.05), seed: int | None = None):
+        """
+        Sets the `NoiseProfile.p` value for each qubit to a `BoundedFloat(0, 0.75)` randomly sampled from a uniform
+        distribution with an upper and lower bound of the range provided.
 
-    def generate_gaussian_noise(self, mean, deviation, rng=None):  # base26 "argonne"
+        The `rng` determines if the random value sampling with use a seeded generator. `rng` can be provided as
+        an integer value that will become the seed for an `np.random.Generator` or `None` (default).
+        """
+        if isinstance(seed, int):
+            rng_seed = seed
+        else:
+            rng_seed = self._generate_rng_seed()
+        rng = default_rng(seed=rng_seed)
+        
+        self.tag.metadata['noise_model'] = {'name': 'uniform_random', 'range': range, 'seed': rng_seed}
+
+        dist = uniform(loc=range[0], scale=range[1])
+        for q in self.qubits:
+            q.noise.p = round(dist.rvs(1, random_state=rng))
+
+    def generate_gaussian_noise(self, mean, deviation, seed: int | None = None):  # base26 "argonne"
+        """
+        Sets the `NoiseProfile.p` value for each qubit to a `BoundedFloat(0, 0.75)` randomly sampled from a truncated gaussian
+        distribution with the mean and deviation provided.
+
+        The `rng` determines if the random value sampling with use a seeded generator. `rng` can be provided as a `np.random.Generator`, 
+        an integer value that will become the seed for an `np.random.Generator`, or `None` (default).
+        """
+        if isinstance(seed, int):
+            rng_seed = seed
+        else:
+            rng_seed = self._generate_rng_seed()
+        rng = default_rng(seed=rng_seed)
+        
+        self.tag.metadata['noise_model'] = {'name': 'gaussian', 'mean': mean, 'deviation': deviation, 'seed': rng_seed}
+
         dist = truncnorm(
             (0.0000000001 - mean) / deviation,
             (1 - mean) / deviation,

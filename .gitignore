@@ -12,3 +12,5 @@ scratch.ipynb
 data/
 notebooks/scratchbooks/
 .*cache/
+*.flake
+core_flakes/
