@@ -222,28 +222,46 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
   .header {{ margin: 20px 0 20px 0; max-width: 100%; }}
   h2 {{ font-size: 1rem; font-weight: 650; margin: 0; }}
   .desc {{ margin: 0.4rem 0 0; color: #616e7c; font-style: italic; }}
-  .stats-box span {{ flex-grow: 1; }}
-  .stats-heading dt {{ color: #000000; font-size: .7rem; font-style: italic; font-weight: 600;}}
-  .stats {{
+  /* row of stat boxes: boxes grow to fill leftover width and wrap onto new
+     rows once they'd drop below their minimum width, so the row never trails
+     off with a lone box hugging the left edge */
+  .stats-row {{
     display: flex;
     flex-wrap: wrap;
-    width: fit-content;
-    gap: 0.5rem 2.5rem;
+    gap: 0.75rem;
     margin: 1rem 0 0;
+  }}
+  .stat-box {{
+    flex: 1 1 220px;
     padding: 0.7rem 1.2rem;
     border: 1px solid #e4e7eb;
-    border-radius: 1px;
+    border-radius: 6px;
     background: #ffffff;
   }}
-  .stats div {{ display: flex; flex-direction: column; }}
-  .stats dl {{ border-radius: 8px; display: flex; flex-direction: row; }}
-  .stats dt {{
+  .stat-box-title {{
+    color: #000000;
+    font-size: 0.70rem;
+    font-style: bold;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin: 0 0 0.5rem;
+  }}
+  .stat-box dl {{
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.5rem 2rem;
+    margin: 0;
+  }}
+  .stat-box dl > div {{ display: flex; flex-direction: column; }}
+  .stat-box dt {{
     font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: #7b8794;
   }}
-  .stats dd {{
+  .stat-box dd {{
     margin: 0;
     font-size: 0.95rem;
     font-weight: 600;
@@ -255,16 +273,13 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
 <body>
 <div class="page">
 <div class="header">
-    <div class="stats" style="flex-grow: 1;">
-        <div class="row" class="stats" style="width:100%;">
-            <h2>qSNOW {title}</h2>
-            {desc}
-        </div>
-
+    <h2>qSNOW {title}</h2>
+    {desc}
+    <div class="stats-row">
         {stats}
     </div>
 </div>
-    <div class="figure" style="border: 1px solid #e4e7eb; border-radius: 1px;">{figure_div}</div>
+    <div class="figure" style="border: 1px solid #e4e7eb; border-radius: 8px;">{figure_div}</div>
 </div>
 </body>
 </html>
@@ -272,7 +287,10 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
 
 
 def _format_stat_box(title, stat_html):
-    return f'<span class="stats-box"><dl class="stats"><div class="row" style="width:100%;"><dt class = "stats-heading">{escape(title)}</dt></div>{stat_html}</dl></span>'
+    return (
+        f'<div class="stat-box"><p class="stat-box-title">{escape(title)}</p>'
+        f"<dl>{stat_html}</dl></div>"
+    )
 
 
 def _format_stat_rows(stats: Mapping[str, object]) -> str:
