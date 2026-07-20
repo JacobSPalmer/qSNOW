@@ -1,0 +1,2133 @@
+{
+  "__qsnow__": "ExperimentResults",
+  "format_version": 1,
+  "experiment": "experiment_d3-15x15_mean_0_001_2026-07-16_18-11-37.flake",
+  "desc": "Gaussian Noise (mean=0.001, dev=0.0005) with d3 RSC tiles on 15x15 chip",
+  "run_config": {
+    "shots": 50000,
+    "max_errors": 5000,
+    "decoder": "pymatching"
+  },
+  "results": {
+    "0,14": {
+      "strong_id": "68de2ab2e882c5deee8cfc63fe8b0628f51e31418ea98a9862987010288f8e72",
+      "shots": 50000,
+      "errors": 186,
+      "ler": 0.00372,
+      "discards": 0,
+      "seconds": 0.017
+    },
+    "0,20": {
+      "strong_id": "8f6f9219b059cccda95c0254eec83db876edfe1ea4bbaea466131dd18d45e9e7",
+      "shots": 50000,
+      "errors": 174,
+      "ler": 0.00348,
+      "discards": 0,
+      "seconds": 0.019
+    },
+    "0,16": {
+      "strong_id": "552e24000c430450ffa36566b2e3dc398c3d1bef8e57731e1cc233520c933a65",
+      "shots": 50000,
+      "errors": 154,
+      "ler": 0.00308,
+      "discards": 0,
+      "seconds": 0.019
+    },
+    "0,6": {
+      "strong_id": "56b4da33a81d44e07ef497644e10a0bb06f5e1132398f5e6212ca1ce57673543",
+      "shots": 50000,
+      "errors": 108,
+      "ler": 0.00216,
+      "discards": 0,
+      "seconds": 0.017
+    },
+    "0,0": {
+      "strong_id": "a3eb8c0057bafc8d694c5663c72298800dc7623db0831f08d3fa004de674147a",
+      "shots": 50000,
+      "errors": 122,
+      "ler": 0.00244,
+      "discards": 0,
+      "seconds": 0.017
+    },
+    "0,12": {
+      "strong_id": "eeeb5027f18343dd996bec7dc2d98eea446102ed333825a316c87d59c0415b00",
+      "shots": 50000,
+      "errors": 218,
+      "ler": 0.00436,
+      "discards": 0,
+      "seconds": 0.016
+    },
+    "0,8": {
+      "strong_id": "f9ab7156fddc1af58a9cbb10ec76e33dfd741ddcbade2add5accd632b3b0d244",
+      "shots": 50000,
+      "errors": 95,
+      "ler": 0.0019,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "0,4": {
+      "strong_id": "16e7ced2d2da0ae113ee31fd4aed243d57c3fb6ae0f9e6de7c1429f118d206e8",
+      "shots": 50000,
+      "errors": 171,
+      "ler": 0.00342,
+      "discards": 0,
+      "seconds": 0.017
+    },
+    "0,10": {
+      "strong_id": "49eee47622ef56b8b42973b9708442a99fee923b58563d4da1a207877c03ff87",
+      "shots": 50000,
+      "errors": 139,
+      "ler": 0.00278,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "0,22": {
+      "strong_id": "e14d07fe4c381c05b4650e1c67aaf654a83671221541bb9e5d7df3922e73d525",
+      "shots": 50000,
+      "errors": 143,
+      "ler": 0.00286,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "0,2": {
+      "strong_id": "34991a9d9008ea6210e7aed67be511646d3dc55bdf6ea31c28dfec61a6feffb2",
+      "shots": 50000,
+      "errors": 194,
+      "ler": 0.00388,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "0,18": {
+      "strong_id": "0b42e600e18cd546b949e2db2468c713cc2e56b785c80967daeaac8034136f46",
+      "shots": 50000,
+      "errors": 162,
+      "ler": 0.00324,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "1,5": {
+      "strong_id": "be67a1b1c7ae032f2d4fba2d768e2ee6ab179ea13f7bac009fab6362c9d84a97",
+      "shots": 50000,
+      "errors": 115,
+      "ler": 0.0023,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "1,1": {
+      "strong_id": "ef27bde8be08152415be0dc0a7ab9b84bbe9638d9d8b8ae4396ba8b291c5d5fd",
+      "shots": 50000,
+      "errors": 160,
+      "ler": 0.0032,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "1,3": {
+      "strong_id": "bfbafceaaf8de932c22c6c0b107a0e0b188d9d529fdae6b50bd761bf255e6672",
+      "shots": 50000,
+      "errors": 128,
+      "ler": 0.00256,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "1,7": {
+      "strong_id": "e973e4f5785afc2ac01776068cacc78be2f070db5a354328ed67f8c8e8b51e6a",
+      "shots": 50000,
+      "errors": 33,
+      "ler": 0.00066,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "1,9": {
+      "strong_id": "337f03d9bc2b8140b406f68db74c3daad1004df09051e1eece8b07f4e3df406a",
+      "shots": 50000,
+      "errors": 97,
+      "ler": 0.00194,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "1,15": {
+      "strong_id": "756143527fbbc78171081628d0349dcb2c4136ad5880db9e9aaaf6240c188250",
+      "shots": 50000,
+      "errors": 105,
+      "ler": 0.0021,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "1,17": {
+      "strong_id": "a61cdffd5f8c4669b2fe3ed625aaeac57f5762c34f303ad38f0b8b0a72481d86",
+      "shots": 50000,
+      "errors": 123,
+      "ler": 0.00246,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "1,13": {
+      "strong_id": "6c5d60a5d28fae0836bbc192678fff49b69b0e8ec859b4805441bda284959b93",
+      "shots": 50000,
+      "errors": 133,
+      "ler": 0.00266,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "1,11": {
+      "strong_id": "95f8fee804f21d253b37b73b1b32dcd609d82f7f4ae51f97d19e0432b0fd1e2f",
+      "shots": 50000,
+      "errors": 87,
+      "ler": 0.00174,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "1,19": {
+      "strong_id": "cba982f509139c4d1b8ea137f8b73cc82c18c6f66d2b599d6a63b63835ad5241",
+      "shots": 50000,
+      "errors": 89,
+      "ler": 0.00178,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "1,21": {
+      "strong_id": "7792a95547a56146f6fc1d183afca851aaee1b2d116ea4d6b11a4b18f46d805f",
+      "shots": 50000,
+      "errors": 147,
+      "ler": 0.00294,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "2,0": {
+      "strong_id": "7189b4943e192f3b7575854dfb655037cb35bc0d5850e71fbd232c6ce83d96ab",
+      "shots": 50000,
+      "errors": 192,
+      "ler": 0.00384,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "2,6": {
+      "strong_id": "5015d84c652ec0f9bf5422a92373d3e60bd225545db88219380fbddb94790719",
+      "shots": 50000,
+      "errors": 98,
+      "ler": 0.00196,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "2,2": {
+      "strong_id": "75fe33524554f79d290a2c551438afb84f35acacad0e8276e4160265883229e3",
+      "shots": 50000,
+      "errors": 177,
+      "ler": 0.00354,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "2,4": {
+      "strong_id": "70adf2e0457f94a121dfba9e804abefb7e3a5f329db794894a9c17e87551013d",
+      "shots": 50000,
+      "errors": 151,
+      "ler": 0.00302,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "2,8": {
+      "strong_id": "ee9529dfa52ac2ad8cf01108ee5957ba2ad18598fc9e8a68326505e962fa99d9",
+      "shots": 50000,
+      "errors": 79,
+      "ler": 0.00158,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "2,10": {
+      "strong_id": "9cc275d4aa205f4591d9e8aa114c1b3872a5fabe4da32006407c4db76f4d2184",
+      "shots": 50000,
+      "errors": 151,
+      "ler": 0.00302,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "2,16": {
+      "strong_id": "55a5731507a8e2923b034223bae6b8da72c96740c103b4b9612c8171562c3cca",
+      "shots": 50000,
+      "errors": 158,
+      "ler": 0.00316,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "2,12": {
+      "strong_id": "cb2e7f06ffb886be41b6ac6a926874ddac9725ed411f15d3b322451c97717307",
+      "shots": 50000,
+      "errors": 197,
+      "ler": 0.00394,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "2,20": {
+      "strong_id": "66da9866c18fdd30a514a878b50c9b16d4219a1cf04a8a22d6abc41b41ec0636",
+      "shots": 50000,
+      "errors": 148,
+      "ler": 0.00296,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "2,18": {
+      "strong_id": "7137c8e7c4bba29fbaeee725d8c378eb83413e235423e4833c56f963ee981468",
+      "shots": 50000,
+      "errors": 138,
+      "ler": 0.00276,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "2,14": {
+      "strong_id": "d429e7917ee0ea8acbb5a016c04e1536e60431f7e2c1df7c5cb924bdbd7c1ccb",
+      "shots": 50000,
+      "errors": 140,
+      "ler": 0.0028,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "2,22": {
+      "strong_id": "29cabe5407c1519359fddabbb3abc425f1859d530a0970246e3ad76ced274d96",
+      "shots": 50000,
+      "errors": 151,
+      "ler": 0.00302,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "3,1": {
+      "strong_id": "c1f0ab6b02a929beec4cddb0681b6cc2273d4c71a9cbafde347a9a5055109a3b",
+      "shots": 50000,
+      "errors": 133,
+      "ler": 0.00266,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "3,3": {
+      "strong_id": "20fd1080ffae746dcea9496218530831a35bbf6c50407b03ee6cc9967ce0e670",
+      "shots": 50000,
+      "errors": 89,
+      "ler": 0.00178,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "3,9": {
+      "strong_id": "2cf5fc2e3076555a06a53508687239ef2f690668b593227c824adccd6a49b419",
+      "shots": 50000,
+      "errors": 146,
+      "ler": 0.00292,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "3,7": {
+      "strong_id": "888a36445701b77e76776d97b5fda77b7197fc10e1a40bf933ed8c1d9fae38e6",
+      "shots": 50000,
+      "errors": 65,
+      "ler": 0.0013,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "3,5": {
+      "strong_id": "a17fa540f5fc110df186427e473421d0b4d59eb2a932ad776a8975dead8f34dd",
+      "shots": 50000,
+      "errors": 110,
+      "ler": 0.0022,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "3,13": {
+      "strong_id": "6c01ee39c47620eb0465b3a4f5d82ec84a87ad24e5a91e59e9035d4cfcc60bb9",
+      "shots": 50000,
+      "errors": 180,
+      "ler": 0.0036,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "3,21": {
+      "strong_id": "2f92417ffb32a1e85639f6e101fab7e6a286a20bafcab02148e3ce88cb1a5640",
+      "shots": 50000,
+      "errors": 116,
+      "ler": 0.00232,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "3,17": {
+      "strong_id": "a25a9b760d8849232f838b5021408c7b8d5714cdafd067bae733a626057f1c1f",
+      "shots": 50000,
+      "errors": 122,
+      "ler": 0.00244,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "3,11": {
+      "strong_id": "41d736e1c98ba90add89a9f2552c0072cdd8e24c2169affd09db29e4b0f852da",
+      "shots": 50000,
+      "errors": 138,
+      "ler": 0.00276,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "3,19": {
+      "strong_id": "8fef29f484509e7d679f616a07f9b61b34b5a3147cc96ebbb89d309cf8445fc2",
+      "shots": 50000,
+      "errors": 113,
+      "ler": 0.00226,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "3,15": {
+      "strong_id": "256bafd95ce6dc7b96149dcd9d00ee9318a49a15e718a2264ea5f5062ace3d3b",
+      "shots": 50000,
+      "errors": 95,
+      "ler": 0.0019,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "4,0": {
+      "strong_id": "8165fe009c4cef35e41fbdc226d5e0143706ab67a7ed4501c36bdbe752143c69",
+      "shots": 50000,
+      "errors": 169,
+      "ler": 0.00338,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "4,2": {
+      "strong_id": "5b5a61a43ceb44aa00d426b5b086ac0ac211580c35ba416d14b1e06bdd536bab",
+      "shots": 50000,
+      "errors": 121,
+      "ler": 0.00242,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "4,4": {
+      "strong_id": "3641f34dd9f94d959ccecc8519d46d7011e325be06b5cd5474a2e7c63bbb69fb",
+      "shots": 50000,
+      "errors": 132,
+      "ler": 0.00264,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "4,6": {
+      "strong_id": "2d460989b93e7b36a8cf60e9a4f2854919826609f653018e5a093d5fc492024a",
+      "shots": 50000,
+      "errors": 142,
+      "ler": 0.00284,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "4,10": {
+      "strong_id": "adba82ddd7e2ca7e04926e52977b97674f20199399ba399d2b9e37fc430da58c",
+      "shots": 50000,
+      "errors": 91,
+      "ler": 0.00182,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "4,8": {
+      "strong_id": "1f60566968dfaf8ed6ad975817761b2cb35e597df2ae06956fb83ad529809f26",
+      "shots": 50000,
+      "errors": 74,
+      "ler": 0.00148,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "5,1": {
+      "strong_id": "c3ec3f6c5b11a73f1aaec72e885b67f7767bae635a32b3b664faebd1bf44ee32",
+      "shots": 50000,
+      "errors": 129,
+      "ler": 0.00258,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "5,3": {
+      "strong_id": "65abad9a7b36d9acbcc1f7ad9cfffd969892cb8866b445e77bec4b3befc5e242",
+      "shots": 50000,
+      "errors": 96,
+      "ler": 0.00192,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "4,14": {
+      "strong_id": "e20bdb6a0e43da7a5fa42801fab5f3bf149b61597be60db8b9ab5fe73f68314a",
+      "shots": 50000,
+      "errors": 161,
+      "ler": 0.00322,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "4,20": {
+      "strong_id": "5dec7a92d73539962eeeb78d137f94d8ef9ea427cd26e13d18a0a424609846ef",
+      "shots": 50000,
+      "errors": 108,
+      "ler": 0.00216,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "4,18": {
+      "strong_id": "832314330f0568c5491bb4f2bc896782142d45ba497a0eeb430d14bc50ddc94f",
+      "shots": 50000,
+      "errors": 147,
+      "ler": 0.00294,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "4,22": {
+      "strong_id": "ef51122e8689cdc7f9b2595af92cc78e587bdd86e557b2b470b4178a839ebe43",
+      "shots": 50000,
+      "errors": 124,
+      "ler": 0.00248,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "4,12": {
+      "strong_id": "3dc5808b02d59d5fa31ea11fda0f3d9e135e3f207afea339fca47cb6eae808bb",
+      "shots": 50000,
+      "errors": 165,
+      "ler": 0.0033,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "4,16": {
+      "strong_id": "64ae59346922272923c9c4453e2659b4464cb98c668c74bd2fbefe9cf6062a61",
+      "shots": 50000,
+      "errors": 168,
+      "ler": 0.00336,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "5,5": {
+      "strong_id": "7293bb5e08e1249ca24bcbd6ef795f70eeba45b1a65db3b61e06c852a8bfc0e6",
+      "shots": 50000,
+      "errors": 109,
+      "ler": 0.00218,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "5,7": {
+      "strong_id": "25a1d7f084dab5fb7232595bb0773d9fffb5edff0e6ef17052bbfa54aad8a7e3",
+      "shots": 50000,
+      "errors": 83,
+      "ler": 0.00166,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "6,0": {
+      "strong_id": "4efd9ce16ebe5fd3f235158b9b1fa1e5c7bdf4b8163afedfbad2fbfb3f81f499",
+      "shots": 50000,
+      "errors": 168,
+      "ler": 0.00336,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "6,2": {
+      "strong_id": "0a06740521766c5e4ee4161a8261d7c195cabe1ed8f5581f171cc57092f9928c",
+      "shots": 50000,
+      "errors": 143,
+      "ler": 0.00286,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "5,9": {
+      "strong_id": "02cdf0776719fcdf1657a0f6630002457db687526955b7ad8d272b88e9654502",
+      "shots": 50000,
+      "errors": 160,
+      "ler": 0.0032,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "5,13": {
+      "strong_id": "80cbddf17c3c792e32a3500c4ad211d4950e37149100e114c2946199494f8b84",
+      "shots": 50000,
+      "errors": 193,
+      "ler": 0.00386,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "5,11": {
+      "strong_id": "a3dad9817a60e0892481abb67eebf1b21f3f3c503ac34bfd6ba721f7b5462f97",
+      "shots": 50000,
+      "errors": 106,
+      "ler": 0.00212,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "5,19": {
+      "strong_id": "b2ef731025319ff60067fce592a041d71b8d86c74fb9ce42d800cfc36ecbad98",
+      "shots": 50000,
+      "errors": 138,
+      "ler": 0.00276,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "5,15": {
+      "strong_id": "dcf6b46230f28577ae28ec136ef95bc29f5ba6d112a6ef030db66b79b00254be",
+      "shots": 50000,
+      "errors": 124,
+      "ler": 0.00248,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "6,4": {
+      "strong_id": "4566b0ea73336d852e0afab68f7d370d234d0bff457922fa76ac5cefd92a5256",
+      "shots": 50000,
+      "errors": 168,
+      "ler": 0.00336,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "5,21": {
+      "strong_id": "f2d20307391dc7696f3fd0a47ee8c3d996a240657745b8991a96ab5c4d6e9144",
+      "shots": 50000,
+      "errors": 148,
+      "ler": 0.00296,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "5,17": {
+      "strong_id": "168768f0eec30a68d7f01946e7802c4a606fcd51a644e8ce5dde191dfc34a203",
+      "shots": 50000,
+      "errors": 143,
+      "ler": 0.00286,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "6,6": {
+      "strong_id": "904133f30320cdd66240f394ce4bd8b4e77159ebf7b8b9577f47033efe66f455",
+      "shots": 50000,
+      "errors": 141,
+      "ler": 0.00282,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "6,8": {
+      "strong_id": "53c8ea507c67314ef8fdddf49cafceba15ee1c710f7113ac86d5e0eaa71e5716",
+      "shots": 50000,
+      "errors": 102,
+      "ler": 0.00204,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "6,10": {
+      "strong_id": "b0f7b2fa5bbb95f2ebbe07fecbb05a7d9baebc500a38d741de6711b9fb895d0e",
+      "shots": 50000,
+      "errors": 98,
+      "ler": 0.00196,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "6,12": {
+      "strong_id": "d8f9e49efbc8fc2823c7105d45b1466ff6a76cc241937a13247a4f320f4845cd",
+      "shots": 50000,
+      "errors": 134,
+      "ler": 0.00268,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "6,20": {
+      "strong_id": "66e8467e8664e94bc13e8e812b08b1007a71e919d3517822c989023695d4b610",
+      "shots": 50000,
+      "errors": 96,
+      "ler": 0.00192,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "7,3": {
+      "strong_id": "b083e7418141f7ad26a233765357084b247c5f5f5f24643f6a5f86b0ab56e804",
+      "shots": 50000,
+      "errors": 129,
+      "ler": 0.00258,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "7,5": {
+      "strong_id": "0f65104137e383eae14006e29efaec534ad3f190882c5e5bdd534350e6bba178",
+      "shots": 50000,
+      "errors": 81,
+      "ler": 0.00162,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "6,18": {
+      "strong_id": "7a43500fd6e32369394bc3686a8cdc69a156d6740b6c02f368ec16bf969463c4",
+      "shots": 50000,
+      "errors": 140,
+      "ler": 0.0028,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "6,22": {
+      "strong_id": "65cfd06b55de75af6d4d90f68d22386849e9aaca208e1bafd19a4385737807b5",
+      "shots": 50000,
+      "errors": 110,
+      "ler": 0.0022,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "6,14": {
+      "strong_id": "16f0187e894605768a8c8f5e82fd01f8d0e27a56fc01d6a887605e080bf4f85e",
+      "shots": 50000,
+      "errors": 162,
+      "ler": 0.00324,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "7,1": {
+      "strong_id": "09e7f41dde858f5ff267a586502bf1c264f3477d5ef3ca045fb62e0df4eca850",
+      "shots": 50000,
+      "errors": 97,
+      "ler": 0.00194,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "6,16": {
+      "strong_id": "6f9cd13335c819e16f7c49dc6e2ce9f80b249e1adb7db5d5215f67b49c84bfe4",
+      "shots": 50000,
+      "errors": 213,
+      "ler": 0.00426,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "7,7": {
+      "strong_id": "193b4d8e910626153cbfcbcad04e07936902dcf642c87ccd8e1531522e31e389",
+      "shots": 50000,
+      "errors": 99,
+      "ler": 0.00198,
+      "discards": 0,
+      "seconds": 0.011
+    },
+    "7,9": {
+      "strong_id": "a3174469c76b53e8b4e2d473c1ff6a0b7038e0af21ba052fefaf33f0abab0988",
+      "shots": 50000,
+      "errors": 150,
+      "ler": 0.003,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "8,2": {
+      "strong_id": "9f218d2a32696010c7026e8d5c95a513b766c4c2bf0fd9e97540645fadfa2b87",
+      "shots": 50000,
+      "errors": 161,
+      "ler": 0.00322,
+      "discards": 0,
+      "seconds": 0.016
+    },
+    "8,4": {
+      "strong_id": "3b6211eedd01d0c6092640b9f816edf84d57e38226a72584606886ecf4d2da6c",
+      "shots": 50000,
+      "errors": 193,
+      "ler": 0.00386,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "8,6": {
+      "strong_id": "38e49b195e544e57be972d022bfd6d01a33acbbd350c54ce512f503ad66eac43",
+      "shots": 50000,
+      "errors": 173,
+      "ler": 0.00346,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "7,11": {
+      "strong_id": "802b962106a81c57a3cdabae6a0c08ff4b476111a1c4d46b89e666c83b30626c",
+      "shots": 50000,
+      "errors": 143,
+      "ler": 0.00286,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "7,17": {
+      "strong_id": "5d2ad55e12ee9ca0728fb22bacdfa82039ce6b56ec067201742bf90a958e41d9",
+      "shots": 50000,
+      "errors": 178,
+      "ler": 0.00356,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "7,13": {
+      "strong_id": "ab4681b032e46f0c17ae5188c3e5d50b7694f1d8f04074abde795d41ed1c0fdc",
+      "shots": 50000,
+      "errors": 199,
+      "ler": 0.00398,
+      "discards": 0,
+      "seconds": 0.016
+    },
+    "7,15": {
+      "strong_id": "113bed35095cd6d4e2f926d5580171929838901373932ebed329373678ac314d",
+      "shots": 50000,
+      "errors": 175,
+      "ler": 0.0035,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "7,19": {
+      "strong_id": "d3432baad3b05bf1d2267d38acdfab7b2320e9c0cae67f046cb3dbb5839cbcc4",
+      "shots": 50000,
+      "errors": 147,
+      "ler": 0.00294,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "8,0": {
+      "strong_id": "aba28cf561c76c24140bac8adf2b265f401605488e41e20291f32e12c1a5b7d2",
+      "shots": 50000,
+      "errors": 261,
+      "ler": 0.00522,
+      "discards": 0,
+      "seconds": 0.016
+    },
+    "7,21": {
+      "strong_id": "a9b57b14aa29cd67d92e307e21c92c0a7ca9e6f08fdc200f2ca801780be3bfa0",
+      "shots": 50000,
+      "errors": 96,
+      "ler": 0.00192,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "8,8": {
+      "strong_id": "53e8ae0c557dcf2f637658fc69b0a260d4c2398990b7e7ecadfa94f8e2001c60",
+      "shots": 50000,
+      "errors": 154,
+      "ler": 0.00308,
+      "discards": 0,
+      "seconds": 0.011
+    },
+    "8,10": {
+      "strong_id": "32b71dde96c60a6d676272c9c7942b7d968f2d9e2d870ddfac3e9ad6bcd2798b",
+      "shots": 50000,
+      "errors": 163,
+      "ler": 0.00326,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "8,12": {
+      "strong_id": "4bba6b3ca8790e2d3ffbb0ad1ee5cc45df52db35e6e8382b858b6cd46119ec0b",
+      "shots": 50000,
+      "errors": 152,
+      "ler": 0.00304,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "8,22": {
+      "strong_id": "6b5163d6986def262f367c8cf46f611005c5d0af0523e6104dbdf4e6021b441e",
+      "shots": 50000,
+      "errors": 109,
+      "ler": 0.00218,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "9,1": {
+      "strong_id": "d6ce36be62606113f5a132b8b3cc4bbb8d07e3b27edb30de17acfcb2bb846987",
+      "shots": 50000,
+      "errors": 175,
+      "ler": 0.0035,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "8,14": {
+      "strong_id": "d9a4975be04df0ccf2ba6087688c5264d25932c5ab34a329adc3833251ae34b5",
+      "shots": 50000,
+      "errors": 157,
+      "ler": 0.00314,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "8,20": {
+      "strong_id": "0711382a1d204fdf7d908d1b1d34cdf5ccdd33eafcdc513dda69a15fe5ac4895",
+      "shots": 50000,
+      "errors": 138,
+      "ler": 0.00276,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "9,3": {
+      "strong_id": "3a6ba897e64fc2a2424be44d18fa80318d2e0ad694eb4a3ac20b5f2fa9fc7a08",
+      "shots": 50000,
+      "errors": 156,
+      "ler": 0.00312,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "8,18": {
+      "strong_id": "5382c29798f93def9d4598dbe5a253a312921789507418f7a8240fc7156b117e",
+      "shots": 50000,
+      "errors": 154,
+      "ler": 0.00308,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "9,7": {
+      "strong_id": "888c47e2a8a9da1608e3021c282f3b648c671973f69febd737b498e2bcf6d1cd",
+      "shots": 50000,
+      "errors": 141,
+      "ler": 0.00282,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "8,16": {
+      "strong_id": "047616b02824c127454447959bc7d009aaa86f345d672c85ad0d8eb58cd7be0c",
+      "shots": 50000,
+      "errors": 233,
+      "ler": 0.00466,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "9,5": {
+      "strong_id": "109c47c8072055b5a34a10e046dff6d6afcacfe49c28671da5af27afab39b3c2",
+      "shots": 50000,
+      "errors": 112,
+      "ler": 0.00224,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "9,9": {
+      "strong_id": "e45fe90615b412c33373ef20eda43cf04599a4f5dd4ceeeefa25e4c473a13087",
+      "shots": 50000,
+      "errors": 175,
+      "ler": 0.0035,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "9,11": {
+      "strong_id": "c264c86f6d24da99997ef63c1c79d0c0b99c0954fac7e94a18e743bf846782bd",
+      "shots": 50000,
+      "errors": 154,
+      "ler": 0.00308,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "9,17": {
+      "strong_id": "541cfda56dd739223df387567dca2c6f1b5e9c9f3ea8ea3c9501ec13f66e27b1",
+      "shots": 50000,
+      "errors": 176,
+      "ler": 0.00352,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "9,13": {
+      "strong_id": "7efccab137376f7ba0889d69fb7dda0f3ed12959eba225694094ec7000f9ea54",
+      "shots": 50000,
+      "errors": 175,
+      "ler": 0.0035,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "9,15": {
+      "strong_id": "67a98396775b4eaee8b4c2d6e7722faa2892b097128e92dde739b27fe3c1171b",
+      "shots": 50000,
+      "errors": 144,
+      "ler": 0.00288,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "10,8": {
+      "strong_id": "b81c8ab6c37202c2af4737fc3fdabf8d393a6039f780d053dd0243d7cb33d478",
+      "shots": 50000,
+      "errors": 155,
+      "ler": 0.0031,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "10,4": {
+      "strong_id": "e897ba3971992934b062f6ddc1ba2d8d317c117cf7fc8b7c50bdd5ef410dbc96",
+      "shots": 50000,
+      "errors": 136,
+      "ler": 0.00272,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "10,2": {
+      "strong_id": "52eacf19d35cfa5b785bde817922dada445ba93ea8b9d8e225ac3a0cccd1ed0d",
+      "shots": 50000,
+      "errors": 204,
+      "ler": 0.00408,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "10,0": {
+      "strong_id": "9f8051d8107874f8ea3f4c4c15d80d6ec103545436ea97ce56bc34fd7a3113eb",
+      "shots": 50000,
+      "errors": 175,
+      "ler": 0.0035,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "10,6": {
+      "strong_id": "ce74abce0b8a5e749ea0f9f7461447ae6f10cae3f0356a8a57b40513fdd22c29",
+      "shots": 50000,
+      "errors": 155,
+      "ler": 0.0031,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "9,21": {
+      "strong_id": "19cd40274eda4d4b00b629a710c942f05adad52d4d08f71adfa6fcb1600e6f30",
+      "shots": 50000,
+      "errors": 120,
+      "ler": 0.0024,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "9,19": {
+      "strong_id": "a7c40a11882f11d2fe115e9f781a77101dc6d793c8b3d223654be15ed586bbf1",
+      "shots": 50000,
+      "errors": 118,
+      "ler": 0.00236,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "10,10": {
+      "strong_id": "bb8cbb9e31a76476e80dce8b27e327f682a8aec1f7fc152d67b25611ca94acb3",
+      "shots": 50000,
+      "errors": 183,
+      "ler": 0.00366,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "10,12": {
+      "strong_id": "98636568c76c5e35c93561e6941726fb0facbf3eaadb25014be570cacb2c78a5",
+      "shots": 50000,
+      "errors": 197,
+      "ler": 0.00394,
+      "discards": 0,
+      "seconds": 0.01
+    },
+    "10,14": {
+      "strong_id": "e8a260b087b8c6478f4aeaf704f753d9231d4193f46db40b528b9afb5398d4be",
+      "shots": 50000,
+      "errors": 116,
+      "ler": 0.00232,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "10,18": {
+      "strong_id": "828f720c8e65bbda06b07374a5aac6a1e57a2b75d6eb28015aa16eaeec2bd109",
+      "shots": 50000,
+      "errors": 163,
+      "ler": 0.00326,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "10,20": {
+      "strong_id": "98604be74d24080bf7f7f8436c0f3db465abde9139f2b63992d8e442785e4255",
+      "shots": 50000,
+      "errors": 186,
+      "ler": 0.00372,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "10,16": {
+      "strong_id": "646dac4087d7a172008ad65a28e9cc2ba1344bdcf9e6a19a5c464de7e0b85ddb",
+      "shots": 50000,
+      "errors": 214,
+      "ler": 0.00428,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "11,5": {
+      "strong_id": "913acfcc2cf1fc5518ba2b6bf999a6493ee9dcc953fa9fa3761a81b3ce3fd60b",
+      "shots": 50000,
+      "errors": 107,
+      "ler": 0.00214,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "11,7": {
+      "strong_id": "5d371c3fb470f673e6671bffd6a5333b9aa1dc1632fc0191d6c634384db97f4b",
+      "shots": 50000,
+      "errors": 134,
+      "ler": 0.00268,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "11,9": {
+      "strong_id": "ef0ae37d7c3ec37dadea14f8bb76e936fcd3a38d0d5cb9137aa1da7ae493cd5b",
+      "shots": 50000,
+      "errors": 211,
+      "ler": 0.00422,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "11,1": {
+      "strong_id": "b102b230ef139a01f74c35362b632c223a547761649de5c2aad1b2a9b13864dd",
+      "shots": 50000,
+      "errors": 154,
+      "ler": 0.00308,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "10,22": {
+      "strong_id": "e39bd4d8e6da0bb8a5ca96517b2fee32e9667cb71d66e41f11bf3c0d20a5dd22",
+      "shots": 50000,
+      "errors": 144,
+      "ler": 0.00288,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "11,3": {
+      "strong_id": "9431d1caedb9cf4218d9b9bd03449f8d924a71bee9fb33a29b3dcb8d92879d4a",
+      "shots": 50000,
+      "errors": 123,
+      "ler": 0.00246,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "11,11": {
+      "strong_id": "deb3f88443a44ae2e923df884ccbf7db7f77b366a162f8751efc665355d2218c",
+      "shots": 50000,
+      "errors": 183,
+      "ler": 0.00366,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "11,13": {
+      "strong_id": "87a722610a8307127cd05d9e61e5b454340bf8fc5264242927f78a237bc9de0e",
+      "shots": 50000,
+      "errors": 135,
+      "ler": 0.0027,
+      "discards": 0,
+      "seconds": 0.011
+    },
+    "11,15": {
+      "strong_id": "8ac96bc90aa66711e46e552e8740c745ff7aaa606919c03a7c26711dc4a61377",
+      "shots": 50000,
+      "errors": 175,
+      "ler": 0.0035,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "11,19": {
+      "strong_id": "03f45f99b1b38a113c2989e6496503c177b503819b904ea4372d1364a8dad32e",
+      "shots": 50000,
+      "errors": 135,
+      "ler": 0.0027,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "11,17": {
+      "strong_id": "0f9c669aecfbe75eef568b49637a992e1658999d59c7665f28be5edc43a11a88",
+      "shots": 50000,
+      "errors": 185,
+      "ler": 0.0037,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "12,2": {
+      "strong_id": "e1aa145d97f40093ff796d4b7f1ec5aab1ca9ba2de0133694a0b138f258d42f5",
+      "shots": 50000,
+      "errors": 163,
+      "ler": 0.00326,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "12,10": {
+      "strong_id": "193c18686ebe59cd47c864bb0135a349814464a91262b3053cef1c0945b98f34",
+      "shots": 50000,
+      "errors": 172,
+      "ler": 0.00344,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "11,21": {
+      "strong_id": "5af9354c0f38c6ca39e11c007f7fe8a9114f0a4d516d9ef2836343e66512a1af",
+      "shots": 50000,
+      "errors": 114,
+      "ler": 0.00228,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "12,8": {
+      "strong_id": "8d6d9e137706a27657d1f3fee907ca00ddb0b008859060f3362e3234f30c4a6b",
+      "shots": 50000,
+      "errors": 170,
+      "ler": 0.0034,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "12,0": {
+      "strong_id": "8d26001cb16823451803e18b58243eb254b956c369a214564b0d7b8303e4ac90",
+      "shots": 50000,
+      "errors": 227,
+      "ler": 0.00454,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "12,12": {
+      "strong_id": "ce19ae98e8c9d08ef30954339a1eb38ab53ee3122b52d95ff3e2f36f43ee1496",
+      "shots": 50000,
+      "errors": 205,
+      "ler": 0.0041,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "12,6": {
+      "strong_id": "ab610bc56bfd61f345de1dce435b0448bf3157b583636c900e9261b3688e75cf",
+      "shots": 50000,
+      "errors": 145,
+      "ler": 0.0029,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "12,4": {
+      "strong_id": "89fd605c644ad097ba9e0383cb0341075e1bb531c998a39b5b1549290bad816c",
+      "shots": 50000,
+      "errors": 137,
+      "ler": 0.00274,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "12,14": {
+      "strong_id": "a6d7d1b52d908e4a8b33dcbf99fc4117145e194e4c68fee4351164c2fc75c671",
+      "shots": 50000,
+      "errors": 142,
+      "ler": 0.00284,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "12,16": {
+      "strong_id": "2da1e81ad9c146fac2989612a56072207cc41c041445d01ccf1c84da288923cf",
+      "shots": 50000,
+      "errors": 229,
+      "ler": 0.00458,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "12,18": {
+      "strong_id": "8aa148662befaa2cbca381cc7d666b30351a3a6d6dc0694c229ed1aa1205b492",
+      "shots": 50000,
+      "errors": 204,
+      "ler": 0.00408,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "12,22": {
+      "strong_id": "68925803fc1d47a9e410e3c5ac10e02e83d7442352de56e28bee27db43341002",
+      "shots": 50000,
+      "errors": 89,
+      "ler": 0.00178,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "13,9": {
+      "strong_id": "89d73f3595fe298c8c8d60d80af536e813480a846674d35e1a4514ea7bba9028",
+      "shots": 50000,
+      "errors": 169,
+      "ler": 0.00338,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "13,7": {
+      "strong_id": "bcf7c57cdc9ae094f59122ec9af383ef82beff36f10b4d580bcdfbdffacc3824",
+      "shots": 50000,
+      "errors": 134,
+      "ler": 0.00268,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "13,5": {
+      "strong_id": "897ff8644fb05f02a6444b6abe9d73fb34b7f1aafaa6af791dc75dd56eb8fc0e",
+      "shots": 50000,
+      "errors": 111,
+      "ler": 0.00222,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "13,13": {
+      "strong_id": "ee1813dbc91ca9b2079621116f7bbea5e87fb4c8e58e0102c2f021fd886de935",
+      "shots": 50000,
+      "errors": 116,
+      "ler": 0.00232,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "12,20": {
+      "strong_id": "dfce85b94e890e709d530edd63c27b92cef75ded6f0f23c3f88143970ecf921a",
+      "shots": 50000,
+      "errors": 172,
+      "ler": 0.00344,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "13,1": {
+      "strong_id": "1c46d187f4e4a59641420156e47006622b4d5bf9d368d7f244b63ea9b82f7110",
+      "shots": 50000,
+      "errors": 191,
+      "ler": 0.00382,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "13,11": {
+      "strong_id": "59133b797b7be1298f19b3c2a47554925bf34568e0af57fa7972f4619ea3c239",
+      "shots": 50000,
+      "errors": 151,
+      "ler": 0.00302,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "13,3": {
+      "strong_id": "63160bcac38ede7caa49b24eb732836b0fc1c55a8f56bd1a9f9a2362087aa7d6",
+      "shots": 50000,
+      "errors": 100,
+      "ler": 0.002,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "13,15": {
+      "strong_id": "a7934db60ca1b6f585f9c3272722ff894134595dcece92c52bc88496f8b20ef4",
+      "shots": 50000,
+      "errors": 134,
+      "ler": 0.00268,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "13,17": {
+      "strong_id": "1bee39022fa47163a677e5fd9e31ff78b72af61199aba8d062e75f9cfd11f2c3",
+      "shots": 50000,
+      "errors": 137,
+      "ler": 0.00274,
+      "discards": 0,
+      "seconds": 0.01
+    },
+    "13,19": {
+      "strong_id": "273812f3068b51085e47cfa92edf9b4f5ca037acd5c2dad2804f610b1bb80338",
+      "shots": 50000,
+      "errors": 116,
+      "ler": 0.00232,
+      "discards": 0,
+      "seconds": 0.011
+    },
+    "14,4": {
+      "strong_id": "0959271026c3058a1a47e5d0c23d6e59cc695d6407021d1790acb5ead5eebbf2",
+      "shots": 50000,
+      "errors": 106,
+      "ler": 0.00212,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "14,6": {
+      "strong_id": "de623a0568d442768b971065a87ac0a4de0daf398c0cd082d381408812d7c48d",
+      "shots": 50000,
+      "errors": 167,
+      "ler": 0.00334,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "14,10": {
+      "strong_id": "681068e45a24c8982024d92f51ec257c63195e9c5af7bf0d58f358962fbfd167",
+      "shots": 50000,
+      "errors": 169,
+      "ler": 0.00338,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "14,8": {
+      "strong_id": "c4af2f2923704a07c75c0dd46873f6383f75388cad56a750a74caff1c2abfc68",
+      "shots": 50000,
+      "errors": 213,
+      "ler": 0.00426,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "14,0": {
+      "strong_id": "2d928660b39eb8ef02955b4338ac0eb90c609fc2b62a22294f271c871a17d6d4",
+      "shots": 50000,
+      "errors": 86,
+      "ler": 0.00172,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "13,21": {
+      "strong_id": "c2336c67e46a94aed24e934e70e11cecf0214f71f86d3cd840047092ce7fcd8b",
+      "shots": 50000,
+      "errors": 109,
+      "ler": 0.00218,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "14,12": {
+      "strong_id": "e735479765cb4647911007319aaa2ff35d34539448d868cb59aa19c40d71cdc2",
+      "shots": 50000,
+      "errors": 214,
+      "ler": 0.00428,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "14,14": {
+      "strong_id": "b27cca9e4c2510bcf1daf2d26325fe76c811dc5a0bbb7a9ddd978dfd8e963739",
+      "shots": 50000,
+      "errors": 132,
+      "ler": 0.00264,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "14,16": {
+      "strong_id": "2dfe4d09a1f0652170d359307eaba4f6e1492d59a3908354a784845985174e0a",
+      "shots": 50000,
+      "errors": 232,
+      "ler": 0.00464,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "14,2": {
+      "strong_id": "bdad5c7ddf7eb6e5e9c3cc36132c2439b7afa1b54e9f0eb4c943d3b729e30e39",
+      "shots": 50000,
+      "errors": 112,
+      "ler": 0.00224,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "14,18": {
+      "strong_id": "b0ef38e02e9acd7766c5dde7f8834de697688fee708309da9436666837c9bee4",
+      "shots": 50000,
+      "errors": 174,
+      "ler": 0.00348,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "14,20": {
+      "strong_id": "e70093a3163b44eae1c920aea647cae90863bb5ef45a3514adc440a356977632",
+      "shots": 50000,
+      "errors": 124,
+      "ler": 0.00248,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "15,5": {
+      "strong_id": "9d4a638557f3bcf1aefa36a40e66283fdc969197586e64f1711b959709e758cb",
+      "shots": 50000,
+      "errors": 119,
+      "ler": 0.00238,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "15,3": {
+      "strong_id": "057f2f5aa50dad2f1296bffe0fdc9cfe7a220f77e5cc9f38396dbc3dc00031ec",
+      "shots": 50000,
+      "errors": 108,
+      "ler": 0.00216,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "14,22": {
+      "strong_id": "be20eb3ce69653bf638a61daf5ec76a715fcce395bea31398a16e757c3249f1d",
+      "shots": 50000,
+      "errors": 78,
+      "ler": 0.00156,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "15,7": {
+      "strong_id": "1a0f53ea9dc9795deb9c842b4e8fc2a18cd3e72673a2265a81ddcf56bede4340",
+      "shots": 50000,
+      "errors": 149,
+      "ler": 0.00298,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "15,1": {
+      "strong_id": "ebf1c9edc3a1ac3812ad3ce4cd14725f5cc4d7ff84eb24957283369bb9c69f36",
+      "shots": 50000,
+      "errors": 135,
+      "ler": 0.0027,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "15,9": {
+      "strong_id": "670d065bceec48fe94b4e53d65a5b643e7e216d68ccbd7b6edb4ce64c53127c3",
+      "shots": 50000,
+      "errors": 121,
+      "ler": 0.00242,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "15,13": {
+      "strong_id": "0c2b1cec21b87ad5272ed4f846914f7621d7242a45ed710da58b56b08eb37e97",
+      "shots": 50000,
+      "errors": 118,
+      "ler": 0.00236,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "15,17": {
+      "strong_id": "2b74a4bc320e08b6406fa997258f19463a45d32e67c81880d47da1ec3c38e37e",
+      "shots": 50000,
+      "errors": 229,
+      "ler": 0.00458,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "15,15": {
+      "strong_id": "74042a17215c98e75bd30b641309bb42aae751cd2ffe9c13cff62956bb8a4b60",
+      "shots": 50000,
+      "errors": 207,
+      "ler": 0.00414,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "15,11": {
+      "strong_id": "46b60a6fd1df7e4163f6c0afcdee9e579a4f5b6048d2b0e8e8b1f81a3095b390",
+      "shots": 50000,
+      "errors": 164,
+      "ler": 0.00328,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "15,19": {
+      "strong_id": "d10a0f6045e08d95eb5ba6b1f03c305514a188e7b9fe13b2ebc8fc86a62c661e",
+      "shots": 50000,
+      "errors": 165,
+      "ler": 0.0033,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "15,21": {
+      "strong_id": "5c3a7ef55e152ad27a3ce447ffc025e236e8f6aec2d61d99f8496485ff038c78",
+      "shots": 50000,
+      "errors": 105,
+      "ler": 0.0021,
+      "discards": 0,
+      "seconds": 0.009
+    },
+    "16,2": {
+      "strong_id": "b5c7bd0f63e946b607989bb0057577650aa60189f255d2ede8674317f8dc4847",
+      "shots": 50000,
+      "errors": 101,
+      "ler": 0.00202,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "16,0": {
+      "strong_id": "ac4436b69a645156da25fc30b0bfe16ade7235f3d029ab43df6b9030f01c011c",
+      "shots": 50000,
+      "errors": 122,
+      "ler": 0.00244,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "16,8": {
+      "strong_id": "b6f41e0978d32ca4da7313301309463ab7ace0822240006653ef8afd2ed7722a",
+      "shots": 50000,
+      "errors": 233,
+      "ler": 0.00466,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "16,16": {
+      "strong_id": "f83ded8c38dbab2856ed1a68e56cf7188cc27d9da61142b51036cce93d5ac9f3",
+      "shots": 50000,
+      "errors": 252,
+      "ler": 0.00504,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "16,6": {
+      "strong_id": "509b62cafd34ad2923f935afb265adf298f5b5f885740bfa7596f068b4c3e388",
+      "shots": 50000,
+      "errors": 178,
+      "ler": 0.00356,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "16,4": {
+      "strong_id": "3c1897e2f4b9374be8d2fbbb675b2d29e649ddfaa38fbf91fe95adbf30687203",
+      "shots": 50000,
+      "errors": 134,
+      "ler": 0.00268,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "16,14": {
+      "strong_id": "a64f1645b81d17bc9fd7bb917c7d1eca4a72549b42bec9049f37fb9d726f5dfe",
+      "shots": 50000,
+      "errors": 219,
+      "ler": 0.00438,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "16,18": {
+      "strong_id": "10debe22ebd1556b194db0ce27027f6bc3a0e98b7e85815186a7e18855c87e74",
+      "shots": 50000,
+      "errors": 113,
+      "ler": 0.00226,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "16,12": {
+      "strong_id": "c98012ad6b567ba26d5ced3be86713ecbd662f432268290752486a588757867a",
+      "shots": 50000,
+      "errors": 244,
+      "ler": 0.00488,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "16,10": {
+      "strong_id": "a475e29ba50315fc5a85efa0fdf76831f967e80a7a3b93ac4368aa97e1788e3a",
+      "shots": 50000,
+      "errors": 216,
+      "ler": 0.00432,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "16,20": {
+      "strong_id": "6796a501a70ec6fbf13b2c50b14547e6a9b60b826483bdfeac46d6697e7604d0",
+      "shots": 50000,
+      "errors": 80,
+      "ler": 0.0016,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "16,22": {
+      "strong_id": "900a4dff2edb1662a8dc94a90097cc0197749078e3f7b631eb63c2dec6b0c636",
+      "shots": 50000,
+      "errors": 50,
+      "ler": 0.001,
+      "discards": 0,
+      "seconds": 0.01
+    },
+    "17,1": {
+      "strong_id": "f7a0016ed73dcc0d54f8bab2dd27d699ee0cdadf01694f69b05622145902b866",
+      "shots": 50000,
+      "errors": 140,
+      "ler": 0.0028,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "17,3": {
+      "strong_id": "6d75d04d40344233f5156ea20a7df4510cbc1b89d652667e38c17717fa563586",
+      "shots": 50000,
+      "errors": 122,
+      "ler": 0.00244,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "17,9": {
+      "strong_id": "589a13fc709ebe023b90c715adc728a5ec3232d934d08c1f06ee1144622294e4",
+      "shots": 50000,
+      "errors": 190,
+      "ler": 0.0038,
+      "discards": 0,
+      "seconds": 0.016
+    },
+    "17,7": {
+      "strong_id": "bb9a970613311591203bbd51cdb4c055fb7e977c31bac8c13b1024e38f70e6f9",
+      "shots": 50000,
+      "errors": 226,
+      "ler": 0.00452,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "17,11": {
+      "strong_id": "780cbb07af019b349c218a22e910dd732f760e19beb78a8e13177361dc3719bb",
+      "shots": 50000,
+      "errors": 250,
+      "ler": 0.005,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "17,5": {
+      "strong_id": "ecaf9273e6c285f331fdb87662b5a5f68eb32945b45c8907cd6ca2cd6d78809c",
+      "shots": 50000,
+      "errors": 167,
+      "ler": 0.00334,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "17,17": {
+      "strong_id": "3ab61f4c314f692de6bc4ebe7c58edd91bc0555dac2d5a09d1de95e1ff46fcdc",
+      "shots": 50000,
+      "errors": 181,
+      "ler": 0.00362,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "17,19": {
+      "strong_id": "72db0fbbb7669c18cac89fca418b504b5b205bef83e31d7a88238fe447ca7a86",
+      "shots": 50000,
+      "errors": 120,
+      "ler": 0.0024,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "17,13": {
+      "strong_id": "dc79fba1386199347107328faed3abedc0b86b9e24bc2b796060773d0f3375ea",
+      "shots": 50000,
+      "errors": 187,
+      "ler": 0.00374,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "17,15": {
+      "strong_id": "3b73248152530b8732548375700755693765e8201fbe3c23ad5ece0d40ba107f",
+      "shots": 50000,
+      "errors": 172,
+      "ler": 0.00344,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "17,21": {
+      "strong_id": "1a73a6c04a8e254cbb0383e747fe1d0933a00081f2c2714df420758cc5a0179d",
+      "shots": 50000,
+      "errors": 92,
+      "ler": 0.00184,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "18,0": {
+      "strong_id": "2c6ec1d16e6e2facea991389aaa2e5d89c87423eb3dfe60369773d8779f01e1d",
+      "shots": 50000,
+      "errors": 101,
+      "ler": 0.00202,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "18,2": {
+      "strong_id": "4ad5f9699d66fab2988be9e882a52e806387deb7f2358fd78309db39d6c5cede",
+      "shots": 50000,
+      "errors": 165,
+      "ler": 0.0033,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "18,4": {
+      "strong_id": "02b993854156bd00326c9b1fa9217ef11246e56ff7359136be85242ae7a77ac8",
+      "shots": 50000,
+      "errors": 92,
+      "ler": 0.00184,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "18,20": {
+      "strong_id": "d02ac79e4bab847e2aa9519f0aa200c899e28996ea3ea2fb67615251a1562ef6",
+      "shots": 50000,
+      "errors": 130,
+      "ler": 0.0026,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "18,22": {
+      "strong_id": "db6622837af775e076dbc8b340b6c515f83684f6acbf82926b71c4cff2549c00",
+      "shots": 50000,
+      "errors": 60,
+      "ler": 0.0012,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "18,6": {
+      "strong_id": "152327f556c1e94292860e075d0196ac0a8cc507b8d92324f84725ab8fd3314f",
+      "shots": 50000,
+      "errors": 162,
+      "ler": 0.00324,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "18,8": {
+      "strong_id": "44245cd5f8bf19bb96b7bdb8bd9c1332bed342a6db5a8df54295f169744bc469",
+      "shots": 50000,
+      "errors": 204,
+      "ler": 0.00408,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "18,18": {
+      "strong_id": "594c7ecd8e4cebc3724c9f1f7e2686f3324aa8f1f2ad057c5cb1761ac5fae12f",
+      "shots": 50000,
+      "errors": 168,
+      "ler": 0.00336,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "18,10": {
+      "strong_id": "2f28d019b0649f18f6f2a49f9d8fc21ea818ee1c63fd0dc38aa2fdc3ffd990de",
+      "shots": 50000,
+      "errors": 178,
+      "ler": 0.00356,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "19,1": {
+      "strong_id": "a0ee7547934ca9a02e7c190a6c0f0570d95fcc83ed493bdaa97b7634c69db22b",
+      "shots": 50000,
+      "errors": 113,
+      "ler": 0.00226,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "18,12": {
+      "strong_id": "c351e554eed78b28760e215589276598a11b644775f8ddd36a7b613df1430e24",
+      "shots": 50000,
+      "errors": 243,
+      "ler": 0.00486,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "18,14": {
+      "strong_id": "db2dd32135076614208938f857bd4377f98d2d82b92b8ff5ffbc0efc93052d04",
+      "shots": 50000,
+      "errors": 164,
+      "ler": 0.00328,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "18,16": {
+      "strong_id": "1f890143c83faf92c40779c0ba217d281963cb56372aadb4e17fed70be6f70e4",
+      "shots": 50000,
+      "errors": 255,
+      "ler": 0.0051,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "19,5": {
+      "strong_id": "354f666065d12a31ced78b0e551a5f0a45c95fae0d5f19005b01da877bd4a412",
+      "shots": 50000,
+      "errors": 128,
+      "ler": 0.00256,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "19,3": {
+      "strong_id": "3b6af70560ea3a1395332e5364f74a3d8114fa1a3a468241dbb74ae6dfaafd97",
+      "shots": 50000,
+      "errors": 172,
+      "ler": 0.00344,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "19,11": {
+      "strong_id": "0f34e2b31d43602049a1cb0c17fab8c53b21c6b201deee69c5e66409db2838f6",
+      "shots": 50000,
+      "errors": 306,
+      "ler": 0.00612,
+      "discards": 0,
+      "seconds": 0.016
+    },
+    "19,7": {
+      "strong_id": "6ee8063e56ae6c61201c00bed14be978ac639b9e9e914f4b9aa9a29c38707870",
+      "shots": 50000,
+      "errors": 217,
+      "ler": 0.00434,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "19,9": {
+      "strong_id": "5aa3fa228125571d01acede5f80edb9d15778d1878bfbc81c5948c57717d3fb5",
+      "shots": 50000,
+      "errors": 211,
+      "ler": 0.00422,
+      "discards": 0,
+      "seconds": 0.016
+    },
+    "19,19": {
+      "strong_id": "9d8ae4232e2d9d4fc1ebe3e168393ee7a7a948520da42ec5b1decc311633f091",
+      "shots": 50000,
+      "errors": 123,
+      "ler": 0.00246,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "20,0": {
+      "strong_id": "79a6cb4f84bb131d4e33067a0e9179e8680ff3ebda0a4ae36de942db59536ce2",
+      "shots": 50000,
+      "errors": 157,
+      "ler": 0.00314,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "19,17": {
+      "strong_id": "bcd3254d88167003eaf1ca3959baf010cd5dbe2caa5c3032abb34388a3d499db",
+      "shots": 50000,
+      "errors": 178,
+      "ler": 0.00356,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "19,21": {
+      "strong_id": "7b6e4a22f98e5353bbf7198490b39ecb4e7778c64b4a29c5864967b3bc1a9a5d",
+      "shots": 50000,
+      "errors": 115,
+      "ler": 0.0023,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "20,2": {
+      "strong_id": "16c45946b08b06c412c9c3ef161cac74f512aeac25238b9444f2ba263f655f5d",
+      "shots": 50000,
+      "errors": 131,
+      "ler": 0.00262,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "19,13": {
+      "strong_id": "f8a911ac7df9e2e94b7f6bd1f4bad42e27529c5f3acd9c05fc1d026f90e058db",
+      "shots": 50000,
+      "errors": 209,
+      "ler": 0.00418,
+      "discards": 0,
+      "seconds": 0.016
+    },
+    "19,15": {
+      "strong_id": "3904e2acfd7aa9ae40d813b4b5945ec18524a8f5503aa1d672d33580c2e45e40",
+      "shots": 50000,
+      "errors": 223,
+      "ler": 0.00446,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "20,4": {
+      "strong_id": "0003e0f5a55130eeefef299244e8e58a3ab30d70d37111cfe59df3363af1295b",
+      "shots": 50000,
+      "errors": 120,
+      "ler": 0.0024,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "20,6": {
+      "strong_id": "97174a1eb8b981883fee93089316dfe5e5b98ed79b19b9eb761e30775111569a",
+      "shots": 50000,
+      "errors": 109,
+      "ler": 0.00218,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "20,18": {
+      "strong_id": "ac435fc2f84894ec47141a2edceee4735043d70cf0c9c619deeeb4577d243cd0",
+      "shots": 50000,
+      "errors": 155,
+      "ler": 0.0031,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "20,10": {
+      "strong_id": "e4d4086ec4cd10d63005cc7340886aef49d811d411dac8319ea9fe31dc40cd3b",
+      "shots": 50000,
+      "errors": 214,
+      "ler": 0.00428,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "20,22": {
+      "strong_id": "b30d8eb87156289b5c2f8f247a56a7989593172fe0937aa4c96d3f0bf372e8b4",
+      "shots": 50000,
+      "errors": 84,
+      "ler": 0.00168,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "20,8": {
+      "strong_id": "854f09ba644695492c1681ae9d2d69d60854f9c983eef7b5caf79e913c8f9d3d",
+      "shots": 50000,
+      "errors": 133,
+      "ler": 0.00266,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "20,20": {
+      "strong_id": "71f755dd001aaf29053a141f162bd16da70c67e7db6e306877eae0d106b9c475",
+      "shots": 50000,
+      "errors": 175,
+      "ler": 0.0035,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "20,16": {
+      "strong_id": "a228ec8cd306c0c11e4da4dba0273310cbeb1beb84c21054557455bc15204070",
+      "shots": 50000,
+      "errors": 239,
+      "ler": 0.00478,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "21,1": {
+      "strong_id": "3e88ce423676ae96e91b31e2d43b82184482732359949b1309102fee7ca2873a",
+      "shots": 50000,
+      "errors": 131,
+      "ler": 0.00262,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "20,12": {
+      "strong_id": "138637a513179f3dc92b9e4a38abdb095fac6f816b3ca4a74c42e8a6e07372b3",
+      "shots": 50000,
+      "errors": 221,
+      "ler": 0.00442,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "20,14": {
+      "strong_id": "b020e8b6b0e983efdd3989175182339b43eaa7a4b72400f4bb5854eb50a53f4f",
+      "shots": 50000,
+      "errors": 200,
+      "ler": 0.004,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "21,3": {
+      "strong_id": "1cba9c519b29d1e05d0ea1e6e64b29d2dfdc8715e5b34ccac422e2c971962e0f",
+      "shots": 50000,
+      "errors": 203,
+      "ler": 0.00406,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "21,5": {
+      "strong_id": "daa1082ca3684c8ca4f702dffecba35d7d8b04fe956f142b6b4f2bd7b389a5af",
+      "shots": 50000,
+      "errors": 169,
+      "ler": 0.00338,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "21,7": {
+      "strong_id": "f51e3d5ab1e1c31f83fa5bd10a0ed41f3e5f31293176a7df213dcf3f9deddfa7",
+      "shots": 50000,
+      "errors": 225,
+      "ler": 0.0045,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "21,9": {
+      "strong_id": "56e078c4656f5c46c4e0765b77dd989944b4974ac1f1c7312619d565426b3372",
+      "shots": 50000,
+      "errors": 144,
+      "ler": 0.00288,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "21,13": {
+      "strong_id": "b46102400a9849b2e9299d39c976756260bda79bd3ce741af64dc047712813a9",
+      "shots": 50000,
+      "errors": 133,
+      "ler": 0.00266,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "21,19": {
+      "strong_id": "5baca15dd615aa602f619c25050ebd6a94451210b5bf4f57313479a4f373092b",
+      "shots": 50000,
+      "errors": 115,
+      "ler": 0.0023,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "22,4": {
+      "strong_id": "7f728ae80d4ee6cec8ce14494a30faeffdb4a3d3434f6e57e7e7fef29a02c705",
+      "shots": 50000,
+      "errors": 152,
+      "ler": 0.00304,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "22,2": {
+      "strong_id": "ae25086010c22c1b83e22b3918a81e60568bd097b218cf0aa0c1fde86daf0834",
+      "shots": 50000,
+      "errors": 148,
+      "ler": 0.00296,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "22,0": {
+      "strong_id": "272933a2306ef8c190c72b7b8aefc8fb63f2f570bc3eb9d3ae092ae694bdfcf8",
+      "shots": 50000,
+      "errors": 98,
+      "ler": 0.00196,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "21,11": {
+      "strong_id": "91aa491149b13db13731a942fe0ced02c62fb6e9c84b315d734ef3e957d8cce4",
+      "shots": 50000,
+      "errors": 270,
+      "ler": 0.0054,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "21,15": {
+      "strong_id": "5686c539ef35a13831e2081b829c30481f19baaf312acdf877008006fa351890",
+      "shots": 50000,
+      "errors": 201,
+      "ler": 0.00402,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "21,17": {
+      "strong_id": "a2a7c33e96ae82f313fcd1c3a127cd32f3b0fc6649663e82c20ba44c50f5d860",
+      "shots": 50000,
+      "errors": 155,
+      "ler": 0.0031,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "21,21": {
+      "strong_id": "eed935feb49a99a522bf472b506e521a5713efdb77e7e87782cc5fff93a08b2c",
+      "shots": 50000,
+      "errors": 89,
+      "ler": 0.00178,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "22,6": {
+      "strong_id": "8d465d58a07bf7fc0e7220419c61d701a77edd5defda5247b5121a95b04c06d3",
+      "shots": 50000,
+      "errors": 118,
+      "ler": 0.00236,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "22,8": {
+      "strong_id": "efde4877a6748b6d3ab98d07a15df36b628b7f549f46a3cbdf42d8b4163ea574",
+      "shots": 50000,
+      "errors": 123,
+      "ler": 0.00246,
+      "discards": 0,
+      "seconds": 0.015
+    },
+    "22,10": {
+      "strong_id": "dcbe0a112404a45c20c35b4b36c6b682c252777ccbf52421b49473a62301d2b9",
+      "shots": 50000,
+      "errors": 125,
+      "ler": 0.0025,
+      "discards": 0,
+      "seconds": 0.014
+    },
+    "22,18": {
+      "strong_id": "a8c1aefd55521bc52345f1a19d6c0e764bb041240389d691ba1767ade6999b37",
+      "shots": 50000,
+      "errors": 206,
+      "ler": 0.00412,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "22,12": {
+      "strong_id": "338213a4771d746e10fff56aaf77e4dbf8b1c9c859b9d945bef648d804389b59",
+      "shots": 50000,
+      "errors": 147,
+      "ler": 0.00294,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "22,20": {
+      "strong_id": "c370c05846bfa240c1858b3778f45e813c633991fcf0423f5931c0f2dccdece8",
+      "shots": 50000,
+      "errors": 200,
+      "ler": 0.004,
+      "discards": 0,
+      "seconds": 0.013
+    },
+    "22,14": {
+      "strong_id": "590e339821288c414e9d74369ac808537a161b970e7954fdeb504f4e749fafb6",
+      "shots": 50000,
+      "errors": 159,
+      "ler": 0.00318,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "22,22": {
+      "strong_id": "e3045f5be3c6bb8def714efebe027cf07d855ae98505b9b522f38aca8c717bfd",
+      "shots": 50000,
+      "errors": 147,
+      "ler": 0.00294,
+      "discards": 0,
+      "seconds": 0.012
+    },
+    "22,16": {
+      "strong_id": "dbbded87a7f577699cebeabb2f098cba17a6e534819ffd7cd593025b36604ed5",
+      "shots": 50000,
+      "errors": 189,
+      "ler": 0.00378,
+      "discards": 0,
+      "seconds": 0.012
+    }
+  }
+}
