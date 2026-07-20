@@ -110,6 +110,20 @@ class TestExperimentRoundTrip:
             c: q.noise.p for c, q in chip.grid.items()
         }
 
+    def test_square_packing_profile_survives_json_round_trip(self, chip):
+        # to_dict/from_dict alone keeps tuples in memory; only a real JSON
+        # round-trip (as in export_flake/import_flake) degrades Coords to lists
+        import json
+
+        from qsnow.experiments.squarepacking.game import SquarePackingExp
+
+        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+
+        restored = from_dict(json.loads(json.dumps(to_dict(exp))))
+
+        assert restored.profile == exp.profile
+        assert all(isinstance(loc, tuple) for loc in restored.profile)
+
     def test_square_packing_payload_nests_under_experiment_headings(self, chip):
         from qsnow.experiments.experiment import Experiment
         from qsnow.experiments.squarepacking.game import SquarePackingExp

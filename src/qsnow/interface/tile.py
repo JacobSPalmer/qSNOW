@@ -192,6 +192,13 @@ class LogicalTile(Grid):
     @property
     def dims(self) -> Tuple[int, int]:
         return (self.length // 2, self.height // 2)
+    
+    def summary(self) -> Dict[str, object]:
+        return {
+            "type": 'Generic',
+            "dims": self.dims,
+            "distance": self.spec.distance or "N/A",
+        }
 
     def qubit_at_index(self, index: int) -> Optional[Qubit]:
         """

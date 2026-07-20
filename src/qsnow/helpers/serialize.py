@@ -55,6 +55,9 @@ from warnings import warn
 
 from stim import Circuit
 
+from logging import getLogger
+logger = getLogger(__name__)
+
 from qsnow.experiments.experiment import Experiment, ExperimentResults
 from qsnow.experiments.squarepacking.game import SquarePackingExp
 from qsnow.interface.chip import Chip, LogicalTile
@@ -453,46 +456,6 @@ def _experiment_headings(exp: Experiment, kind: str) -> Dict:
     }
 
 
-# TODO - remove or move this full noise-injected circuit to a compressed export format
-# def square_packing_to_dict(exp: SquarePackingExp) -> Dict:
-#     data = _experiment_headings(exp, "SquarePackingExp")
-#     data["exp"] = {
-#         "chip": chip_to_dict(exp.chip),
-#         "tile": tile_to_dict(exp.tile),
-#         "bad": exp.bad,
-#         "profile": {
-#             _coord_to_key(loc): {
-#                 "origin": list(p["origin"]),
-#                 "bound": list(p["bound"]),
-#                 "circuit": str(p["circuit"]) if p.get("circuit") is not None else None,
-#             }
-#             for loc, p in exp.profile.items()
-#         },
-#     }
-#     return data
-
-# def square_packing_from_dict(data: Dict) -> SquarePackingExp:
-#     data = _migrate(data)
-#     payload = data["exp"]
-#     exp = SquarePackingExp(
-#         chip=chip_from_dict(payload["chip"]),
-#         tile=tile_from_dict(payload["tile"]),
-#         bad=payload["bad"],
-#         profile={
-#             _key_to_coord(key): {
-#                 "origin": tuple(p["origin"]),
-#                 "bound": tuple(p["bound"]),
-#                 "circuit": Circuit(p["circuit"]) if p["circuit"] is not None else None,
-#             }
-#             for key, p in payload["profile"].items()
-#         },
-#     )
-#     exp.tag = tag_from_dict(data["tag"])
-#     exp.config = data["config"]
-#     exp.results_refs = data["results_refs"]
-#     return exp
-
-
 def square_packing_to_dict(exp: SquarePackingExp) -> Dict:
     data = _experiment_headings(exp, "SquarePackingExp")
     data["exp"] = {
@@ -509,11 +472,22 @@ def square_packing_from_dict(data: Dict) -> SquarePackingExp:
     exp = SquarePackingExp(
         chip=chip_from_dict(payload["chip"]),
         tile=tile_from_dict(payload["tile"]),
-        profile=payload["profile"],
+        # JSON round-trips Coord tuples as lists; restore tuples so profile
+        # entries stay hashable/comparable with the rest of the coord model
+        profile=[tuple(loc) for loc in payload["profile"]],
     )
     exp.tag = tag_from_dict(data["tag"])
     exp.config = data["config"]
     exp.results_refs = data["results_refs"]
+
+    if exp.results_refs:
+        for p in exp.results_refs:
+            try:
+                exp.results = import_latest(p).results
+                break
+            except FileNotFoundError:
+                logger.debug(f'Experiment result flake with filename {p} could not be loaded.')
+
     return exp
 
 
@@ -526,6 +500,20 @@ def experiment_from_dict(data: Dict) -> Experiment:
     exp = Experiment(**data["config"])
     exp.tag = tag_from_dict(data["tag"])
     exp.results_refs = data["results_refs"]
+
+    # This is the one violation to the round-tripping technically:
+    # While the experiment objects contain a Experiment.result, the flakes do not.
+    # While an experiment can be ran many times and provide different results, the setup never changes.
+    # Thus, we only store a reference to any result .flakes for this exp.
+    # However, for convenience, this will see if it can find the latest result (if there is one)
+    # referenced in the experiment.flake and load it into the Experiment.result.
+    if exp.results_refs:
+        for p in exp.results_refs:
+            try:
+                exp.results = import_latest(p)
+                break
+            except FileNotFoundError:
+                logger.debug(f'Experiment result flake with filename {p} could not be loaded.')
     return exp
 
 
@@ -694,6 +682,7 @@ def list_exports(pattern: str = "*", kind: Optional[str] = None) -> List[Path]:
     root = _DATA_DIR / kind if kind else _DATA_DIR
 
     def _glob(pat: str) -> List[Path]:
+        pat = pat.removesuffix('.flake')
         name = f"{pat}.flake" if pat.endswith("*") else f"{pat}*.flake"
         return list(root.glob(f"**/{name}" if kind is None else name))
 

@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Dict, List, Optional, Tuple
 from warnings import warn
 
 from numpy.random import SeedSequence, default_rng
 from scipy.stats import truncnorm, uniform
 
-from qsnow.visualize import VisualizationStyle, default_style, visualize
+from qsnow.visualize import (
+    VisualizationStyle,
+    default_interactive_styles,
+    visualize,
+    visualize_interactive,
+)
 
 from .grid import Grid
 from .models import Coord, NoiseProfile, Qubit, Tag
@@ -83,11 +89,29 @@ class Chip(Grid):
         """Returns a map of chip's logical tile by the respective tile origin as dict."""
         return {t.origin: t for t in self.tiles}
 
+    def summary(self) -> Dict[str, object]:
+        """Compact facts describing the chip, for display surfaces
+        (visualization headers, HTML exports, reprs)."""
+        return {
+            "unit_size": (self.length // 2, self.height // 2),
+            "grid_size": (self.length, self.height),
+            "n_qubits": len(self.qubits),
+            "n_tiles": len(self.tiles),
+            "noise_model": self.tag.metadata.get("noise_model"),
+        }
+
     # ------------------------------------------------------------------
     # Noise manipulation
     # ------------------------------------------------------------------
     def _generate_rng_seed(self):
         return SeedSequence().entropy
+    
+    #TODO - at some point this should just become a dataclass and can migrate flakes to always have this present
+    def _set_noise_metadata(self, name, **kwargs):
+        self.tag.metadata['noise_model'] = {
+            'name': name,
+            **kwargs
+        }
 
     def set_noise_map(self, noise_map: Dict[Coord, NoiseProfile] | Dict[Coord, float]):
         for c, n in noise_map.items():
@@ -111,11 +135,13 @@ class Chip(Grid):
             rng_seed = self._generate_rng_seed()
         rng = default_rng(seed=rng_seed)
 
-        self.tag.metadata["noise_model"] = {
-            "name": "uniform_random",
-            "range": range,
-            "seed": rng_seed,
-        }
+        # self.tag.metadata["noise_model"] = {
+        #     "name": "uniform_random",
+        #     "range": range,
+        #     "seed": rng_seed,
+        # }
+
+        self._set_noise_metadata('uniform random', range=range, seed=rng_seed)
 
         dist = uniform(loc=range[0], scale=range[1])
         for q in self.qubits:
@@ -137,12 +163,14 @@ class Chip(Grid):
             rng_seed = self._generate_rng_seed()
         rng = default_rng(seed=rng_seed)
 
-        self.tag.metadata["noise_model"] = {
-            "name": "gaussian",
-            "mean": mean,
-            "deviation": deviation,
-            "seed": rng_seed,
-        }
+        # self.tag.metadata["noise_model"] = {
+        #     "name": "gaussian",
+        #     "mean": mean,
+        #     "deviation": deviation,
+        #     "seed": rng_seed,
+        # }
+
+        self._set_noise_metadata('gaussian', mean=mean, deviation=deviation, seed=rng_seed)
 
         dist = truncnorm(
             (0.0000000001 - mean) / deviation,
@@ -153,6 +181,16 @@ class Chip(Grid):
         for q in self.qubits:
             q.noise.p = round(dist.rvs(1, random_state=rng)[0], 5)
 
+    def generate_uniform_noise(self, p):
+        """
+        Sets the `NoiseProfile.p` value for each qubit to a `BoundedFloat(0, 0.75)` with a physical error rate
+        of the `p` provided.
+        """
+
+        self._set_noise_metadata('uniform homogeneous', p=p)
+
+        for q in self.qubits:
+            q.noise.p = p
     # ------------------------------------------------------------------
     # Tile operations
     # ------------------------------------------------------------------
@@ -286,9 +324,26 @@ class Chip(Grid):
     # Visualization
     # ------------------------------------------------------------------
 
-    def show(self, style: Optional[VisualizationStyle] = None) -> None:
-        """Display a visualization of the chip's qubit layout."""
-        visualize(self, style=style or default_style, show=True)
+    def show(
+        self,
+        style: Optional[VisualizationStyle] = None,
+        *,
+        extra_styles: Optional[Mapping[str, VisualizationStyle]] = None,
+    ) -> None:
+        """
+        Display a visualization of the chip's qubit layout.
+
+        With no arguments, shows an interactive figure with a dropdown to switch
+        between the standard views (status / CSS type / noise heatmap), extended
+        by any `extra_styles` (name -> style). Passing `style` renders that
+        single style statically instead.
+        """
+        if style is not None:
+            visualize(self, style=style, show=True)
+            return
+        styles = default_interactive_styles(self)
+        styles.update(extra_styles or {})
+        visualize_interactive(self, styles, show=True)
 
     # ------------------------------------------------------------------
     # Input/ouput

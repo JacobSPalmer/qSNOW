@@ -130,3 +130,20 @@ class TestChipTilePlacement:
         assert all(q.is_active() for q in t2_region.values())
         assert tile2 == lg_chip.pop_tile(1)
         assert all(not q.is_active() for q in t2_region.values())
+
+
+class TestChipSummary:
+    def test_summary_facts(self, chip: Chip):
+        summary = chip.summary()
+        assert summary["unit_size"] == (5, 5)
+        assert summary["grid_size"] == (10, 10)
+        assert summary["n_qubits"] == 50
+        assert summary["n_tiles"] == 0
+        assert summary["noise_model"] is None
+
+    def test_summary_tracks_tiles_and_noise(self, chip: Chip, logical_tile):
+        chip.add_tile(logical_tile, (0, 0))
+        chip.generate_gaussian_noise(0.01, 0.005, seed=7)
+        summary = chip.summary()
+        assert summary["n_tiles"] == 1
+        assert summary["noise_model"]["name"] == "gaussian"

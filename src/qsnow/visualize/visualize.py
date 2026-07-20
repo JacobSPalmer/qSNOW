@@ -182,6 +182,7 @@ def custom_heatmap_style(
     *,
     colorscale: str = "hot_r",
     limits: Optional[Tuple[float, float]] = None,
+    label: str = "Noise (p)",
 ) -> VisualizationStyle:
     if limits:
         cmin, cmax = limits
@@ -192,18 +193,16 @@ def custom_heatmap_style(
         # raw value; the colorscale mapping is applied trace-wide by `visualize()`
         ler = coord_float_map.get(qubit.loc)
         return QubitStyle(
-            color=ler or "lightgray",
+            color=ler if ler is not None else "lightgray",
             custom_hovertext=_hovertext_format(
                 f"({qubit.loc[0]}, {qubit.loc[1]})",
-                ler=f"{ler:.4f}" if ler else None,
+                ler=f"{ler:.4f}" if ler is not None else None,
             ),
         )
 
     return VisualizationStyle(
         style_fn=qubit_style_fn,
-        colorbar=ColorbarSpec(
-            colorscale=colorscale, cmin=cmin, cmax=cmax, label="Noise (p)"
-        ),
+        colorbar=ColorbarSpec(colorscale=colorscale, cmin=cmin, cmax=cmax, label=label),
         logical_style=None,
     )
 
@@ -248,23 +247,86 @@ def _discrete_colormap_fn(
     return color_fn
 
 
-def visualize(
-    chip: Chip,
-    fig: Optional[Figure] = None,
-    style: VisualizationStyle = default_style,
-    logical_color_gradient=False,
-    show: bool = False,
-) -> Figure:
-    # Imported from the concrete submodules (not the `plotly.graph_objects` facade) since that
-    # facade lazily resolves attributes via `__getattr__`, which defeats static type narrowing/hover.
-    from plotly.colors import sample_colorscale
-    from plotly.graph_objs._figure import Figure
-    from plotly.graph_objs._scattergl import Scattergl
+# ------------------------------------------------------------------
+# Figure assembly
+# ------------------------------------------------------------------
 
-    if fig is None:
-        fig = Figure()
+
+@dataclass(frozen=True)
+class _LayoutGeometry:
+    """Pixel/fraction geometry of a figure, shared by every view rendered into it."""
+
+    margin_l: int
+    margin_r: int
+    margin_t: int
+    margin_b: int
+    base_width: int
+    fig_height: int
+    colorbar_px: int
+    domain_frac: float
+    colorbar_y: float
+    colorbar_len: float
+
+
+def _compute_geometry(
+    chip: Chip, reserve_colorbar: bool, *, extra_top_margin: int = 0
+) -> _LayoutGeometry:
+    ## Misc. Colorbar Spacing Configuration ##
+
+    # NOTE - Reserve a fixed pixel strip for the pesky lil colorbar explicitly and pin the plot domain so it never needs to encroach.
+    # TODO - this still is not fit flush to the side of the plot like it ideally should
+    margin_l, margin_r, margin_t, margin_b = 40, 40, 60 + extra_top_margin, 40
+    base_width = min(900, max(600, chip.length * 60))
+    fig_height = min(900, max(600, chip.height * 60)) + extra_top_margin
+    plot_px_width = base_width - margin_l - margin_r
+    colorbar_px = 100 if reserve_colorbar else 0
+    domain_frac = plot_px_width / (plot_px_width + colorbar_px) if colorbar_px else 1.0
+
+    # NOTE - Colorbar `y`/`len` are in *paper* fraction (the whole figure, margins included), not the
+    # cartesian plot's own domain - so without this, the bar overshoots top/bottom by the margins.
+    colorbar_bottom_frac = margin_b / fig_height
+    colorbar_top_frac = 1 - margin_t / fig_height
+    return _LayoutGeometry(
+        margin_l=margin_l,
+        margin_r=margin_r,
+        margin_t=margin_t,
+        margin_b=margin_b,
+        base_width=base_width,
+        fig_height=fig_height,
+        colorbar_px=colorbar_px,
+        domain_frac=domain_frac,
+        colorbar_y=(colorbar_bottom_frac + colorbar_top_frac) / 2,
+        colorbar_len=colorbar_top_frac - colorbar_bottom_frac,
+    )
+
+
+@dataclass(frozen=True)
+class _StyleLayer:
+    """Everything one style contributes to a figure.
+
+    Shapes and annotations are plain dicts (not plotly graph objects) so the same
+    lists can seed `layout.shapes`/`layout.annotations` or ride inside an
+    `updatemenus` button payload for interactive style switching.
+    """
+
+    shapes: List[Dict[str, Any]]
+    annotations: List[Dict[str, Any]]
+    trace_kwargs: Dict[str, Any]
+    has_colorbar: bool
+
+
+def _build_style_layer(
+    chip: Chip,
+    style: VisualizationStyle,
+    geometry: _LayoutGeometry,
+    *,
+    logical_color_gradient: bool = False,
+    name: str = "qubits",
+) -> _StyleLayer:
+    from plotly.colors import sample_colorscale
 
     ## Qubit Style Configuration ##
+    shapes: List[Dict[str, Any]] = []
     xs, ys, raw_colors, fillcolors, hovertext = [], [], [], [], []
     for qubit in chip.qubits:
         if not qubit.loc:
@@ -284,16 +346,18 @@ def visualize(
             fillcolor = s.color
 
         r = s.size / 2
-        fig.add_shape(
-            type=_SHAPE_TYPES.get(s.marker, "rect"),
-            x0=x - r,
-            y0=y - r,
-            x1=x + r,
-            y1=y + r,
-            line=dict(color=s.edgecolor, width=s.linewidths),
-            fillcolor=fillcolor,
-            opacity=s.alpha,
-            layer="above",
+        shapes.append(
+            dict(
+                type=_SHAPE_TYPES.get(s.marker, "rect"),
+                x0=x - r,
+                y0=y - r,
+                x1=x + r,
+                y1=y + r,
+                line=dict(color=s.edgecolor, width=s.linewidths),
+                fillcolor=fillcolor,
+                opacity=s.alpha,
+                layer="above",
+            )
         )
 
         xs.append(x)
@@ -301,24 +365,6 @@ def visualize(
         raw_colors.append(s.color if style.colorbar is not None else 0)
         fillcolors.append(fillcolor)
         hovertext.append(s.custom_hovertext)
-
-    ## Misc. Colorbar Spacing Configuration ##
-
-    # NOTE - Reserve a fixed pixel strip for the pesky lil colorbar explicitly and pin the plot domain so it never needs to encroach.
-    # TODO - this still is not fit flush to the side of the plot like it ideally should
-    margin_l, margin_r, margin_t, margin_b = 40, 40, 60, 40
-    base_width = min(900, max(600, chip.length * 60))
-    fig_height = min(900, max(600, chip.height * 60))
-    plot_px_width = base_width - margin_l - margin_r
-    colorbar_px = 100 if style.colorbar is not None else 0
-    domain_frac = plot_px_width / (plot_px_width + colorbar_px) if colorbar_px else 1.0
-
-    # NOTE - Colorbar `y`/`len` are in *paper* fraction (the whole figure, margins included), not the
-    # cartesian plot's own domain - so without this, the bar overshoots top/bottom by the margins.
-    colorbar_bottom_frac = margin_b / fig_height
-    colorbar_top_frac = 1 - margin_t / fig_height
-    colorbar_len = colorbar_top_frac - colorbar_bottom_frac
-    colorbar_y = (colorbar_bottom_frac + colorbar_top_frac) / 2
 
     hover_marker: Dict[str, object] = dict(size=20, opacity=0)
     if style.colorbar is not None:
@@ -331,11 +377,11 @@ def visualize(
             # so the gradient itself - not the title - spans the full computed plot-aligned length.
             colorbar=dict(
                 title=dict(text=style.colorbar.label, side="right"),
-                x=domain_frac,
+                x=geometry.domain_frac,
                 xanchor="left",
-                y=colorbar_y,
+                y=geometry.colorbar_y,
                 yanchor="middle",
-                len=colorbar_len,
+                len=geometry.colorbar_len,
             ),
             showscale=True,
         )
@@ -348,20 +394,19 @@ def visualize(
         else dict(bgcolor=fillcolors, font=dict(color="black"))
     )
 
-    fig.add_trace(
-        Scattergl(
-            x=xs,
-            y=ys,
-            mode="markers",
-            marker=hover_marker,
-            hovertext=hovertext,
-            hoverinfo="text",
-            name="qubits",
-            hoverlabel=hoverlabel,
-        )
+    trace_kwargs: Dict[str, Any] = dict(
+        x=xs,
+        y=ys,
+        mode="markers",
+        marker=hover_marker,
+        hovertext=hovertext,
+        hoverinfo="text",
+        name=name,
+        hoverlabel=hoverlabel,
     )
 
     ## Logical Tiling Configuration ##
+    annotations: List[Dict[str, Any]] = []
     if chip.tiles and style.logical_style is not None:
         edgecolor_fn = _discrete_colormap_fn((3, 17))
         for i, tile in enumerate(chip.tiles, start=0):
@@ -369,28 +414,45 @@ def visualize(
             if logical_color_gradient:
                 ls.edgecolor = edgecolor_fn(i)
             x0, y0 = tile.origin[0] - 0.5, tile.origin[1] - 0.5
-            fig.add_shape(
-                type="rect",
-                x0=x0,
-                y0=y0,
-                x1=x0 + tile.length,
-                y1=y0 + tile.height,
-                line=dict(color=ls.edgecolor, width=ls.linewidth),
-                fillcolor=ls.facecolor if ls.facecolor != "none" else "rgba(0,0,0,0)",
-                opacity=ls.alpha,
-                layer="above",
+            shapes.append(
+                dict(
+                    type="rect",
+                    x0=x0,
+                    y0=y0,
+                    x1=x0 + tile.length,
+                    y1=y0 + tile.height,
+                    line=dict(color=ls.edgecolor, width=ls.linewidth),
+                    fillcolor=(
+                        ls.facecolor if ls.facecolor != "none" else "rgba(0,0,0,0)"
+                    ),
+                    opacity=ls.alpha,
+                    layer="above",
+                )
             )
-            fig.add_annotation(
-                x=tile.origin[0] + tile.length - 0.55,
-                y=tile.origin[1] - 0.43,
-                text=f"tile {i}",
-                showarrow=False,
-                xanchor="right",
-                yanchor="top",
-                font=dict(color=ls.edgecolor, size=10, family="Andale Mono, monospace"),
-                bgcolor="rgba(128,128,128,0.25)",
+            annotations.append(
+                dict(
+                    x=tile.origin[0] + tile.length - 0.55,
+                    y=tile.origin[1] - 0.43,
+                    text=f"tile {i}",
+                    showarrow=False,
+                    xanchor="right",
+                    yanchor="top",
+                    font=dict(
+                        color=ls.edgecolor, size=10, family="Andale Mono, monospace"
+                    ),
+                    bgcolor="rgba(128,128,128,0.25)",
+                )
             )
 
+    return _StyleLayer(
+        shapes=shapes,
+        annotations=annotations,
+        trace_kwargs=trace_kwargs,
+        has_colorbar=style.colorbar is not None,
+    )
+
+
+def _apply_frame(fig: Figure, chip: Chip, geometry: _LayoutGeometry) -> None:
     ## Axis and Layout Configuration ##
     fig.update_xaxes(
         side="top",
@@ -398,7 +460,7 @@ def visualize(
         showgrid=True,
         zeroline=True,
         range=[-0.75, chip.length - 0.25],
-        domain=[0, domain_frac],
+        domain=[0, geometry.domain_frac],
         showline=True,
         linecolor="black",
         linewidth=1,
@@ -417,11 +479,45 @@ def visualize(
         mirror=True,
     )
     fig.update_layout(
-        width=base_width + colorbar_px,
-        height=fig_height,
+        width=geometry.base_width + geometry.colorbar_px,
+        height=geometry.fig_height,
         showlegend=False,
-        margin=dict(l=margin_l, r=margin_r, t=margin_t, b=margin_b),
+        margin=dict(
+            l=geometry.margin_l,
+            r=geometry.margin_r,
+            t=geometry.margin_t,
+            b=geometry.margin_b,
+        ),
     )
+
+
+def visualize(
+    chip: Chip,
+    fig: Optional[Figure] = None,
+    style: VisualizationStyle = default_style,
+    logical_color_gradient=False,
+    show: bool = False,
+) -> Figure:
+    # Imported from the concrete submodules (not the `plotly.graph_objects` facade) since that
+    # facade lazily resolves attributes via `__getattr__`, which defeats static type narrowing/hover.
+    from plotly.graph_objs._figure import Figure
+    from plotly.graph_objs._scattergl import Scattergl
+
+    if fig is None:
+        fig = Figure()
+
+    geometry = _compute_geometry(chip, reserve_colorbar=style.colorbar is not None)
+    layer = _build_style_layer(
+        chip, style, geometry, logical_color_gradient=logical_color_gradient
+    )
+
+    for shape in layer.shapes:
+        fig.add_shape(**shape)
+    for annotation in layer.annotations:
+        fig.add_annotation(**annotation)
+    fig.add_trace(Scattergl(**layer.trace_kwargs))
+
+    _apply_frame(fig, chip, geometry)
 
     if show:
         fig.show()

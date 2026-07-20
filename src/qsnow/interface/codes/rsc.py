@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 
 from stim import Circuit
 
@@ -131,6 +131,12 @@ class SCTile(LogicalTile):
             ]
             + custom_rules
         )
+
+    def summary(self) -> Dict[str, object]:
+        s = super().summary()
+        s['type'] = "RSC"
+        return s
+        
 
     def copy(self) -> SCTile:
         return SCTile(
