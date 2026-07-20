@@ -175,7 +175,6 @@ def packing_profile_style(chip: Chip, profiles: Dict[Any, Dict]):
 
     return VisualizationStyle(style_fn=style_fn)
 
-
 def custom_heatmap_style(
     chip: Chip,
     coord_float_map: Dict[Tuple[float, float], float],

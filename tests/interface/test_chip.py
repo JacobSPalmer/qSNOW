@@ -56,6 +56,24 @@ class TestChipClassProperties:
         )
 
 
+class TestNoiseGeneration:
+    def test_random_noise_values_land_within_range(self, chip: Chip):
+        low, high = 0.01, 0.05
+        chip.generate_random_noise((low, high), seed=1)
+        # regression: `round()` with no ndigits rounded every sampled p to the
+        # nearest int (0), collapsing all noise values to 0.0
+        assert all(low <= q.noise.p for q in chip.qubits)
+        assert any(q.noise.p != 0.0 for q in chip.qubits)
+
+    def test_random_noise_values_vary_across_qubits(self, chip: Chip):
+        chip.generate_random_noise((0.01, 0.05), seed=1)
+        assert len({q.noise.p for q in chip.qubits}) > 1
+
+    def test_gaussian_noise_values_are_nonzero(self, chip: Chip):
+        chip.generate_gaussian_noise(mean=0.01, deviation=0.005, seed=1)
+        assert any(q.noise.p != 0.0 for q in chip.qubits)
+
+
 class TestTileClassProperties:
     def test_chip_origin_and_bound(self, chip: Chip, logical_tile: LogicalTile):
         chip.add_tile(logical_tile, (2, 2))

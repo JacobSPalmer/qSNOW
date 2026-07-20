@@ -132,17 +132,11 @@ class Chip(Grid):
             rng_seed = self._generate_rng_seed()
         rng = default_rng(seed=rng_seed)
 
-        # self.tag.metadata["noise_model"] = {
-        #     "name": "uniform_random",
-        #     "range": range,
-        #     "seed": rng_seed,
-        # }
-
         self._set_noise_metadata("uniform random", range=range, seed=rng_seed)
 
         dist = uniform(loc=range[0], scale=range[1])
         for q in self.qubits:
-            q.noise.p = round(dist.rvs(1, random_state=rng)[0])
+            q.noise.p = round(dist.rvs(1, random_state=rng)[0], 5)
 
     def generate_gaussian_noise(
         self, mean, deviation, seed: int | None = None
@@ -159,13 +153,6 @@ class Chip(Grid):
         else:
             rng_seed = self._generate_rng_seed()
         rng = default_rng(seed=rng_seed)
-
-        # self.tag.metadata["noise_model"] = {
-        #     "name": "gaussian",
-        #     "mean": mean,
-        #     "deviation": deviation,
-        #     "seed": rng_seed,
-        # }
 
         self._set_noise_metadata(
             "gaussian", mean=mean, deviation=deviation, seed=rng_seed

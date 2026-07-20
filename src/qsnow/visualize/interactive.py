@@ -222,6 +222,8 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
   .header {{ margin: 20px 0 20px 0; max-width: 100%; }}
   h2 {{ font-size: 1rem; font-weight: 650; margin: 0; }}
   .desc {{ margin: 0.4rem 0 0; color: #616e7c; font-style: italic; }}
+  .stats-box span {{ flex-grow: 1; }}
+  .stats-heading dt {{ color: #000000; font-size: .7rem; font-style: italic; font-weight: 600;}}
   .stats {{
     display: flex;
     flex-wrap: wrap;
@@ -235,8 +237,6 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
   }}
   .stats div {{ display: flex; flex-direction: column; }}
   .stats dl {{ border-radius: 8px; display: flex; flex-direction: row; }}
-  .heading div {{ width:100% }}
-  .stats-heading dt {{ color: #000000; font-size: .7rem; font-style: italic; font-weight: 600;}}
   .stats dt {{
     font-size: 0.7rem;
     text-transform: uppercase;
@@ -272,9 +272,17 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
 
 
 def _format_stat_box(title, stat_html):
-    # stat_html = "".join(f"<div><dt>{escape(name)}</dt><dd>{escape(value)}</dd></div>"
-    #             for name, value in attrs)
-    return f'<span><dl class="stats"><div class="row" style="width:100%;"><dt class = "stats-heading">{escape(title)}</dt></div>{stat_html}</dl></span>'
+    return f'<span class="stats-box"><dl class="stats"><div class="row" style="width:100%;"><dt class = "stats-heading">{escape(title)}</dt></div>{stat_html}</dl></span>'
+
+
+def _format_stat_rows(stats: Mapping[str, object]) -> str:
+    """Render a stats mapping as `<dt>/<dd>` rows, formatting floats to 3 sig figs."""
+    return "".join(
+        f"<div><dt>{escape(name)}</dt><dd>"
+        f"{escape(f'{value:.3g}' if isinstance(value, float) else str(value))}"
+        f"</dd></div>"
+        for name, value in stats.items()
+    )
 
 
 # TODO - revist the whole look of the exportable. fine for now and unimportant overall but it looks clunky and lame
@@ -338,10 +346,11 @@ def export_html(
 
     match obj:
         case SquarePackingExp():
-            if kwargs.get("results"):
+            results = kwargs.pop("results", None)
+            if results:
                 return export_square_packing(
                     obj,
-                    kwargs.get("results"),
+                    results,
                     path,
                     styles=styles,
                     title=title,
@@ -365,7 +374,7 @@ def export_html(
             )
         case _:
             raise NotImplementedError(
-                f"Exporting as stand-alone HTML not implemented for experiment type: {type(experiment)}"
+                f"Exporting as stand-alone HTML not implemented for object type: {type(obj)}"
             )
 
 
@@ -385,8 +394,6 @@ def export_square_packing(
 
     Either the experiment should have results stored in `Experiments.result` or `results` should be provided as a keyword argument.
     """
-    from html import escape
-
     # deferred import: qsnow.helpers.serialize imports the experiment stack,
     # which imports this package (same pattern as Experiment.save)
     from qsnow.helpers.serialize import _TIMESTAMP_FORMAT, get_data_dir
@@ -420,33 +427,19 @@ def export_square_packing(
     summary = exp.summary()
     chip_stats: Dict = _chip_stats(summary.get("chip"))
     chip_stats.pop("Tiles")
-    chip_stats_html = "".join(
-        f"<div><dt>{escape(name)}</dt><dd>{escape(value)}</dd></div>"
-        for name, value in chip_stats.items()
-    )
-    chip_stats_html = _format_stat_box("Chip", chip_stats_html)
+    chip_stats_html = _format_stat_box("Chip", _format_stat_rows(chip_stats))
 
     tile_stats: Dict = _tile_stats(summary.get("tile"))
-    tile_stats_html = "".join(
-        f"<div><dt>{escape(name)}</dt><dd>{escape(value)}</dd></div>"
-        for name, value in tile_stats.items()
-    )
-    tile_stats_html = _format_stat_box("Tile", tile_stats_html)
+    tile_stats_html = _format_stat_box("Tile", _format_stat_rows(tile_stats))
 
     exp_stats: Dict = _spp_stats(summary)
     exp_stats |= {"Shots": str(results.run_config["shots"])}
-    exp_stats_html = "".join(
-        f"<div><dt>{escape(name)}</dt><dd>{escape(value)}</dd></div>"
-        for name, value in exp_stats.items()
-    )
-    exp_stats_html = _format_stat_box("Experiment", exp_stats_html)
+    exp_stats_html = _format_stat_box("Experiment", _format_stat_rows(exp_stats))
 
     if summary["chip"].get("noise_model", False):
-        rows = "".join(
-            f"<div><dt>{escape(name)}</dt><dd>{escape(f'{value:.3g}' if isinstance(value, float) else str(value))}</dd></div>"
-            for name, value in _noise_stats(summary.get("chip")).items()
+        noise_model_html = _format_stat_box(
+            "Noise Model", _format_stat_rows(_noise_stats(summary.get("chip")))
         )
-        noise_model_html = _format_stat_box("Noise Model", rows)
     else:
         noise_model_html = ""
 
@@ -476,8 +469,6 @@ def export_chip(
     """
     Write a standalone interactive HTML page for `Chip` and return its path.
     """
-    from html import escape
-
     # deferred import: qsnow.helpers.serialize imports the experiment stack,
     # which imports this package (same pattern as Experiment.save)
     from qsnow.helpers.serialize import _TIMESTAMP_FORMAT, get_data_dir
@@ -502,18 +493,12 @@ def export_chip(
         config={"responsive": True, "displaylogo": False},
     )
     summary = chip.summary()
-    chip_stats_html = "".join(
-        f"<div><dt>{escape(name)}</dt><dd>{escape(value)}</dd></div>"
-        for name, value in _chip_stats(summary).items()
-    )
-    chip_stats_html = _format_stat_box("Chip", chip_stats_html)
+    chip_stats_html = _format_stat_box("Chip", _format_stat_rows(_chip_stats(summary)))
 
     if summary.get("noise_model", False):
-        rows = "".join(
-            f"<div><dt>{escape(name)}</dt><dd>{escape(f'{value:.3g}' if isinstance(value, float) else str(value))}</dd></div>"
-            for name, value in _noise_stats(summary).items()
+        noise_model_html = _format_stat_box(
+            "Noise Model", _format_stat_rows(_noise_stats(summary))
         )
-        noise_model_html = _format_stat_box("Noise Model", rows)
     else:
         noise_model_html = ""
 
@@ -524,8 +509,6 @@ def export_chip(
         _HTML_TEMPLATE.format(
             title=escape(title),
             desc=desc_html,
-            # chip_stats=chip_stats_html,
-            # noise_model=noise_model_html,
             stats=chip_stats_html + noise_model_html,
             page_width=int(fig.layout.width),
             figure_div=figure_div,

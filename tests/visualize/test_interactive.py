@@ -1,9 +1,13 @@
 import pytest
 
+from qsnow.experiments.experiment import ExperimentResults
+from qsnow.experiments.squarepacking.game import SquarePackingExp
 from qsnow.helpers.serialize import set_data_dir
 from qsnow.visualize.interactive import (
+    _format_stat_rows,
     default_interactive_styles,
     export_html,
+    export_square_packing,
     visualize_interactive,
 )
 from qsnow.visualize.visualize import (
@@ -121,3 +125,75 @@ class TestExportHtml:
         text = path.read_text()
         for name in default_interactive_styles(chip):
             assert name in text
+
+
+@pytest.fixture
+def sp_exp(chip, logical_tile) -> SquarePackingExp:
+    return SquarePackingExp(chip=chip, tile=logical_tile)
+
+
+@pytest.fixture
+def sp_results(sp_exp) -> ExperimentResults:
+    return ExperimentResults(
+        experiment_ref=None,
+        run_config={"shots": 1000, "max_errors": 100, "decoder": "pymatching"},
+        results={loc: {"ler": 0.01} for loc in sp_exp.profile},
+    )
+
+
+class TestExportSquarePacking:
+    def test_explicit_path(self, tmp_path, sp_exp, sp_results):
+        path = export_square_packing(
+            sp_exp, sp_results, tmp_path / "sp.html", include_plotlyjs="cdn"
+        )
+        assert path == tmp_path / "sp.html"
+        text = path.read_text()
+        assert "updatemenus" in text
+        assert "<dt>Placements</dt>" in text
+        assert "<dt>Shots</dt><dd>1000</dd>" in text
+
+    def test_default_path_uses_data_dir(self, tmp_path, sp_exp, sp_results):
+        set_data_dir(tmp_path)
+        try:
+            path = export_square_packing(sp_exp, sp_results, include_plotlyjs="cdn")
+        finally:
+            set_data_dir()
+        assert path.parent == tmp_path / "html"
+        assert path.name.startswith("experiment_sp_")
+        assert path.suffix == ".html"
+
+    def test_via_export_html_dispatch(self, tmp_path, sp_exp, sp_results):
+        path = export_html(
+            sp_exp,
+            tmp_path / "sp.html",
+            results=sp_results,
+            include_plotlyjs="cdn",
+        )
+        assert path == tmp_path / "sp.html"
+
+    def test_export_html_requires_results_kwarg(self, tmp_path, sp_exp):
+        with pytest.raises(AttributeError, match="results"):
+            export_html(sp_exp, tmp_path / "sp.html")
+
+    def test_stats_include_chip_tile_and_experiment(self, tmp_path, sp_exp, sp_results):
+        path = export_square_packing(
+            sp_exp, sp_results, tmp_path / "sp.html", include_plotlyjs="cdn"
+        )
+        text = path.read_text()
+        assert "<dt>Size</dt>" in text
+        assert "<dt>Distance</dt>" in text
+
+
+class TestFormatStatRows:
+    def test_strings_pass_through(self):
+        html = _format_stat_rows({"Size": "5 x 5"})
+        assert "<dt>Size</dt><dd>5 x 5</dd>" in html
+
+    def test_floats_formatted_to_three_sig_figs(self):
+        html = _format_stat_rows({"p": 0.0012345})
+        assert "<dd>0.00123</dd>" in html
+
+    def test_escapes_html_special_characters(self):
+        html = _format_stat_rows({"<tag>": "<script>"})
+        assert "<script>" not in html
+        assert "&lt;script&gt;" in html
