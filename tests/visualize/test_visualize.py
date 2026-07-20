@@ -105,7 +105,9 @@ class TestAreaSelectionStyle:
 
     def test_show_logicals_toggles_logical_style(self, chip):
         assert area_selection_style(chip, {}).logical_style is None
-        assert area_selection_style(chip, {}, show_logicals=True).logical_style is not None
+        assert (
+            area_selection_style(chip, {}, show_logicals=True).logical_style is not None
+        )
 
 
 class TestDiscreteColormapFn:
