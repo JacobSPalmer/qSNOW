@@ -105,13 +105,10 @@ class Chip(Grid):
     # ------------------------------------------------------------------
     def _generate_rng_seed(self):
         return SeedSequence().entropy
-    
-    #TODO - at some point this should just become a dataclass and can migrate flakes to always have this present
+
+    # TODO - at some point this should just become a dataclass and can migrate flakes to always have this present
     def _set_noise_metadata(self, name, **kwargs):
-        self.tag.metadata['noise_model'] = {
-            'name': name,
-            **kwargs
-        }
+        self.tag.metadata["noise_model"] = {"name": name, **kwargs}
 
     def set_noise_map(self, noise_map: Dict[Coord, NoiseProfile] | Dict[Coord, float]):
         for c, n in noise_map.items():
@@ -141,7 +138,7 @@ class Chip(Grid):
         #     "seed": rng_seed,
         # }
 
-        self._set_noise_metadata('uniform random', range=range, seed=rng_seed)
+        self._set_noise_metadata("uniform random", range=range, seed=rng_seed)
 
         dist = uniform(loc=range[0], scale=range[1])
         for q in self.qubits:
@@ -170,7 +167,9 @@ class Chip(Grid):
         #     "seed": rng_seed,
         # }
 
-        self._set_noise_metadata('gaussian', mean=mean, deviation=deviation, seed=rng_seed)
+        self._set_noise_metadata(
+            "gaussian", mean=mean, deviation=deviation, seed=rng_seed
+        )
 
         dist = truncnorm(
             (0.0000000001 - mean) / deviation,
@@ -187,10 +186,11 @@ class Chip(Grid):
         of the `p` provided.
         """
 
-        self._set_noise_metadata('uniform homogeneous', p=p)
+        self._set_noise_metadata("uniform homogeneous", p=p)
 
         for q in self.qubits:
             q.noise.p = p
+
     # ------------------------------------------------------------------
     # Tile operations
     # ------------------------------------------------------------------

@@ -2,9 +2,9 @@
 
 from collections.abc import Mapping
 from datetime import datetime
+from html import escape
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, Optional, Union
-from html import escape
 
 from qsnow.visualize.visualize import (
     VisualizationStyle,
@@ -19,10 +19,16 @@ from qsnow.visualize.visualize import (
 if TYPE_CHECKING:
     from plotly.graph_objs._figure import Figure
 
+    from qsnow.experiments import ExperimentResults, SquarePackingExp
     from qsnow.interface.chip import Chip
-    from qsnow.experiments import SquarePackingExp, ExperimentResults
 
-__all__ = ["default_interactive_styles", "export_html", "visualize_interactive", "export_square_packing", "export_chip"]
+__all__ = [
+    "default_interactive_styles",
+    "export_html",
+    "visualize_interactive",
+    "export_square_packing",
+    "export_chip",
+]
 
 # Extra top-margin pixels reserved for the style dropdown above the top-side axis.
 _DROPDOWN_MARGIN_PX = 50
@@ -263,23 +269,27 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
 </body>
 </html>
 """
+
+
 def _format_stat_box(title, stat_html):
     # stat_html = "".join(f"<div><dt>{escape(name)}</dt><dd>{escape(value)}</dd></div>"
     #             for name, value in attrs)
     return f'<span><dl class="stats"><div class="row" style="width:100%;"><dt class = "stats-heading">{escape(title)}</dt></div>{stat_html}</dl></span>'
 
-#TODO - revist the whole look of the exportable. fine for now and unimportant overall but it looks clunky and lame
-#TODO - cleanup the noise and chip stats
+
+# TODO - revist the whole look of the exportable. fine for now and unimportant overall but it looks clunky and lame
+# TODO - cleanup the noise and chip stats
 def _noise_stats(summary: Dict[str, object]) -> Dict[str, str]:
     noise = summary.get("noise_model", {})
     stats = {}
     if isinstance(noise, dict):
-        if noise.get('name'):
-            stats['type'] = noise.pop('name')
-        stats |= {k:v for k, v in noise.items() if k not in ('seed')}
+        if noise.get("name"):
+            stats["type"] = noise.pop("name")
+        stats |= {k: v for k, v in noise.items() if k not in ("seed")}
 
-        stats.pop('seed', None)
+        stats.pop("seed", None)
     return stats
+
 
 def _chip_stats(summary: Dict[str, object]) -> Dict[str, str]:
     """Chip facts formatted for the export page's stats strip."""
@@ -293,19 +303,17 @@ def _chip_stats(summary: Dict[str, object]) -> Dict[str, str]:
     }
     return stats
 
+
 def _spp_stats(summary):
-    stats = {
-        'Placements': str(summary["placements"])
-    }
+    stats = {"Placements": str(summary["placements"])}
     return stats
 
+
 def _tile_stats(summary):
-    length, height = summary['dims']
-    stats = {
-        "Distance": str(summary['distance']),
-        "Size": f"{length} × {height}"
-    }
+    length, height = summary["dims"]
+    stats = {"Distance": str(summary["distance"]), "Size": f"{length} × {height}"}
     return stats
+
 
 def export_html(
     obj,
@@ -315,44 +323,51 @@ def export_html(
     title: Optional[str] = None,
     label: Optional[str] = None,
     include_plotlyjs: Union[bool, str] = True,
-    **kwargs
+    **kwargs,
 ) -> Path:
     """
     Write a standalone interactive HTML page for qSNOW object and return its path.
 
     The layout and details are qSNOW object-specific and thus the object must be supported by this method, else this raises a `NotImplementedError`.
     """
-    from html import escape
 
     # deferred import: qsnow.helpers.serialize imports the experiment stack,
     # which imports this package (same pattern as Experiment.save)
-    from qsnow.helpers.serialize import _TIMESTAMP_FORMAT, get_data_dir
     from qsnow.experiments import SquarePackingExp
     from qsnow.interface import Chip
-    
+
     match obj:
         case SquarePackingExp():
-            if kwargs.get('results'):
-                return export_square_packing(obj,
-                                                kwargs.get('results'),
-                                                path,
-                                                styles=styles,
-                                                title=title,
-                                                label=label,
-                                                include_plotlyjs=include_plotlyjs,
-                                                **kwargs)
+            if kwargs.get("results"):
+                return export_square_packing(
+                    obj,
+                    kwargs.get("results"),
+                    path,
+                    styles=styles,
+                    title=title,
+                    label=label,
+                    include_plotlyjs=include_plotlyjs,
+                    **kwargs,
+                )
             else:
-                raise AttributeError('The experiment result must be explicitly passed as keyword arguement `results`')
+                raise AttributeError(
+                    "The experiment result must be explicitly passed as keyword arguement `results`"
+                )
         case Chip():
-            return export_chip(obj,
-                                path,
-                                styles=styles,
-                                title=title,
-                                label=label,
-                                include_plotlyjs=include_plotlyjs,
-                                **kwargs)
+            return export_chip(
+                obj,
+                path,
+                styles=styles,
+                title=title,
+                label=label,
+                include_plotlyjs=include_plotlyjs,
+                **kwargs,
+            )
         case _:
-            raise NotImplementedError(f'Exporting as stand-alone HTML not implemented for experiment type: {type(experiment)}')
+            raise NotImplementedError(
+                f"Exporting as stand-alone HTML not implemented for experiment type: {type(experiment)}"
+            )
+
 
 def export_square_packing(
     exp: SquarePackingExp,
@@ -363,8 +378,8 @@ def export_square_packing(
     title: Optional[str] = None,
     label: Optional[str] = None,
     include_plotlyjs: Union[bool, str] = True,
-    **kwargs
-)-> Path:
+    **kwargs,
+) -> Path:
     """
     Write a standalone interactive HTML page for `SquarePackingExp` results and return its path.
 
@@ -375,66 +390,67 @@ def export_square_packing(
     # deferred import: qsnow.helpers.serialize imports the experiment stack,
     # which imports this package (same pattern as Experiment.save)
     from qsnow.helpers.serialize import _TIMESTAMP_FORMAT, get_data_dir
-    
+
     chip_size_label = f"{exp.chip.length // 2}x{exp.chip.height // 2}"
     if title is None:
-        title = exp.tag.name or f"SP Experiment"
+        title = exp.tag.name or "SP Experiment"
     if path is None:
         stamp = datetime.now().strftime(_TIMESTAMP_FORMAT)
-        path = get_data_dir() / "html" / f"experiment_sp_{label or chip_size_label}_{stamp}.html"
+        path = (
+            get_data_dir()
+            / "html"
+            / f"experiment_sp_{label or chip_size_label}_{stamp}.html"
+        )
     else:
         path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
     if styles is None:
         styles = exp._interactive_styles(results)
-    
+
     # the page header carries the title and chip facts, so suppress both in-figure
     fig = visualize_interactive(exp.chip, styles, title="", subtitle="")
 
     figure_div = fig.to_html(
         full_html=False,
         include_plotlyjs=include_plotlyjs,
-        config={"responsive": True, "displaylogo": False}, #TODO - logo
+        config={"responsive": True, "displaylogo": False},  # TODO - logo
     )
 
     summary = exp.summary()
-    chip_stats: Dict = _chip_stats(summary.get('chip'))
-    chip_stats.pop('Tiles')
+    chip_stats: Dict = _chip_stats(summary.get("chip"))
+    chip_stats.pop("Tiles")
     chip_stats_html = "".join(
         f"<div><dt>{escape(name)}</dt><dd>{escape(value)}</dd></div>"
         for name, value in chip_stats.items()
     )
-    chip_stats_html = _format_stat_box('Chip', chip_stats_html)
+    chip_stats_html = _format_stat_box("Chip", chip_stats_html)
 
-    tile_stats: Dict = _tile_stats(summary.get('tile'))
+    tile_stats: Dict = _tile_stats(summary.get("tile"))
     tile_stats_html = "".join(
         f"<div><dt>{escape(name)}</dt><dd>{escape(value)}</dd></div>"
         for name, value in tile_stats.items()
     )
-    tile_stats_html = _format_stat_box('Tile', tile_stats_html)
-    
+    tile_stats_html = _format_stat_box("Tile", tile_stats_html)
 
     exp_stats: Dict = _spp_stats(summary)
-    exp_stats |= {'Shots': str(results.run_config['shots'])}
+    exp_stats |= {"Shots": str(results.run_config["shots"])}
     exp_stats_html = "".join(
         f"<div><dt>{escape(name)}</dt><dd>{escape(value)}</dd></div>"
         for name, value in exp_stats.items()
     )
-    exp_stats_html = _format_stat_box('Experiment', exp_stats_html)
+    exp_stats_html = _format_stat_box("Experiment", exp_stats_html)
 
-    if summary['chip'].get('noise_model', False):
+    if summary["chip"].get("noise_model", False):
         rows = "".join(
             f"<div><dt>{escape(name)}</dt><dd>{escape(f'{value:.3g}' if isinstance(value, float) else str(value))}</dd></div>"
-            for name, value in _noise_stats(summary.get('chip')).items()
+            for name, value in _noise_stats(summary.get("chip")).items()
         )
-        noise_model_html = _format_stat_box('Noise Model', rows)
+        noise_model_html = _format_stat_box("Noise Model", rows)
     else:
         noise_model_html = ""
 
-    desc_html = (
-        f'\n<p class="desc">{escape(exp.tag.desc)}</p>' if exp.tag.desc else ""
-    )
+    desc_html = f'\n<p class="desc">{escape(exp.tag.desc)}</p>' if exp.tag.desc else ""
     path.write_text(
         _HTML_TEMPLATE.format(
             title=escape(title),
@@ -446,6 +462,7 @@ def export_square_packing(
         encoding="utf-8",
     )
     return path
+
 
 def export_chip(
     chip: Chip,
@@ -467,7 +484,7 @@ def export_chip(
 
     size_label = f"{chip.length // 2}x{chip.height // 2}"
     if title is None:
-        title = chip.tag.name or f"Chip"
+        title = chip.tag.name or "Chip"
 
     if path is None:
         stamp = datetime.now().strftime(_TIMESTAMP_FORMAT)
@@ -489,14 +506,14 @@ def export_chip(
         f"<div><dt>{escape(name)}</dt><dd>{escape(value)}</dd></div>"
         for name, value in _chip_stats(summary).items()
     )
-    chip_stats_html = _format_stat_box('Chip', chip_stats_html)
+    chip_stats_html = _format_stat_box("Chip", chip_stats_html)
 
-    if summary.get('noise_model', False):
+    if summary.get("noise_model", False):
         rows = "".join(
             f"<div><dt>{escape(name)}</dt><dd>{escape(f'{value:.3g}' if isinstance(value, float) else str(value))}</dd></div>"
             for name, value in _noise_stats(summary).items()
         )
-        noise_model_html = _format_stat_box('Noise Model', rows)
+        noise_model_html = _format_stat_box("Noise Model", rows)
     else:
         noise_model_html = ""
 

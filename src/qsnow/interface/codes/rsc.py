@@ -134,9 +134,8 @@ class SCTile(LogicalTile):
 
     def summary(self) -> Dict[str, object]:
         s = super().summary()
-        s['type'] = "RSC"
+        s["type"] = "RSC"
         return s
-        
 
     def copy(self) -> SCTile:
         return SCTile(

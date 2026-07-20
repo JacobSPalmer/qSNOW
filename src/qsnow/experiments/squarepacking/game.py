@@ -20,6 +20,7 @@ from qsnow.visualize import (
     visualize_interactive,
 )
 
+
 @dataclass
 class SquarePackingExp(Experiment):
     chip: Chip
@@ -111,9 +112,7 @@ class SquarePackingExp(Experiment):
 
         return self.results
 
-    def summary(
-        self
-    ) -> Dict[str, object]:
+    def summary(self) -> Dict[str, object]:
         """Compact facts describing the experiment, for display surfaces
         (visualization headers, HTML exports, reprs)."""
         return {
@@ -121,18 +120,18 @@ class SquarePackingExp(Experiment):
             "tile": self.tile.summary(),
             "placements": len(self.profile),
         }
-    
+
     def _interactive_styles(
         self, results: ExperimentResults
     ) -> Dict[str, VisualizationStyle]:
         """The view bundle for `show`: chip-level views plus LER/placement results."""
         ler_map = {k: v["ler"] for k, v in results.results.items()}
-        styles = {'PER': noise_heatmap_style(self.chip)}
+        styles = {"PER": noise_heatmap_style(self.chip)}
         styles["Valid Placements"] = packing_profile_style(
             self.chip, {loc: {"ler": ler_map.get(loc)} for loc in self.profile}
         )
         styles["LER"] = custom_heatmap_style(self.chip, ler_map, label="LER")
-        
+
         return styles
 
     def show(
@@ -148,6 +147,6 @@ class SquarePackingExp(Experiment):
             styles,
             active="LER",
             title=self.tag.name or type(self).__name__,
-            subtitle=f'chip: {self.chip.length} x {self.chip.height} grid · tile: {self.tile.spec.distance} {self.tile.tag.name} · {len(self.profile)} placements', 
+            subtitle=f"chip: {self.chip.length} x {self.chip.height} grid · tile: {self.tile.spec.distance} {self.tile.tag.name} · {len(self.profile)} placements",
             show=True,
         )

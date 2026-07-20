@@ -49,13 +49,13 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from datetime import datetime
+from logging import getLogger
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 from warnings import warn
 
 from stim import Circuit
 
-from logging import getLogger
 logger = getLogger(__name__)
 
 from qsnow.experiments.experiment import Experiment, ExperimentResults
@@ -486,7 +486,9 @@ def square_packing_from_dict(data: Dict) -> SquarePackingExp:
                 exp.results = import_latest(p).results
                 break
             except FileNotFoundError:
-                logger.debug(f'Experiment result flake with filename {p} could not be loaded.')
+                logger.debug(
+                    f"Experiment result flake with filename {p} could not be loaded."
+                )
 
     return exp
 
@@ -513,7 +515,9 @@ def experiment_from_dict(data: Dict) -> Experiment:
                 exp.results = import_latest(p)
                 break
             except FileNotFoundError:
-                logger.debug(f'Experiment result flake with filename {p} could not be loaded.')
+                logger.debug(
+                    f"Experiment result flake with filename {p} could not be loaded."
+                )
     return exp
 
 
@@ -682,7 +686,7 @@ def list_exports(pattern: str = "*", kind: Optional[str] = None) -> List[Path]:
     root = _DATA_DIR / kind if kind else _DATA_DIR
 
     def _glob(pat: str) -> List[Path]:
-        pat = pat.removesuffix('.flake')
+        pat = pat.removesuffix(".flake")
         name = f"{pat}.flake" if pat.endswith("*") else f"{pat}*.flake"
         return list(root.glob(f"**/{name}" if kind is None else name))
 

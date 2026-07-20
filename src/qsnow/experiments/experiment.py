@@ -1,6 +1,7 @@
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Mapping, Optional, Union
+from typing import Dict, List, Optional, Union
 
 from qsnow.experiments.progress import PhasedProgress
 from qsnow.interface.models import Tag
@@ -107,16 +108,18 @@ class Experiment:
         if self.source is not None:
             serialize.export_flake(self, self.source)
         return results_path
-    
-    def summary(
-        self
-    ) -> Dict[str, object]:
+
+    def summary(self) -> Dict[str, object]:
         """Compact facts describing the experiment, for display surfaces
         (visualization headers, HTML exports, reprs)."""
         return {}
 
-
-    def show(self, results, *, extra_styles: Optional[Mapping[str, VisualizationStyle]]=None):
+    def show(
+        self,
+        results,
+        *,
+        extra_styles: Optional[Mapping[str, VisualizationStyle]] = None,
+    ):
         """Display an interactive visualization of a run's results. This must be called from the experiment
         in order to expose the underlying chip noise model to the visualization module.
 
