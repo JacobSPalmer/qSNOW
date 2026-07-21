@@ -57,13 +57,16 @@ def flake_path(distance: int = 3, data_dir: Union[str, Path, None] = None) -> Pa
     """
     Locate the square-packing results `.flake` for a given code distance.
 
-    Searches `data_dir` (defaulting to `default_data_dir()`). Files are named
-    `results_squarepacking_rsc_memory_z_d<distance>_<timestamp>.flake`; we glob on
-    the distance so we don't hard-code the timestamp. If several runs are present,
-    the lexicographically last (newest timestamp) is used.
+    Searches `data_dir` (defaulting to `default_data_dir()`). Results flakes carry
+    the distance as a `d<distance>` token but otherwise vary by naming convention,
+    e.g. `results_squarepacking_rsc_memory_z_d5_<timestamp>.flake` (older) and
+    `results_d5_30x30_mean_0_001_<timestamp>.flake` (newer). We glob on the
+    `d<distance>` token so both are found without hard-coding the timestamp or the
+    surrounding descriptor. If several runs match, the lexicographically last
+    (newest timestamp) is used.
     """
     data_dir = Path(data_dir).expanduser() if data_dir is not None else default_data_dir()
-    pattern = f"results_squarepacking_rsc_memory_z_d{distance}_*.flake"
+    pattern = f"results_*d{distance}_*.flake"
     matches = sorted(data_dir.glob(pattern))
     if not matches:
         raise FileNotFoundError(
