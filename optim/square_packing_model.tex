@@ -1,0 +1,195 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{enumitem}
+
+\title{Tile Packing on a Checkerboard Chip:\\A Mixed-Integer Program}
+\author{qSNOW square-packing experiment}
+\date{}
+
+\newcommand{\Pset}{\mathcal{P}}
+\newcommand{\Vset}{\mathcal{V}}
+\newcommand{\Eset}{\mathcal{E}}
+\newcommand{\Fp}{F}
+
+\begin{document}
+\maketitle
+
+\section{Terminology}
+
+We fix the following vocabulary and use it consistently throughout.
+\begin{itemize}[itemsep=2pt]
+  \item \textbf{Site} --- an integer coordinate position $(r, c)$ on the chip, where $r$ is
+        the row and $c$ is the column. Coordinates are integers with \emph{unit spacing}:
+        adjacent lattice lines differ by $1$. Sites live on a checkerboard sublattice: a
+        coordinate pair is a site only if it satisfies the parity condition
+        $r \equiv c \pmod 2$ (STIM convention; the complementary positions carry ancilla
+        measurement hardware and are never tile origins). Consequently, two neighboring sites
+        within the same row (or same column) are $2$ coordinate units apart.
+  \item \textbf{Physical qubit} --- the data/ancilla qubit hosted at a site. There is exactly
+        one physical qubit per site, so ``the physical qubit at site $(r,c)$'' and ``the site
+        $(r,c)$'' refer to the same location; we say ``physical qubit'' when emphasizing that
+        two tiles must not share hardware, and ``site'' when talking about coordinates.
+  \item \textbf{Tile} --- a distance-$d$ rotated-surface-code patch. Placing a tile occupies
+        a square block of physical qubits, defined precisely in Section~\ref{sec:geometry}.
+  \item \textbf{Origin} --- the site at which a tile is placed, namely the minimum-coordinate
+        (top-left) corner of the block of physical qubits it occupies.
+\end{itemize}
+
+\section{Problem}
+
+A distance-$d$ tile may be placed with its origin at various sites on the chip. For each
+candidate origin we have a Monte-Carlo estimate of the tile's \emph{logical error rate}
+(LER) --- the probability that a memory experiment for a tile placed there fails --- obtained
+by simulating the tile at that origin and stored in the \texttt{.flake} results file. A
+placement is \emph{valid} when its LER does not exceed a fixed threshold. Because each placed
+tile occupies a block of physical qubits, two placed tiles may not overlap (share a physical
+qubit). We seek to place as many valid, mutually non-overlapping tiles as possible.
+
+\section{Geometry: tiles, footprints, and conflicts}
+\label{sec:geometry}
+
+\paragraph{Parameters.}
+\begin{itemize}[itemsep=2pt]
+  \item $d$ --- the code distance of the tile (e.g.\ $d = 3$).
+  \item $s = 2d + 1$ --- the \emph{footprint span}. Here $s$ is a \emph{geometric distance
+        measured in coordinate units}, namely the offset from the origin to the far edge of
+        the tile along each axis: a tile placed at row $r_p$ occupies rows $r_p$ through
+        $r_p + s$. It is \emph{not} a count of occupied sites. Because coordinates have unit
+        spacing, this window covers $s+1$ coordinate lines (of which the checkerboard sites
+        occupy every other one); $s$ itself is the distance between the first and last line.
+        The value $s = 2d+1$ comes from the rotated-surface-code geometry (a distance-$d$
+        tile's physical qubits span $2d+1$ coordinate units per side). For $d=3$, $s = 7$
+        (an $8$-coordinate-wide window); for $d=5$, $s = 11$.
+  \item $\tau$ --- the LER validity threshold (default $\tau = 0.20$).
+\end{itemize}
+
+\paragraph{Footprint.}
+A tile placed at origin $p = (r_p, c_p)$ --- where $r_p$ and $c_p$ are the row and column of
+that origin --- occupies every site inside the axis-aligned coordinate window that extends
+$s$ units from the origin toward increasing row and column. We call this set of occupied
+sites the tile's \emph{footprint}:
+\[
+  \Fp(p) \;=\; \bigl\{\, (r, c) \;:\; r_p \le r \le r_p + s,\;\;
+  c_p \le c \le c_p + s,\;\; r \equiv c \!\!\pmod 2 \,\bigr\}.
+\]
+Thus the footprint is a square block of physical qubits: its coordinate window runs from
+$r_p$ to $r_p + s$ in the row direction and from $c_p$ to $c_p + s$ in the column direction
+(inclusive). The far edge is therefore a distance $s$ (in coordinate units) from the origin,
+and the window covers $s+1$ coordinate lines on each side; the checkerboard sites occupy
+every other position inside it. For $d=3$ ($s=7$) this is an $8$-coordinate-wide window
+anchored at the origin.
+
+\paragraph{Conflict.}
+Two distinct placements \emph{conflict} when their footprints share at least one site (i.e.\
+the two tiles would compete for the same physical qubit). Since a footprint is an
+axis-aligned window of fixed side $s$, the row windows $[r_p, r_p + s]$ and $[r_q, r_q + s]$
+of two tiles overlap exactly when $|r_p - r_q| \le s$, and likewise for columns. Two footprints
+(2-D windows) share a site precisely when they overlap in \emph{both} axes, giving the
+conflict test
+\[
+  p \sim q
+  \quad\Longleftrightarrow\quad
+  p \neq q,\;\;
+  |r_p - r_q| \le s
+  \;\;\text{and}\;\;
+  |c_p - c_q| \le s .
+\]
+
+\paragraph{Worked example ($d=3$, so $s=7$).}
+A tile at origin $(0,0)$ occupies the sites in $[0,7]\times[0,7]$. A second tile at $(0,8)$
+does \emph{not} conflict: the columns differ by $8 > 7$, so the two column windows are
+disjoint. A tile at $(1,7)$ \emph{does} conflict: both coordinate differences ($1$ and $7$)
+are $\le 7$, so the footprints share physical qubits. This matches the blocking pattern
+observed directly in the simulator.
+
+\section{Data and sets}
+
+\begin{itemize}[itemsep=2pt]
+  \item $\Pset$ --- the set of candidate origins read from the results file. Each origin
+        $p \in \Pset$ is a site $(r_p, c_p)$ (so $r_p \equiv c_p \pmod 2$) and carries a
+        measured LER $\ell_p \in [0,1]$.
+  \item Valid placements:
+        \[
+          \Vset \;=\; \{\, p \in \Pset \;:\; \ell_p \le \tau \,\},
+        \]
+        the origins whose tile is good enough to use at threshold $\tau$.
+  \item Conflict edges among valid placements:
+        \[
+          \Eset \;=\; \bigl\{\, \{p,q\} \;:\; p,q \in \Vset,\; p \sim q \,\bigr\},
+        \]
+        using the conflict relation $\sim$ from Section~\ref{sec:geometry}.
+\end{itemize}
+
+\section{Decision variables}
+For each valid origin we introduce one binary variable:
+\[
+  x_p \in \{0,1\}, \qquad p \in \Vset,
+  \qquad
+  x_p =
+  \begin{cases}
+    1 & \text{if a tile is placed at origin } p,\\
+    0 & \text{otherwise.}
+  \end{cases}
+\]
+
+\section{Model}
+
+\begin{align}
+  \max_{x} \quad & \sum_{p \in \Vset} x_p
+    && \text{(maximize the number of placed tiles)} \label{eq:obj}\\[4pt]
+  \text{s.t.} \quad
+    & x_p + x_q \le 1
+    && \forall\, \{p,q\} \in \Eset
+    && \text{(no two placed tiles overlap)} \label{eq:pair}\\[2pt]
+    & x_p \in \{0,1\}
+    && \forall\, p \in \Vset. && \label{eq:bin}
+\end{align}
+
+Objective~\eqref{eq:obj} counts placed tiles; constraint~\eqref{eq:pair} forbids placing
+both members of any conflicting pair. This is a maximum-cardinality packing, equivalently a
+maximum independent set on the conflict graph $(\Vset, \Eset)$.
+
+\section{Tighter (clique) formulation}
+
+The pairwise constraints \eqref{eq:pair} are correct but yield a weak linear relaxation
+(the LP can set every $x_p = \tfrac12$). We can tighten the model as follows.
+
+Because footprints are axis-aligned windows, any collection of tiles that pairwise conflict
+has a common site: for axis-aligned boxes, pairwise intersection implies a common point
+(Helly's theorem in the plane). Hence every maximal clique of the conflict graph corresponds
+to a single site that lies in the footprint of all the tiles in the clique. This lets us
+replace the many edge constraints by one constraint per site.
+
+For a site $u = (u_r, u_c)$ --- where $u_r$ and $u_c$ are its row and column --- let
+\[
+  \mathcal{C}_u \;=\; \bigl\{\, p \in \Vset \;:\; u \in \Fp(p) \,\bigr\}
+  \;=\; \bigl\{\, p \in \Vset \;:\; r_p \le u_r \le r_p + s
+  \;\text{and}\; c_p \le u_c \le c_p + s \,\bigr\}
+\]
+be the set of valid placements whose footprint covers site $u$. Any two placements in
+$\mathcal{C}_u$ share $u$ and therefore conflict, so at most one of them may be used:
+\begin{equation}
+  \sum_{p \in \mathcal{C}_u} x_p \le 1
+  \qquad \forall\, \text{sites } u .
+  \label{eq:clique}
+\end{equation}
+Each such constraint dominates all the pairwise edges among the tiles covering $u$, so
+\eqref{eq:clique} gives a stronger LP relaxation than \eqref{eq:pair} while describing the
+same set of integer solutions. In the solver we enumerate only the \emph{maximal} covered
+windows (equivalently, distinct sets $\mathcal{C}_u$ that are not contained in another),
+which suffices to cover every conflicting pair.
+
+\section{Notes}
+\begin{itemize}[itemsep=2pt]
+  \item The objective can be generalized to a weighted packing
+        $\max \sum_p w_p x_p$ (e.g.\ $w_p = 1 - \ell_p$ to prefer lower-error placements);
+        the constraints are unchanged.
+  \item Chip-boundary feasibility is already baked into $\Pset$: the results file only
+        contains origins whose full footprint fits on the chip.
+\end{itemize}
+
+\end{document}

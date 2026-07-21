@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""
+Precompute the valid tile-placement set V for a given LER threshold tau.
+
+Shared data layer for the two Gurobi packing models. A candidate origin
+(row, col) read from the distance-3 square-packing results `.flake` file is
+"valid" when its measured logical error rate satisfies `ler <= tau`; the set of
+such origins is `V` in the MILP (see `square_packing_model.pdf`).
+
+Usage (standalone):
+    python3 packing_data.py <tau>          # prints |V| and the origins
+
+Usage (as a module):
+    from packing_data import valid_placements, footprint_span
+    V = valid_placements(0.20)             # list of (row, col)
+    s = footprint_span(distance=3)         # 7
+"""
+
+import json
+import sys
+from pathlib import Path
+from typing import Dict, List, Tuple
+
+Coord = Tuple[int, int]
+
+# This module lives in qSNOW/optim/; the experiment data stays in the demo tree.
+# Paths are resolved relative to this file so imports and CLI runs work regardless
+# of the current working directory.
+SCRIPT_DIR = Path(__file__).resolve().parent
+DATA_DIR = (
+    SCRIPT_DIR.parent / "demo" / "flakes" / "experiments" / "15x15" / "mean_0_01"
+)
+FLAKE_PATH = DATA_DIR / "results_squarepacking_rsc_memory_z_d3_2026-07-16_17-10-14.flake"
+
+
+def load_lers(flake_path: Path = FLAKE_PATH) -> Dict[Coord, float]:
+    """Load {(row, col): ler} from a square-packing results `.flake` (JSON) file."""
+    with open(flake_path) as f:
+        data = json.load(f)
+    lers: Dict[Coord, float] = {}
+    for key, entry in data["results"].items():
+        r, c = (int(v) for v in key.split(","))
+        lers[(r, c)] = entry["ler"]
+    return lers
+
+
+def valid_placements(tau: float, flake_path: Path = FLAKE_PATH) -> List[Coord]:
+    """Return V = sorted origins whose LER is within the threshold `ler <= tau`."""
+    lers = load_lers(flake_path)
+    return sorted(p for p, ler in lers.items() if ler <= tau)
+
+
+def chip_grid_dim(flake_path: Path = FLAKE_PATH) -> Tuple[int, int]:
+    """
+    Full checkerboard extent (n_rows, n_cols) of the chip, i.e. coords 0..n-1.
+
+    A "15x15" chip is a 30x30 checkerboard. The dimension is read from the sibling
+    experiment `.flake` referenced by the results file (its stored chip `length`
+    is the unit size, half the internal grid), falling back to 30x30.
+    """
+    try:
+        with open(flake_path) as f:
+            exp_name = json.load(f).get("experiment")
+        with open(flake_path.parent / exp_name) as f:
+            chip = json.load(f)["exp"]["chip"]
+        return 2 * int(chip["height"]), 2 * int(chip["length"])
+    except (OSError, KeyError, TypeError, ValueError):
+        return 30, 30
+
+
+def footprint_span(distance: int = 3) -> int:
+    """
+    Footprint span s used by the conflict rule.
+
+    A distance-`d` tile placed at (r, c) occupies the checkerboard window
+    [r, r+s] x [c, c+s] with s = 2*d + 1 (= tile.length - 1). Two tiles conflict
+    (share a qubit) iff |dr| <= s and |dc| <= s.
+    """
+    return 2 * distance + 1
+
+
+def main() -> None:
+    if len(sys.argv) != 2:
+        print(f"usage: {Path(sys.argv[0]).name} <tau>", file=sys.stderr)
+        raise SystemExit(2)
+    try:
+        tau = float(sys.argv[1])
+    except ValueError:
+        print(f"error: tau must be a number, got {sys.argv[1]!r}", file=sys.stderr)
+        raise SystemExit(2)
+
+    lers = load_lers()
+    V = valid_placements(tau)
+    print(f"tau = {tau:g}: |V| = {len(V)} valid of {len(lers)} candidate origins")
+    for r, c in V:
+        print(f"  ({r:2d}, {c:2d})  ler = {lers[(r, c)]:.4f}")
+
+
+if __name__ == "__main__":
+    main()
