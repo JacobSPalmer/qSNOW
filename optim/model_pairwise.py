@@ -40,8 +40,8 @@ def conflict_pairs(placements: List[Coord], span: int) -> List[Tuple[Coord, Coor
     return pairs
 
 
-def build_and_solve(tau: float, distance: int = 3, verbose: bool = True):
-    V = valid_placements(tau)
+def build_and_solve(tau: float, distance: int = 3, data_dir=None, verbose: bool = True):
+    V = valid_placements(tau, distance=distance, data_dir=data_dir)
     span = footprint_span(distance)
     pairs = conflict_pairs(V, span)
 
@@ -91,8 +91,14 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Tile packing MILP (pairwise formulation).")
     ap.add_argument("tau", type=float, help="LER validity threshold")
     ap.add_argument("--distance", type=int, default=3, help="code distance (default 3)")
+    ap.add_argument(
+        "--data-dir",
+        default=None,
+        help="experiment folder to read results flakes from "
+        "(default: $QSNOW_DATA_DIR or the demo path)",
+    )
     args = ap.parse_args()
-    build_and_solve(args.tau, args.distance)
+    build_and_solve(args.tau, args.distance, data_dir=args.data_dir)
 
 
 if __name__ == "__main__":

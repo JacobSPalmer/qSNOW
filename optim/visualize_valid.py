@@ -8,43 +8,24 @@ A placement origin (row, col) read from the distance-3 square-packing results
 distinguishing valid from invalid locations.
 
 Usage:
-    python3 visualize_valid.py <tau>
+    python3 visualize_valid.py <tau> [--distance D]
 
 Example:
-    python3 visualize_valid.py 0.20
+    python3 visualize_valid.py 0.20 --distance 5
 """
 
-import json
-import sys
-from pathlib import Path
-from typing import Dict, Tuple
+import argparse
 
 import matplotlib.pyplot as plt
 
-# This script lives in qSNOW/optim/; the experiment data stays in the demo tree.
-# Paths are resolved relative to this file so the script works regardless of the
-# current working directory. Figures are written next to the script (in optim/).
-SCRIPT_DIR = Path(__file__).resolve().parent
-DATA_DIR = (
-    SCRIPT_DIR.parent / "demo" / "flakes" / "experiments" / "15x15" / "mean_0_01"
-)
-FLAKE_PATH = DATA_DIR / "results_squarepacking_rsc_memory_z_d3_2026-07-16_17-10-14.flake"
+# Data loading (and the flake-per-distance resolution) lives in packing_data so
+# D3 and D5 are handled the same way; figures are written next to this script.
+from packing_data import SCRIPT_DIR, load_lers
 
 
-def load_lers(flake_path: Path) -> Dict[Tuple[int, int], float]:
-    """Load {(row, col): ler} from a square-packing results `.flake` (JSON) file."""
-    with open(flake_path) as f:
-        data = json.load(f)
-    lers: Dict[Tuple[int, int], float] = {}
-    for key, entry in data["results"].items():
-        r, c = (int(v) for v in key.split(","))
-        lers[(r, c)] = entry["ler"]
-    return lers
-
-
-def visualize(tau: float, flake_path: Path = FLAKE_PATH) -> Path:
+def visualize(tau: float, distance: int = 3, data_dir=None):
     """Plot valid vs. invalid placement origins for threshold `tau`; save a PNG."""
-    lers = load_lers(flake_path)
+    lers = load_lers(distance=distance, data_dir=data_dir)
 
     valid = [(r, c) for (r, c), ler in lers.items() if ler <= tau]
     invalid = [(r, c) for (r, c), ler in lers.items() if ler > tau]
@@ -76,7 +57,7 @@ def visualize(tau: float, flake_path: Path = FLAKE_PATH) -> Path:
     ax.set_xlabel("column (STIM coord)")
     ax.set_ylabel("row (STIM coord)")
     ax.set_title(
-        f"Valid D3 tile-placement locations  (τ = {tau:g})\n"
+        f"Valid D{distance} tile-placement locations  (τ = {tau:g})\n"
         f"{len(valid)} valid of {len(lers)} candidate origins"
     )
     ax.set_aspect("equal")
@@ -84,7 +65,7 @@ def visualize(tau: float, flake_path: Path = FLAKE_PATH) -> Path:
     ax.grid(True, which="both", color="0.9", linewidth=0.5)
     ax.legend(loc="upper right", framealpha=0.95)
 
-    out_path = SCRIPT_DIR / f"valid_locations_tau_{tau:g}.png"
+    out_path = SCRIPT_DIR / f"valid_locations_d{distance}_tau_{tau:g}.png"
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
@@ -92,19 +73,26 @@ def visualize(tau: float, flake_path: Path = FLAKE_PATH) -> Path:
 
 
 def main() -> None:
-    if len(sys.argv) != 2:
-        print(f"usage: {Path(sys.argv[0]).name} <tau>", file=sys.stderr)
-        raise SystemExit(2)
-    try:
-        tau = float(sys.argv[1])
-    except ValueError:
-        print(f"error: tau must be a number, got {sys.argv[1]!r}", file=sys.stderr)
-        raise SystemExit(2)
+    ap = argparse.ArgumentParser(
+        description="Visualize valid vs. invalid tile-placement locations."
+    )
+    ap.add_argument("tau", type=float, help="LER validity threshold")
+    ap.add_argument("--distance", type=int, default=3, help="code distance (default 3)")
+    ap.add_argument(
+        "--data-dir",
+        default=None,
+        help="experiment folder to read results flakes from "
+        "(default: $QSNOW_DATA_DIR or the demo path)",
+    )
+    args = ap.parse_args()
 
-    lers = load_lers(FLAKE_PATH)
-    n_valid = sum(1 for ler in lers.values() if ler <= tau)
-    out = visualize(tau)
-    print(f"tau = {tau:g}: {n_valid} valid of {len(lers)} candidate origins")
+    lers = load_lers(distance=args.distance, data_dir=args.data_dir)
+    n_valid = sum(1 for ler in lers.values() if ler <= args.tau)
+    out = visualize(args.tau, args.distance, data_dir=args.data_dir)
+    print(
+        f"d = {args.distance}, tau = {args.tau:g}: "
+        f"{n_valid} valid of {len(lers)} candidate origins"
+    )
     print(f"saved: {out}")
 
 

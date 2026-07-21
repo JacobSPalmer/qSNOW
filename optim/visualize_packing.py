@@ -28,21 +28,23 @@ from packing_data import (
 )
 
 
-def solve(tau: float, distance: int, formulation: str):
+def solve(tau: float, distance: int, formulation: str, data_dir=None):
     """Return the chosen placements from the requested formulation (quietly)."""
     if formulation == "pairwise":
         from model_pairwise import build_and_solve
     else:
         from model_clique import build_and_solve
-    return build_and_solve(tau, distance=distance, verbose=False)
+    return build_and_solve(tau, distance=distance, data_dir=data_dir, verbose=False)
 
 
-def visualize(tau: float, distance: int = 3, formulation: str = "clique") -> Path:
-    lers = load_lers()
-    V = set(valid_placements(tau))
+def visualize(
+    tau: float, distance: int = 3, formulation: str = "clique", data_dir=None
+) -> Path:
+    lers = load_lers(distance=distance, data_dir=data_dir)
+    V = set(valid_placements(tau, distance=distance, data_dir=data_dir))
     span = footprint_span(distance)
-    n_rows, n_cols = chip_grid_dim()
-    chosen = solve(tau, distance, formulation)
+    n_rows, n_cols = chip_grid_dim(distance=distance, data_dir=data_dir)
+    chosen = solve(tau, distance, formulation, data_dir=data_dir)
 
     fig, ax = plt.subplots(figsize=(9, 9))
 
@@ -128,7 +130,10 @@ def visualize(tau: float, distance: int = 3, formulation: str = "clique") -> Pat
     ax.legend(handles=legend_handles, loc="upper left", bbox_to_anchor=(1.01, 1.0),
               framealpha=0.95, borderaxespad=0.0)
 
-    out_path = Path(__file__).resolve().parent / f"packing_tau_{tau:g}_{formulation}.png"
+    out_path = (
+        Path(__file__).resolve().parent
+        / f"packing_d{distance}_tau_{tau:g}_{formulation}.png"
+    )
     fig.tight_layout()
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -141,8 +146,14 @@ def main() -> None:
     ap.add_argument("--distance", type=int, default=3, help="code distance (default 3)")
     ap.add_argument("--formulation", choices=["clique", "pairwise"], default="clique",
                     help="which model to solve (default clique)")
+    ap.add_argument(
+        "--data-dir",
+        default=None,
+        help="experiment folder to read results flakes from "
+        "(default: $QSNOW_DATA_DIR or the demo path)",
+    )
     args = ap.parse_args()
-    out = visualize(args.tau, args.distance, args.formulation)
+    out = visualize(args.tau, args.distance, args.formulation, data_dir=args.data_dir)
     print(f"saved: {out}")
 
 
