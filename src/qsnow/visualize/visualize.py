@@ -6,8 +6,8 @@ from qsnow.interface.models import CSSType, Qubit, Status, Tag
 
 if TYPE_CHECKING:
     from plotly.graph_objs._figure import Figure
-
     from qsnow.interface.chip import Chip
+    from qsnow.interface.tile import LogicalTile
 
 # ------------------------------------------------------------------
 # Visualization style classes/types
@@ -166,9 +166,8 @@ def packing_profile_style(chip: Chip, profiles: Dict[Any, Dict]):
         return QubitStyle(
             color="pink" if valid else "lightgray",
             custom_hovertext=_hovertext_format(
-                base=f"{(qubit.loc[0], qubit.loc[1])}",
+                base=f"{(qubit.loc[0], qubit.loc[1])} -> {profile.get('bound')}" if valid else f"{(qubit.loc[0], qubit.loc[1])}",
                 valid=valid,
-                bound=profile.get("bound", None),
                 ler=profile.get("ler", None),
             ),
         )
@@ -178,31 +177,48 @@ def packing_profile_style(chip: Chip, profiles: Dict[Any, Dict]):
 
 def custom_heatmap_style(
     chip: Chip,
-    coord_float_map: Dict[Tuple[float, float], float],
+    float_map: Dict[Tuple[float, float], float],
+    float_label: str,
     *,
     colorscale: str = "hot_r",
     limits: Optional[Tuple[float, float]] = None,
-    label: str = "Noise (p)",
+    colorbar_label: Optional[str] = None,
+    additional_hovertext: Optional[Dict[str, Dict[Tuple[float, float], object]]] = None,
+    style_desc: Optional[str] = None
 ) -> VisualizationStyle:
     if limits:
         cmin, cmax = limits
     else:
-        cmin, cmax = min(coord_float_map.values()), max(coord_float_map.values())
+        cmin, cmax = min(float_map.values()), max(float_map.values())
 
     def qubit_style_fn(qubit: Qubit) -> QubitStyle:
         # raw value; the colorscale mapping is applied trace-wide by `visualize()`
-        ler = coord_float_map.get(qubit.loc)
-        return QubitStyle(
-            color=ler if ler is not None else "lightgray",
-            custom_hovertext=_hovertext_format(
-                f"({qubit.loc[0]}, {qubit.loc[1]})",
-                ler=f"{ler:.4f}" if ler is not None else None,
-            ),
-        )
+        if qubit.loc:
+            heatmap_val = float_map.get(qubit.loc)
+            hovertext_dict = {float_label: f"{heatmap_val:.4f}" if heatmap_val is not None else None}
+
+            if additional_hovertext: 
+                for attr_title, attr_map in additional_hovertext.items():
+                    attr_val = attr_map.get(qubit.loc, None)
+                    if attr_val:
+                        attr_val = f"{attr_val:.4f}" if isinstance(attr_val, float) else attr_val
+                    hovertext_dict |= {attr_title: attr_val}
+
+            base = hovertext_dict.pop('base', None) or f"({qubit.loc[0]}, {qubit.loc[1]})"
+
+            return QubitStyle(
+                color=heatmap_val if heatmap_val is not None else "lightgray",
+                custom_hovertext=_hovertext_format(
+                    base = base,
+                    **hovertext_dict
+                ),
+            )
+        else:
+            raise AttributeError('Qubit must have location in order to be visualized.')
 
     return VisualizationStyle(
         style_fn=qubit_style_fn,
-        colorbar=ColorbarSpec(colorscale=colorscale, cmin=cmin, cmax=cmax, label=label),
+        colorbar=ColorbarSpec(colorscale=colorscale, cmin=cmin, cmax=cmax, label=colorbar_label or float_label),
         logical_style=None,
     )
 
@@ -275,10 +291,14 @@ def _compute_geometry(
 
     # NOTE - Reserve a fixed pixel strip for the pesky lil colorbar explicitly and pin the plot domain so it never needs to encroach.
     # TODO - this still is not fit flush to the side of the plot like it ideally should
-    margin_l, margin_r, margin_t, margin_b = 40, 40, 60 + extra_top_margin, 40
-    base_width = min(900, max(600, chip.length * 60))
-    fig_height = min(900, max(600, chip.height * 60)) + extra_top_margin
-    plot_px_width = base_width - margin_l - margin_r
+    base_margin = 40
+    margin_l, margin_r, margin_b = base_margin, base_margin, base_margin
+    margin_t = base_margin + 20 + extra_top_margin
+
+    plot_px_width = min(900, max(600, chip.length * 60)) - 2 * base_margin
+    plot_px_height = min(900, max(600, chip.height * 60)) - 2 * base_margin
+    base_width = plot_px_width + margin_l + margin_r
+    fig_height = plot_px_height + margin_t + margin_b
     colorbar_px = 100 if reserve_colorbar else 0
     domain_frac = plot_px_width / (plot_px_width + colorbar_px) if colorbar_px else 1.0
 
@@ -511,10 +531,14 @@ def visualize(
         chip, style, geometry, logical_color_gradient=logical_color_gradient
     )
 
-    for shape in layer.shapes:
-        fig.add_shape(**shape)
-    for annotation in layer.annotations:
-        fig.add_annotation(**annotation)
+    # Bulk-assign via `update_layout` rather than `add_shape`/`add_annotation` in a
+    # loop: each of those calls re-validates the whole figure, so doing it once per
+    # qubit is O(n) validation passes instead of one - on a few hundred qubits that's
+    # the difference between sub-second and 10+ second renders.
+    fig.update_layout(
+        shapes=list(fig.layout.shapes) + layer.shapes,
+        annotations=list(fig.layout.annotations) + layer.annotations,
+    )
     fig.add_trace(Scattergl(**layer.trace_kwargs))
 
     _apply_frame(fig, chip, geometry)

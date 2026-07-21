@@ -483,7 +483,7 @@ def square_packing_from_dict(data: Dict) -> SquarePackingExp:
     if exp.results_refs:
         for p in exp.results_refs:
             try:
-                exp.results = import_latest(p).results
+                exp.results = import_flake(p).results
                 break
             except FileNotFoundError:
                 logger.debug(
@@ -512,7 +512,7 @@ def experiment_from_dict(data: Dict) -> Experiment:
     if exp.results_refs:
         for p in exp.results_refs:
             try:
-                exp.results = import_latest(p)
+                exp.results = import_flake(p).results
                 break
             except FileNotFoundError:
                 logger.debug(
@@ -711,9 +711,10 @@ def summarize_exports(
     return summary
 
 
-def import_latest(pattern: str = "*", kind: Optional[str] = None) -> Any:
+def import_latest(pattern: str = "*", kind: Optional[str] = None, *, silent: bool = False) -> Any:
     """
-    Import the most recent export whose filename matches `pattern`.
+    Import the most recent export whose filename matches `pattern`. If `silent` is true, no print message will be shown (useful for
+    internal operations that rely on this method to not overwhelm.)
 
     Examples: `import_latest("chip")`, `import_latest("rsc*d3", kind="tiles")`.
     """
@@ -722,7 +723,7 @@ def import_latest(pattern: str = "*", kind: Optional[str] = None) -> Any:
         raise FileNotFoundError(
             f"No flakes matching '{pattern}'{f' in {kind}/' if kind else ''} under {_DATA_DIR}/."
         )
-    if matches:
+    if matches and not silent:
         print(
             f"Found {len(matches)} matching flakes...\nImporting flake at {matches[0]}"
         )

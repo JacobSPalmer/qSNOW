@@ -120,17 +120,33 @@ class SquarePackingExp(Experiment):
             "tile": self.tile.summary(),
             "placements": len(self.profile),
         }
+    
+    def _average_per_for_candidate_placements(self):
+        from statistics import mean
+        return {o: mean([q.noise.p for q in self.chip.select_rect(*o, o[0] +  self.tile.length - 1, o[1] + self.tile.height - 1).values()]) for o in self.profile}
+
+    def _bounds_for_candidate_placements(self):
+        return {o: (o[0] +  self.tile.length - 1, o[1] + self.tile.height - 1) for o in self.profile}
 
     def _interactive_styles(
         self, results: ExperimentResults
     ) -> Dict[str, VisualizationStyle]:
         """The view bundle for `show`: chip-level views plus LER/placement results."""
         ler_map = {k: v["ler"] for k, v in results.results.items()}
+        bounds_map = self._bounds_for_candidate_placements()
+        avg_per_map = self._average_per_for_candidate_placements()
+        base_map = {k: f'{k} → {bounds_map.get(k) if bounds_map.get(k) else k}' for k in self.profile}
+
+        profile = {loc: {"base": f'{loc} → {bounds_map.get(loc) if bounds_map.get(loc) else loc}',
+                         "ler": ler_map.get(loc), 
+                         "bound": bounds_map.get(loc)} for loc in self.profile}
+
         styles = {"PER": noise_heatmap_style(self.chip)}
-        styles["Valid Placements"] = packing_profile_style(
-            self.chip, {loc: {"ler": ler_map.get(loc)} for loc in self.profile}
-        )
-        styles["LER"] = custom_heatmap_style(self.chip, ler_map, label="LER")
+        styles["Candidate Placements"] = packing_profile_style(self.chip, profile)
+
+        styles["Avg. PER"] = custom_heatmap_style(self.chip, avg_per_map, 'Avg. PER', additional_hovertext={'base': base_map,
+                                                                                                            'LER': ler_map})
+        styles["LER"] = custom_heatmap_style(self.chip, ler_map, 'LER', additional_hovertext={'base': base_map, 'Avg. PER': avg_per_map})
 
         return styles
 

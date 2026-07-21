@@ -47,6 +47,20 @@ class TestVisualizeFigure:
         assert fig.layout.xaxis.domain[1] < 1.0
         assert fig.data[0].marker.showscale is True
 
+    def test_x_axis_range_not_widened_by_scaleanchor(self, lg_chip):
+        # regression: on a square chip, the (fixed) extra top margin reserved for
+        # the top-side axis labels used to shrink the plot area's height relative
+        # to its width; since the y-axis is scaleanchor-locked to x, plotly
+        # silently widened the *x* range to compensate (growing with chip size)
+        # while the y range stayed exactly as requested. Both should now resolve
+        # to exactly what was requested.
+        fig = visualize(lg_chip)
+        requested_x = fig.layout.xaxis.range
+        requested_y = fig.layout.yaxis.range
+        full = fig.full_figure_for_development(warn=False)
+        assert full.layout.xaxis.range == requested_x
+        assert full.layout.yaxis.range == requested_y
+
     def test_logical_color_gradient_overrides_default_edgecolor(
         self, lg_chip, logical_tile
     ):

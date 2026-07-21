@@ -168,7 +168,7 @@ def visualize_interactive(
                 y=1.0,
                 yanchor="bottom",
                 # lift the dropdown clear of the top-side axis tick labels
-                pad=dict(b=28),
+                pad=dict(b=32),
             )
         ],
     )
