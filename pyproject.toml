@@ -21,7 +21,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["ipykernel", "ruff"]
-test = ["pytest", "pytest-cov"]
+test = ["pytest", "pytest-cov", "kaleido"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
