@@ -13,5 +13,6 @@ def test_interactive_styles_bundle(chip, logical_tile):
         results={(0, 0): {"ler": 0.01, "shots": 100, "errors": 1}},
     )
     styles = exp._interactive_styles(results)
-    assert list(styles) == ["PER", "Valid Placements", "LER"]
+    assert list(styles) == ["PER", "Candidate Placements", "Avg. PER", "LER"]
     assert styles["LER"].colorbar.label == "LER"
+    assert all(style.desc for style in styles.values())

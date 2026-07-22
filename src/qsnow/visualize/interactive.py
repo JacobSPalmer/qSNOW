@@ -1,6 +1,7 @@
 """Interactive figures: in-figure style switching and standalone HTML export."""
 
 from collections.abc import Mapping
+from dataclasses import replace
 from datetime import datetime
 from html import escape
 from pathlib import Path
@@ -34,14 +35,52 @@ __all__ = [
 _DROPDOWN_MARGIN_PX = 50
 # Further top-margin pixels reserved when the figure carries a title/subtitle.
 _TITLE_MARGIN_PX = 45
+# Further top-margin pixels reserved for the active style's description caption,
+# only added when at least one bundled style actually has a `desc`.
+_DESC_MARGIN_PX = 22
+
+
+def _style_desc_annotation(desc: str) -> Dict[str, object]:
+    """Caption for the active style, pinned just above the plot's top axis
+    line/tick labels, inside the reserved `_DESC_MARGIN_PX` band.
+
+    Annotation `yref="paper"` is relative to the *plotting area only* (unlike
+    `layout.title.yref="container"`, which spans the whole figure) - it tops
+    out at exactly 1.0 at the axis line, so a plain pixel `yshift` off that
+    edge (matching the `pad` used for the dropdown/title below) is all that's
+    needed; no margin/figure-height fraction math required.
+    """
+    return dict(
+        x=0.0,
+        xref="paper",
+        xanchor="left",
+        y=1.0,
+        yref="paper",
+        yanchor="bottom",
+        # clears the top-side axis tick labels (~20px) and sits within the
+        # reserved _DESC_MARGIN_PX band above them
+        yshift=55 + _DESC_MARGIN_PX // 2,
+        text=desc,
+        showarrow=False,
+        align="left",
+        font=dict(size=11, color="#6b7280"),
+    )
 
 
 def default_interactive_styles(chip: Chip) -> Dict[str, VisualizationStyle]:
     """The standard chip-level view bundle: status, CSS type, and noise heatmap."""
     return {
-        "Status": default_style,
-        "CSS Type": css_style,
-        "Noise": noise_heatmap_style(chip),
+        "Status": replace(
+            default_style,
+            desc="Qubit assignment status (inactive / logical / ancilla).",
+        ),
+        "CSS Type": replace(
+            css_style,
+            desc="Qubit's Calderbank-Shor-Steane role (X-check / Z-check / data / tiling buffer)",
+        ),
+        "Noise": noise_heatmap_style(
+            chip, desc="Heatmap of each qubit's physical error rate p."
+        ),
     }
 
 
@@ -117,12 +156,18 @@ def visualize_interactive(
     if subtitle is None:
         subtitle = _chip_subtitle(chip)
 
+    # Only reserve room for the description caption row if some style actually
+    # has one, so bundles without descriptions render exactly as before.
+    has_desc = any(s.desc for s in styles.values())
+
     # Constant geometry across views (colorbar strip reserved if any style needs
     # it) so switching styles never resizes the plot.
     geometry = _compute_geometry(
         chip,
         reserve_colorbar=any(s.colorbar is not None for s in styles.values()),
-        extra_top_margin=_DROPDOWN_MARGIN_PX + (_TITLE_MARGIN_PX if title else 0),
+        extra_top_margin=_DROPDOWN_MARGIN_PX
+        + (_TITLE_MARGIN_PX if title else 0)
+        + (_DESC_MARGIN_PX if has_desc else 0),
     )
     layers = {
         name: _build_style_layer(
@@ -132,6 +177,12 @@ def visualize_interactive(
             logical_color_gradient=logical_color_gradient,
             name=name,
         )
+        for name, style in styles.items()
+    }
+    # Per-style caption annotation (empty when that style has no `desc`), kept
+    # separate from `layer.annotations` so it can ride along wherever those do.
+    desc_annotations = {
+        name: [_style_desc_annotation(style.desc)] if style.desc else []
         for name, style in styles.items()
     }
 
@@ -146,7 +197,7 @@ def visualize_interactive(
     active_layer = layers[active]
     fig.update_layout(
         shapes=active_layer.shapes,
-        annotations=active_layer.annotations,
+        annotations=active_layer.annotations + desc_annotations[active],
         updatemenus=[
             dict(
                 buttons=[
@@ -155,7 +206,11 @@ def visualize_interactive(
                         method="update",
                         args=[
                             {"visible": [j == i for j in range(len(names))]},
-                            {"shapes": layer.shapes, "annotations": layer.annotations},
+                            {
+                                "shapes": layer.shapes,
+                                "annotations": layer.annotations
+                                + desc_annotations[name],
+                            },
                         ],
                     )
                     for i, (name, layer) in enumerate(layers.items())

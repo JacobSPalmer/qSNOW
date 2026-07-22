@@ -2,6 +2,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, Optional, Self, Tuple, overload
+from functools import total_ordering
+from numbers import Number
 
 type Coord = Tuple[float, float]
 type ShiftFunction = Callable[[*tuple[float, ...]], Coord]
@@ -55,7 +57,6 @@ class CSSType(Enum):
 _DEFAULT_STATUS = Status.INACTIVE
 _DEFAULT_CSSTYPE = CSSType.UNASSIGNED
 
-
 class BoundedFloat:
     """Descriptor class enforcing min_value <= value <= max_value on assignment."""
 
@@ -85,7 +86,7 @@ class BoundedFloat:
             )
         setattr(obj, self.private_name, value)
 
-
+@total_ordering
 class NoiseProfile:
     # TODO - start with seperating all operations into 3 buckets: 2-qubit (CNOT, SWAP, etc.), 1-qubit (H, Pauli's (X, Y, Z)), Idle/Measurement (M, MX, R, RX)
     #       this could be the de facto "default" noise profile of each qubit but implement it in such a way that the noise profile can be set manually so the profile supports each operation having it's own specific value for pre- and post- operation.
@@ -96,13 +97,26 @@ class NoiseProfile:
 
     def __repr__(self):
         return f"{self.__class__.__name__}(p={self.p})"
+    
+    def __eq__(self, value) -> bool:
+        if isinstance(value, Number):
+            return self.p == value
+        elif isinstance(value, NoiseProfile):
+            return self.p == value.p
+        else:
+            return NotImplemented
+
+    def __lt__(self, value) -> bool:
+        if isinstance(value, Number):
+            return self.p < value
+        elif isinstance(value, NoiseProfile):
+            return self.p < value.p
+        else:
+            return NotImplemented
 
     # NOTE - mildly pointless right now but plan to expand noise profile so adding this now avoids work later
     def copy(self):
         return NoiseProfile(self.p)
-
-    def to_dict(self):
-        return {"p": self.p}
 
 
 class Qubit:
@@ -113,11 +127,21 @@ class Qubit:
         status: Status = _DEFAULT_STATUS,
         type: CSSType = _DEFAULT_CSSTYPE,
     ):
-        self.loc: Optional[Coord] = loc
+        self._loc: Optional[Coord] = loc
         self.noise = noise if noise is not None else NoiseProfile()
         self._status = status
         self._type = type
 
+    @property
+    def loc(self) -> Coord:
+        if not self._loc:
+            raise AttributeError('Qubit location not initialized.')
+        return self._loc
+    
+    @loc.setter
+    def loc(self, new_loc) -> None:
+        self._loc = new_loc
+        
     @property
     def status(self) -> Status:
         return self._status

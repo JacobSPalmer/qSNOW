@@ -316,6 +316,7 @@ class Chip(Grid):
         style: Optional[VisualizationStyle] = None,
         *,
         extra_styles: Optional[Mapping[str, VisualizationStyle]] = None,
+        interactive: bool = False,
     ) -> None:
         """
         Display a visualization of the chip's qubit layout.
@@ -328,9 +329,13 @@ class Chip(Grid):
         if style is not None:
             visualize(self, style=style, show=True)
             return
-        styles = default_interactive_styles(self)
-        styles.update(extra_styles or {})
-        visualize_interactive(self, styles, show=True)
+        elif not interactive:
+            visualize(self, show=True)
+            return
+        else:
+            styles = default_interactive_styles(self)
+            styles.update(extra_styles or {})
+            visualize_interactive(self, styles, show=True)
 
     # ------------------------------------------------------------------
     # Input/ouput

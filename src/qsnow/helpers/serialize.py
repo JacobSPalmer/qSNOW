@@ -98,6 +98,7 @@ def _migration(from_version: int):
 
     return register
 
+# TODO - migrate to add date to each file as a 'created' attr
 
 # NOTE - This migration process is necessary so that when (inevitably) some sort of attribute change takes place the serialize function doesn't shit the bed
 #        Below is a demo patch as if

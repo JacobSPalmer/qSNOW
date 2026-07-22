@@ -52,11 +52,12 @@ class SquarePackingExp(Experiment):
         logger.info(f"{len(profile)} valid placements to sample")
         return profile
 
+
     # ------------------------------------------------------------------
     # Simulation
     # ------------------------------------------------------------------
-
-    def _circuit_for_profile_loc(self, loc: Coord):
+    
+    def _circuit_for_profile_loc(self, loc: Coord) -> Circuit:
         if self.tile.initialized() and self.tile.chip == self.chip:
             self.tile.shift_to(loc)
         else:
@@ -111,7 +112,10 @@ class SquarePackingExp(Experiment):
             self.config.update(shots=shots, max_errors=max_errors, decoder=decoder)
 
         return self.results
-
+    
+    # ------------------------------------------------------------------
+    # Simulation
+    # ------------------------------------------------------------------
     def summary(self) -> Dict[str, object]:
         """Compact facts describing the experiment, for display surfaces
         (visualization headers, HTML exports, reprs)."""
@@ -121,11 +125,11 @@ class SquarePackingExp(Experiment):
             "placements": len(self.profile),
         }
     
-    def _average_per_for_candidate_placements(self):
+    def _average_per_for_candidate_placements(self) -> Dict[Coord, float]:
         from statistics import mean
         return {o: mean([q.noise.p for q in self.chip.select_rect(*o, o[0] +  self.tile.length - 1, o[1] + self.tile.height - 1).values()]) for o in self.profile}
 
-    def _bounds_for_candidate_placements(self):
+    def _bounds_for_candidate_placements(self) -> Dict[Coord, Coord]:
         return {o: (o[0] +  self.tile.length - 1, o[1] + self.tile.height - 1) for o in self.profile}
 
     def _interactive_styles(
@@ -141,12 +145,30 @@ class SquarePackingExp(Experiment):
                          "ler": ler_map.get(loc), 
                          "bound": bounds_map.get(loc)} for loc in self.profile}
 
-        styles = {"PER": noise_heatmap_style(self.chip)}
-        styles["Candidate Placements"] = packing_profile_style(self.chip, profile)
-
-        styles["Avg. PER"] = custom_heatmap_style(self.chip, avg_per_map, 'Avg. PER', additional_hovertext={'base': base_map,
-                                                                                                            'LER': ler_map})
-        styles["LER"] = custom_heatmap_style(self.chip, ler_map, 'LER', additional_hovertext={'base': base_map, 'Avg. PER': avg_per_map})
+        styles = {
+            "PER": noise_heatmap_style(
+                self.chip, desc="Heatmap of each qubit's physical error rate (PER)."
+            ),
+            "Candidate Placements": packing_profile_style(
+                self.chip,
+                profile,
+                desc="Placements, or sites, where tiles could be validly placed, anchored by the tile's origin (upper-leftmost qubit).",
+            ),
+            "Avg. PER": custom_heatmap_style(
+                self.chip,
+                avg_per_map,
+                'Avg. PER',
+                additional_hovertext={'base': base_map, 'LER': ler_map},
+                desc="Average physical error rate across the tile footprint for each candidate site.",
+            ),
+            "LER": custom_heatmap_style(
+                self.chip,
+                ler_map,
+                'LER',
+                additional_hovertext={'base': base_map, 'Avg. PER': avg_per_map},
+                desc="Sampled logical error rate (LER) if the tile's origin were placed at each candidate site.",
+            )
+        }
 
         return styles
 

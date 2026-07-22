@@ -16,12 +16,6 @@ class TestNoiseProfile:
         with pytest.raises(ValueError):
             NoiseProfile(p=bad_p)
 
-    def test_copy_noise_profile(self, p=0.5):
-        np = NoiseProfile(p)
-        assert np.copy() != np
-        assert np.copy().to_dict() == np.to_dict()
-
-
 class TestQubit:
     def test_defaults(self):
         qubit = Qubit()

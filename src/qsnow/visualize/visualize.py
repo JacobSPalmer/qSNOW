@@ -2,7 +2,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
-from qsnow.interface.models import CSSType, Qubit, Status, Tag
+from qsnow.interface.models import CSSType, Qubit, Status, Tag, Coord
 
 if TYPE_CHECKING:
     from plotly.graph_objs._figure import Figure
@@ -57,6 +57,9 @@ class VisualizationStyle:
     style_fn: Callable[[Qubit], QubitStyle]
     colorbar: Optional[ColorbarSpec] = None
     logical_style: Optional[Callable[[Tag], LogicalStyle]] = None
+    # One-line description of what this style shows, surfaced as a caption
+    # next to the style dropdown in `visualize_interactive()`.
+    desc: Optional[str] = None
 
 
 _STATUS_COLORS = {
@@ -127,7 +130,10 @@ css_style = VisualizationStyle(
 
 
 def noise_heatmap_style(
-    chip: Chip, colorscale: str = "hot_r", limits: Optional[Tuple[float, float]] = None
+    chip: Chip,
+    colorscale: str = "hot_r",
+    limits: Optional[Tuple[float, float]] = None,
+    desc: Optional[str] = None,
 ) -> VisualizationStyle:
     """Color each qubit by its noise value `p`, normalized across the chip."""
     if limits:
@@ -156,10 +162,13 @@ def noise_heatmap_style(
             colorscale=colorscale, cmin=cmin, cmax=cmax, label="Noise (p)"
         ),
         logical_style=logical_style_fn,
+        desc=desc,
     )
 
 
-def packing_profile_style(chip: Chip, profiles: Dict[Any, Dict]):
+def packing_profile_style(
+    chip: Chip, profiles: Dict[Any, Dict], desc: Optional[str] = None
+):
     def style_fn(qubit: Qubit) -> QubitStyle:
         profile = profiles.get(qubit.loc, {})
         valid = True if profile else False
@@ -172,19 +181,19 @@ def packing_profile_style(chip: Chip, profiles: Dict[Any, Dict]):
             ),
         )
 
-    return VisualizationStyle(style_fn=style_fn)
+    return VisualizationStyle(style_fn=style_fn, desc=desc)
 
 
 def custom_heatmap_style(
     chip: Chip,
-    float_map: Dict[Tuple[float, float], float],
+    float_map: Dict[Coord, float],
     float_label: str,
     *,
     colorscale: str = "hot_r",
     limits: Optional[Tuple[float, float]] = None,
     colorbar_label: Optional[str] = None,
-    additional_hovertext: Optional[Dict[str, Dict[Tuple[float, float], object]]] = None,
-    style_desc: Optional[str] = None
+    additional_hovertext: Optional[Dict[str, Dict[Coord, Any]]] = None,
+    desc: Optional[str] = None
 ) -> VisualizationStyle:
     if limits:
         cmin, cmax = limits
@@ -220,10 +229,16 @@ def custom_heatmap_style(
         style_fn=qubit_style_fn,
         colorbar=ColorbarSpec(colorscale=colorscale, cmin=cmin, cmax=cmax, label=colorbar_label or float_label),
         logical_style=None,
+        desc=desc,
     )
 
 
-def area_selection_style(chip: Chip, selection: Dict[Any, Qubit], show_logicals=False):
+def area_selection_style(
+    chip: Chip,
+    selection: Dict[Any, Qubit],
+    show_logicals=False,
+    desc: Optional[str] = None,
+):
     def style_fn(qubit: Qubit) -> QubitStyle:
         selected = selection.get(qubit.loc, None)
         return QubitStyle(
@@ -238,6 +253,7 @@ def area_selection_style(chip: Chip, selection: Dict[Any, Qubit], show_logicals=
     return VisualizationStyle(
         style_fn=style_fn,
         logical_style=_default_logical_style if show_logicals else None,
+        desc=desc,
     )
 
 

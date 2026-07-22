@@ -13,6 +13,7 @@ from qsnow.visualize.interactive import (
 from qsnow.visualize.visualize import (
     VisualizationStyle,
     _default_qubit_style_by_status,
+    css_style,
     default_style,
 )
 
@@ -21,6 +22,51 @@ DEFAULT_NAMES = ["Status", "CSS Type", "Noise"]
 
 def visible_flags(fig):
     return [trace.visible for trace in fig.data]
+
+
+class TestDefaultInteractiveStylesDesc:
+    def test_bundled_styles_all_have_desc(self, chip):
+        styles = default_interactive_styles(chip)
+        assert all(style.desc for style in styles.values())
+
+    def test_shared_style_instances_untouched(self, chip):
+        # `default_interactive_styles` must not mutate the shared module-level
+        # `default_style`/`css_style` instances when attaching a description.
+        default_interactive_styles(chip)
+        assert default_style.desc is None
+        assert css_style.desc is None
+
+
+class TestStyleDescCaption:
+    def test_caption_present_for_active_style_with_desc(self, chip):
+        fig = visualize_interactive(chip, active="Noise")
+        texts = [a.text for a in fig.layout.annotations]
+        desc = default_interactive_styles(chip)["Noise"].desc
+        assert desc in texts
+
+    def test_caption_absent_for_style_without_desc(self, chip):
+        no_desc = VisualizationStyle(style_fn=_default_qubit_style_by_status)
+        fig = visualize_interactive(chip, {"Bare": no_desc})
+        assert fig.layout.annotations == ()
+
+    def test_caption_swaps_per_button(self, chip):
+        fig = visualize_interactive(chip)
+        styles = default_interactive_styles(chip)
+        menu = fig.layout.updatemenus[0]
+        for button in menu.buttons:
+            _, relayout = button.args
+            texts = [a["text"] for a in relayout["annotations"]]
+            expected = styles[button.label].desc
+            assert expected in texts
+
+    def test_no_desc_bundle_matches_prior_geometry(self, chip):
+        # regression: reserving room for the caption row must be opt-in - a
+        # bundle where no style has a `desc` should render with exactly the
+        # same figure height as before this feature existed.
+        described = visualize_interactive(chip)
+        no_desc = VisualizationStyle(style_fn=_default_qubit_style_by_status)
+        undescribed = visualize_interactive(chip, {"Bare": no_desc})
+        assert undescribed.layout.height < described.layout.height
 
 
 class TestVisualizeInteractive:

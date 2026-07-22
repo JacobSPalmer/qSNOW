@@ -1,6 +1,7 @@
 from qsnow.interface.models import Qubit, Status
 from qsnow.visualize.visualize import (
     QubitStyle,
+    VisualizationStyle,
     _default_qubit_style_by_status,
     _discrete_colormap_fn,
     area_selection_style,
@@ -10,6 +11,11 @@ from qsnow.visualize.visualize import (
     packing_profile_style,
     visualize,
 )
+
+
+def test_visualization_style_desc_defaults_to_none():
+    style = VisualizationStyle(style_fn=_default_qubit_style_by_status)
+    assert style.desc is None
 
 
 class TestDefaultQubitStyle:
@@ -29,6 +35,15 @@ class TestDefaultQubitStyle:
 
 def test_default_style_uses_status_based_styling():
     assert default_style.style_fn is _default_qubit_style_by_status
+
+
+class TestNoiseHeatmapStyleDesc:
+    def test_defaults_to_none(self, chip):
+        assert noise_heatmap_style(chip).desc is None
+
+    def test_threads_through(self, chip):
+        style = noise_heatmap_style(chip, desc="what this shows")
+        assert style.desc == "what this shows"
 
 
 class TestVisualizeFigure:
@@ -77,7 +92,7 @@ class TestVisualizeFigure:
 class TestCustomHeatmapStyle:
     def test_colors_by_provided_map(self, chip):
         coord_map = {q.loc: float(i) for i, q in enumerate(chip.qubits)}
-        style = custom_heatmap_style(chip, coord_map, label="LER")
+        style = custom_heatmap_style(chip, coord_map, "LER")
         assert style.colorbar is not None
         assert style.colorbar.label == "LER"
         qubit = chip.qubits[0]
@@ -85,15 +100,31 @@ class TestCustomHeatmapStyle:
         assert result.color == coord_map[qubit.loc]
 
     def test_missing_coord_falls_back_to_lightgray(self, chip):
-        style = custom_heatmap_style(chip, {}, limits=(0.0, 1.0))
+        style = custom_heatmap_style(chip, {}, "LER", limits=(0.0, 1.0))
         result = style.style_fn(chip.qubits[0])
         assert result.color == "lightgray"
 
     def test_limits_override_computed_bounds(self, chip):
         coord_map = {q.loc: 0.5 for q in chip.qubits}
-        style = custom_heatmap_style(chip, coord_map, limits=(-1.0, 1.0))
+        style = custom_heatmap_style(chip, coord_map, "LER", limits=(-1.0, 1.0))
         assert style.colorbar.cmin == -1.0
         assert style.colorbar.cmax == 1.0
+
+    def test_colorbar_label_defaults_to_float_label(self, chip):
+        style = custom_heatmap_style(chip, {}, "LER", limits=(0.0, 1.0))
+        assert style.colorbar.label == "LER"
+
+    def test_colorbar_label_override(self, chip):
+        style = custom_heatmap_style(
+            chip, {}, "LER", limits=(0.0, 1.0), colorbar_label="Logical error rate"
+        )
+        assert style.colorbar.label == "Logical error rate"
+
+    def test_style_desc_threads_into_visualization_style(self, chip):
+        style = custom_heatmap_style(
+            chip, {}, "LER", limits=(0.0, 1.0), desc="what this shows"
+        )
+        assert style.desc == "what this shows"
 
 
 class TestPackingProfileStyle:
@@ -105,6 +136,10 @@ class TestPackingProfileStyle:
     def test_missing_placement_colored_lightgray(self, chip):
         style = packing_profile_style(chip, {})
         assert style.style_fn(chip.qubits[0]).color == "lightgray"
+
+    def test_desc_threads_through(self, chip):
+        style = packing_profile_style(chip, {}, desc="what this shows")
+        assert style.desc == "what this shows"
 
 
 class TestAreaSelectionStyle:
@@ -122,6 +157,10 @@ class TestAreaSelectionStyle:
         assert (
             area_selection_style(chip, {}, show_logicals=True).logical_style is not None
         )
+
+    def test_desc_threads_through(self, chip):
+        style = area_selection_style(chip, {}, desc="what this shows")
+        assert style.desc == "what this shows"
 
 
 class TestDiscreteColormapFn:
