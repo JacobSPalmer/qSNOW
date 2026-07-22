@@ -26,9 +26,23 @@ import argparse
 import json
 import os
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, Iterable, List, NamedTuple, Optional, Tuple, Union
 
 Coord = Tuple[int, int]
+
+
+class Candidate(NamedTuple):
+    """A candidate tile placement: a distance-`distance` tile at `origin`.
+
+    Used by the mixed-distance model, where at one site we may choose between a
+    D3 and a D5 tile (or none). `span = 2*distance + 1` is the footprint span
+    (see `footprint_span`) and `ler` is the measured logical error rate.
+    """
+
+    origin: Coord
+    distance: int
+    span: int
+    ler: float
 
 # This module lives in qSNOW/optim/; the experiment data stays in the demo tree.
 # Paths are resolved relative to this file so imports and CLI runs work regardless
@@ -106,6 +120,35 @@ def valid_placements(
     """Return V = sorted origins whose LER is within the threshold `ler <= tau`."""
     lers = load_lers(distance=distance, data_dir=data_dir, path=path)
     return sorted(p for p, ler in lers.items() if ler <= tau)
+
+
+def mixed_candidates(
+    tau: Union[float, Dict[int, float]],
+    distances: Iterable[int] = (3, 5),
+    data_dir: Union[str, Path, None] = None,
+) -> List[Candidate]:
+    """
+    Union of valid candidate placements across several code distances.
+
+    For each distance `d` we load its results flake, keep the origins whose
+    `ler <= tau_d`, and emit a `Candidate(origin, d, footprint_span(d), ler)`.
+    `tau` may be a single threshold applied to every distance, or a per-distance
+    mapping `{distance: tau_d}` (e.g. to demand a stricter LER of the larger D5
+    tiles). The result is sorted by (origin, distance).
+
+    Note: the D5 origin set is a subset of the D3 set (the larger D5 footprint
+    cannot fit in the chip's edge band), so a site offers a real D3-vs-D5 choice
+    only where both tiles are valid; edge-band sites offer D3 alone. This falls
+    out naturally from the per-distance flakes with no special-casing.
+    """
+    cands: List[Candidate] = []
+    for d in distances:
+        tau_d = tau[d] if isinstance(tau, dict) else tau
+        span = footprint_span(d)
+        for origin, ler in load_lers(distance=d, data_dir=data_dir).items():
+            if ler <= tau_d:
+                cands.append(Candidate(origin, d, span, ler))
+    return sorted(cands)
 
 
 def chip_grid_dim(
