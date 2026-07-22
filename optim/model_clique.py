@@ -99,6 +99,8 @@ def _report(tau, distance, span, V, cliques, lp_bound, model, chosen) -> None:
     print(f"|V| = {len(V)} variables, {len(cliques)} clique constraints")
     print(f"LP relaxation bound : {lp_bound:.4f}")
     print(f"integer optimum     : {int(round(model.ObjVal))} tiles placed")
+    print(f"solve time          : {model.Runtime:.3f} s")
+    print(f"optimality gap      : {model.MIPGap * 100:.4f}%")
     print("placed origins:", chosen)
 
 

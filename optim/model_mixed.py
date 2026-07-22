@@ -146,6 +146,8 @@ def _report(tau, distances, cands, cliques, lp_bound, model, chosen) -> None:
     print(f"LP relaxation bound : {lp_bound:.4f}")
     placed = ", ".join(f"D{d}: {n_by_d.get(d, 0)}" for d in sorted(distances))
     print(f"integer optimum     : {int(round(model.ObjVal))} tiles placed ({placed})")
+    print(f"solve time          : {model.Runtime:.3f} s")
+    print(f"optimality gap      : {model.MIPGap * 100:.4f}%")
     print("placed (origin, distance, ler):")
     for c in chosen:
         print(f"  {c.origin}  D{c.distance}  ler = {c.ler:.4g}")
