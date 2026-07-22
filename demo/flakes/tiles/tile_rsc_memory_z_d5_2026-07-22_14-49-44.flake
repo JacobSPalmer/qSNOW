@@ -1,0 +1,135 @@
+{
+  "__qsnow__": "SCTile",
+  "format_version": 1,
+  "base_circuit": "QUBIT_COORDS(1, 1) 1\nQUBIT_COORDS(2, 0) 2\nQUBIT_COORDS(3, 1) 3\nQUBIT_COORDS(5, 1) 5\nQUBIT_COORDS(6, 0) 6\nQUBIT_COORDS(7, 1) 7\nQUBIT_COORDS(9, 1) 9\nQUBIT_COORDS(1, 3) 12\nQUBIT_COORDS(2, 2) 13\nQUBIT_COORDS(3, 3) 14\nQUBIT_COORDS(4, 2) 15\nQUBIT_COORDS(5, 3) 16\nQUBIT_COORDS(6, 2) 17\nQUBIT_COORDS(7, 3) 18\nQUBIT_COORDS(8, 2) 19\nQUBIT_COORDS(9, 3) 20\nQUBIT_COORDS(10, 2) 21\nQUBIT_COORDS(0, 4) 22\nQUBIT_COORDS(1, 5) 23\nQUBIT_COORDS(2, 4) 24\nQUBIT_COORDS(3, 5) 25\nQUBIT_COORDS(4, 4) 26\nQUBIT_COORDS(5, 5) 27\nQUBIT_COORDS(6, 4) 28\nQUBIT_COORDS(7, 5) 29\nQUBIT_COORDS(8, 4) 30\nQUBIT_COORDS(9, 5) 31\nQUBIT_COORDS(1, 7) 34\nQUBIT_COORDS(2, 6) 35\nQUBIT_COORDS(3, 7) 36\nQUBIT_COORDS(4, 6) 37\nQUBIT_COORDS(5, 7) 38\nQUBIT_COORDS(6, 6) 39\nQUBIT_COORDS(7, 7) 40\nQUBIT_COORDS(8, 6) 41\nQUBIT_COORDS(9, 7) 42\nQUBIT_COORDS(10, 6) 43\nQUBIT_COORDS(0, 8) 44\nQUBIT_COORDS(1, 9) 45\nQUBIT_COORDS(2, 8) 46\nQUBIT_COORDS(3, 9) 47\nQUBIT_COORDS(4, 8) 48\nQUBIT_COORDS(5, 9) 49\nQUBIT_COORDS(6, 8) 50\nQUBIT_COORDS(7, 9) 51\nQUBIT_COORDS(8, 8) 52\nQUBIT_COORDS(9, 9) 53\nQUBIT_COORDS(4, 10) 59\nQUBIT_COORDS(8, 10) 63\nR 1 3 5 7 9 12 14 16 18 20 23 25 27 29 31 34 36 38 40 42 45 47 49 51 53 2 6 13 15 17 19 21 22 24 26 28 30 35 37 39 41 43 44 46 48 50 52 59 63\nTICK\nH 2 6 15 19 24 28 37 41 46 50 59 63\nTICK\nCX 2 3 24 25 46 47 15 16 37 38 6 7 28 29 50 51 19 20 41 42 23 22 45 44 14 13 36 35 27 26 49 48 18 17 40 39 31 30 53 52\nTICK\nCX 2 1 24 23 46 45 15 14 37 36 6 5 28 27 50 49 19 18 41 40 12 22 34 44 3 13 25 35 16 26 38 48 7 17 29 39 20 30 42 52\nTICK\nCX 24 14 46 36 15 5 37 27 59 49 28 18 50 40 19 9 41 31 63 53 12 13 34 35 25 26 47 48 16 17 38 39 29 30 51 52 20 21 42 43\nTICK\nCX 24 12 46 34 15 3 37 25 59 47 28 16 50 38 19 7 41 29 63 51 1 13 23 35 14 26 36 48 5 17 27 39 18 30 40 52 9 21 31 43\nTICK\nH 2 6 15 19 24 28 37 41 46 50 59 63\nTICK\nMR 2 6 13 15 17 19 21 22 24 26 28 30 35 37 39 41 43 44 46 48 50 52 59 63\nDETECTOR(0, 4, 0) rec[-17]\nDETECTOR(0, 8, 0) rec[-7]\nDETECTOR(2, 2, 0) rec[-22]\nDETECTOR(2, 6, 0) rec[-12]\nDETECTOR(4, 4, 0) rec[-15]\nDETECTOR(4, 8, 0) rec[-5]\nDETECTOR(6, 2, 0) rec[-20]\nDETECTOR(6, 6, 0) rec[-10]\nDETECTOR(8, 4, 0) rec[-13]\nDETECTOR(8, 8, 0) rec[-3]\nDETECTOR(10, 2, 0) rec[-18]\nDETECTOR(10, 6, 0) rec[-8]\nTICK\nH 2 6 15 19 24 28 37 41 46 50 59 63\nTICK\nCX 2 3 24 25 46 47 15 16 37 38 6 7 28 29 50 51 19 20 41 42 23 22 45 44 14 13 36 35 27 26 49 48 18 17 40 39 31 30 53 52\nTICK\nCX 2 1 24 23 46 45 15 14 37 36 6 5 28 27 50 49 19 18 41 40 12 22 34 44 3 13 25 35 16 26 38 48 7 17 29 39 20 30 42 52\nTICK\nCX 24 14 46 36 15 5 37 27 59 49 28 18 50 40 19 9 41 31 63 53 12 13 34 35 25 26 47 48 16 17 38 39 29 30 51 52 20 21 42 43\nTICK\nCX 24 12 46 34 15 3 37 25 59 47 28 16 50 38 19 7 41 29 63 51 1 13 23 35 14 26 36 48 5 17 27 39 18 30 40 52 9 21 31 43\nTICK\nH 2 6 15 19 24 28 37 41 46 50 59 63\nTICK\nMR 2 6 13 15 17 19 21 22 24 26 28 30 35 37 39 41 43 44 46 48 50 52 59 63\nDETECTOR(2, 0, 1) rec[-24] rec[-48]\nDETECTOR(6, 0, 1) rec[-23] rec[-47]\nDETECTOR(2, 2, 1) rec[-22] rec[-46]\nDETECTOR(4, 2, 1) rec[-21] rec[-45]\nDETECTOR(6, 2, 1) rec[-20] rec[-44]\nDETECTOR(8, 2, 1) rec[-19] rec[-43]\nDETECTOR(10, 2, 1) rec[-18] rec[-42]\nDETECTOR(0, 4, 1) rec[-17] rec[-41]\nDETECTOR(2, 4, 1) rec[-16] rec[-40]\nDETECTOR(4, 4, 1) rec[-15] rec[-39]\nDETECTOR(6, 4, 1) rec[-14] rec[-38]\nDETECTOR(8, 4, 1) rec[-13] rec[-37]\nDETECTOR(2, 6, 1) rec[-12] rec[-36]\nDETECTOR(4, 6, 1) rec[-11] rec[-35]\nDETECTOR(6, 6, 1) rec[-10] rec[-34]\nDETECTOR(8, 6, 1) rec[-9] rec[-33]\nDETECTOR(10, 6, 1) rec[-8] rec[-32]\nDETECTOR(0, 8, 1) rec[-7] rec[-31]\nDETECTOR(2, 8, 1) rec[-6] rec[-30]\nDETECTOR(4, 8, 1) rec[-5] rec[-29]\nDETECTOR(6, 8, 1) rec[-4] rec[-28]\nDETECTOR(8, 8, 1) rec[-3] rec[-27]\nDETECTOR(4, 10, 1) rec[-2] rec[-26]\nDETECTOR(8, 10, 1) rec[-1] rec[-25]\nTICK\nH 2 6 15 19 24 28 37 41 46 50 59 63\nTICK\nCX 2 3 24 25 46 47 15 16 37 38 6 7 28 29 50 51 19 20 41 42 23 22 45 44 14 13 36 35 27 26 49 48 18 17 40 39 31 30 53 52\nTICK\nCX 2 1 24 23 46 45 15 14 37 36 6 5 28 27 50 49 19 18 41 40 12 22 34 44 3 13 25 35 16 26 38 48 7 17 29 39 20 30 42 52\nTICK\nCX 24 14 46 36 15 5 37 27 59 49 28 18 50 40 19 9 41 31 63 53 12 13 34 35 25 26 47 48 16 17 38 39 29 30 51 52 20 21 42 43\nTICK\nCX 24 12 46 34 15 3 37 25 59 47 28 16 50 38 19 7 41 29 63 51 1 13 23 35 14 26 36 48 5 17 27 39 18 30 40 52 9 21 31 43\nTICK\nH 2 6 15 19 24 28 37 41 46 50 59 63\nTICK\nMR 2 6 13 15 17 19 21 22 24 26 28 30 35 37 39 41 43 44 46 48 50 52 59 63\nDETECTOR(2, 0, 2) rec[-24] rec[-48]\nDETECTOR(6, 0, 2) rec[-23] rec[-47]\nDETECTOR(2, 2, 2) rec[-22] rec[-46]\nDETECTOR(4, 2, 2) rec[-21] rec[-45]\nDETECTOR(6, 2, 2) rec[-20] rec[-44]\nDETECTOR(8, 2, 2) rec[-19] rec[-43]\nDETECTOR(10, 2, 2) rec[-18] rec[-42]\nDETECTOR(0, 4, 2) rec[-17] rec[-41]\nDETECTOR(2, 4, 2) rec[-16] rec[-40]\nDETECTOR(4, 4, 2) rec[-15] rec[-39]\nDETECTOR(6, 4, 2) rec[-14] rec[-38]\nDETECTOR(8, 4, 2) rec[-13] rec[-37]\nDETECTOR(2, 6, 2) rec[-12] rec[-36]\nDETECTOR(4, 6, 2) rec[-11] rec[-35]\nDETECTOR(6, 6, 2) rec[-10] rec[-34]\nDETECTOR(8, 6, 2) rec[-9] rec[-33]\nDETECTOR(10, 6, 2) rec[-8] rec[-32]\nDETECTOR(0, 8, 2) rec[-7] rec[-31]\nDETECTOR(2, 8, 2) rec[-6] rec[-30]\nDETECTOR(4, 8, 2) rec[-5] rec[-29]\nDETECTOR(6, 8, 2) rec[-4] rec[-28]\nDETECTOR(8, 8, 2) rec[-3] rec[-27]\nDETECTOR(4, 10, 2) rec[-2] rec[-26]\nDETECTOR(8, 10, 2) rec[-1] rec[-25]\nTICK\nH 2 6 15 19 24 28 37 41 46 50 59 63\nTICK\nCX 2 3 24 25 46 47 15 16 37 38 6 7 28 29 50 51 19 20 41 42 23 22 45 44 14 13 36 35 27 26 49 48 18 17 40 39 31 30 53 52\nTICK\nCX 2 1 24 23 46 45 15 14 37 36 6 5 28 27 50 49 19 18 41 40 12 22 34 44 3 13 25 35 16 26 38 48 7 17 29 39 20 30 42 52\nTICK\nCX 24 14 46 36 15 5 37 27 59 49 28 18 50 40 19 9 41 31 63 53 12 13 34 35 25 26 47 48 16 17 38 39 29 30 51 52 20 21 42 43\nTICK\nCX 24 12 46 34 15 3 37 25 59 47 28 16 50 38 19 7 41 29 63 51 1 13 23 35 14 26 36 48 5 17 27 39 18 30 40 52 9 21 31 43\nTICK\nH 2 6 15 19 24 28 37 41 46 50 59 63\nTICK\nMR 2 6 13 15 17 19 21 22 24 26 28 30 35 37 39 41 43 44 46 48 50 52 59 63\nDETECTOR(2, 0, 3) rec[-24] rec[-48]\nDETECTOR(6, 0, 3) rec[-23] rec[-47]\nDETECTOR(2, 2, 3) rec[-22] rec[-46]\nDETECTOR(4, 2, 3) rec[-21] rec[-45]\nDETECTOR(6, 2, 3) rec[-20] rec[-44]\nDETECTOR(8, 2, 3) rec[-19] rec[-43]\nDETECTOR(10, 2, 3) rec[-18] rec[-42]\nDETECTOR(0, 4, 3) rec[-17] rec[-41]\nDETECTOR(2, 4, 3) rec[-16] rec[-40]\nDETECTOR(4, 4, 3) rec[-15] rec[-39]\nDETECTOR(6, 4, 3) rec[-14] rec[-38]\nDETECTOR(8, 4, 3) rec[-13] rec[-37]\nDETECTOR(2, 6, 3) rec[-12] rec[-36]\nDETECTOR(4, 6, 3) rec[-11] rec[-35]\nDETECTOR(6, 6, 3) rec[-10] rec[-34]\nDETECTOR(8, 6, 3) rec[-9] rec[-33]\nDETECTOR(10, 6, 3) rec[-8] rec[-32]\nDETECTOR(0, 8, 3) rec[-7] rec[-31]\nDETECTOR(2, 8, 3) rec[-6] rec[-30]\nDETECTOR(4, 8, 3) rec[-5] rec[-29]\nDETECTOR(6, 8, 3) rec[-4] rec[-28]\nDETECTOR(8, 8, 3) rec[-3] rec[-27]\nDETECTOR(4, 10, 3) rec[-2] rec[-26]\nDETECTOR(8, 10, 3) rec[-1] rec[-25]\nTICK\nH 2 6 15 19 24 28 37 41 46 50 59 63\nTICK\nCX 2 3 24 25 46 47 15 16 37 38 6 7 28 29 50 51 19 20 41 42 23 22 45 44 14 13 36 35 27 26 49 48 18 17 40 39 31 30 53 52\nTICK\nCX 2 1 24 23 46 45 15 14 37 36 6 5 28 27 50 49 19 18 41 40 12 22 34 44 3 13 25 35 16 26 38 48 7 17 29 39 20 30 42 52\nTICK\nCX 24 14 46 36 15 5 37 27 59 49 28 18 50 40 19 9 41 31 63 53 12 13 34 35 25 26 47 48 16 17 38 39 29 30 51 52 20 21 42 43\nTICK\nCX 24 12 46 34 15 3 37 25 59 47 28 16 50 38 19 7 41 29 63 51 1 13 23 35 14 26 36 48 5 17 27 39 18 30 40 52 9 21 31 43\nTICK\nH 2 6 15 19 24 28 37 41 46 50 59 63\nTICK\nMR 2 6 13 15 17 19 21 22 24 26 28 30 35 37 39 41 43 44 46 48 50 52 59 63\nDETECTOR(2, 0, 4) rec[-24] rec[-48]\nDETECTOR(6, 0, 4) rec[-23] rec[-47]\nDETECTOR(2, 2, 4) rec[-22] rec[-46]\nDETECTOR(4, 2, 4) rec[-21] rec[-45]\nDETECTOR(6, 2, 4) rec[-20] rec[-44]\nDETECTOR(8, 2, 4) rec[-19] rec[-43]\nDETECTOR(10, 2, 4) rec[-18] rec[-42]\nDETECTOR(0, 4, 4) rec[-17] rec[-41]\nDETECTOR(2, 4, 4) rec[-16] rec[-40]\nDETECTOR(4, 4, 4) rec[-15] rec[-39]\nDETECTOR(6, 4, 4) rec[-14] rec[-38]\nDETECTOR(8, 4, 4) rec[-13] rec[-37]\nDETECTOR(2, 6, 4) rec[-12] rec[-36]\nDETECTOR(4, 6, 4) rec[-11] rec[-35]\nDETECTOR(6, 6, 4) rec[-10] rec[-34]\nDETECTOR(8, 6, 4) rec[-9] rec[-33]\nDETECTOR(10, 6, 4) rec[-8] rec[-32]\nDETECTOR(0, 8, 4) rec[-7] rec[-31]\nDETECTOR(2, 8, 4) rec[-6] rec[-30]\nDETECTOR(4, 8, 4) rec[-5] rec[-29]\nDETECTOR(6, 8, 4) rec[-4] rec[-28]\nDETECTOR(8, 8, 4) rec[-3] rec[-27]\nDETECTOR(4, 10, 4) rec[-2] rec[-26]\nDETECTOR(8, 10, 4) rec[-1] rec[-25]\nM 1 3 5 7 9 12 14 16 18 20 23 25 27 29 31 34 36 38 40 42 45 47 49 51 53\nDETECTOR(0, 4, 5) rec[-15] rec[-20] rec[-42]\nDETECTOR(0, 8, 5) rec[-5] rec[-10] rec[-32]\nDETECTOR(2, 2, 5) rec[-19] rec[-20] rec[-24] rec[-25] rec[-47]\nDETECTOR(2, 6, 5) rec[-9] rec[-10] rec[-14] rec[-15] rec[-37]\nDETECTOR(4, 4, 5) rec[-13] rec[-14] rec[-18] rec[-19] rec[-40]\nDETECTOR(4, 8, 5) rec[-3] rec[-4] rec[-8] rec[-9] rec[-30]\nDETECTOR(6, 2, 5) rec[-17] rec[-18] rec[-22] rec[-23] rec[-45]\nDETECTOR(6, 6, 5) rec[-7] rec[-8] rec[-12] rec[-13] rec[-35]\nDETECTOR(8, 4, 5) rec[-11] rec[-12] rec[-16] rec[-17] rec[-38]\nDETECTOR(8, 8, 5) rec[-1] rec[-2] rec[-6] rec[-7] rec[-28]\nDETECTOR(10, 2, 5) rec[-16] rec[-21] rec[-43]\nDETECTOR(10, 6, 5) rec[-6] rec[-11] rec[-33]\nOBSERVABLE_INCLUDE(0) rec[-21] rec[-22] rec[-23] rec[-24] rec[-25]",
+  "origin": [
+    0.0,
+    0.0
+  ],
+  "construct_origin": [
+    0.0,
+    0.0
+  ],
+  "x_buffer": 1,
+  "y_buffer": 1,
+  "tag": {
+    "name": "rsc_memory_z_d5",
+    "desc": null,
+    "metadata": {}
+  },
+  "spec": {
+    "tile_type": "SCTile",
+    "distance": 5,
+    "rounds": 5,
+    "generator_args": {
+      "code_task": "surface_code:rotated_memory_z",
+      "distance": 5,
+      "rounds": 5,
+      "task": "memory_z"
+    }
+  },
+  "ruleset": {
+    "rules": [
+      {
+        "operation": "R",
+        "trigger": "all_qubits",
+        "before": [],
+        "after": [
+          {
+            "channel": "X_ERROR",
+            "filter": "all_qubits",
+            "scalar": 1.0,
+            "name": null
+          }
+        ],
+        "exclusive": false,
+        "name": null
+      },
+      {
+        "operation": "H",
+        "trigger": "x_measures",
+        "before": [],
+        "after": [
+          {
+            "channel": "DEPOLARIZE1",
+            "filter": "all_qubits",
+            "scalar": 1.0,
+            "name": null
+          }
+        ],
+        "exclusive": false,
+        "name": null
+      },
+      {
+        "operation": "CX",
+        "trigger": "any",
+        "before": [],
+        "after": [
+          {
+            "channel": "DEPOLARIZE2",
+            "filter": "active",
+            "scalar": 1.0,
+            "name": null
+          },
+          {
+            "channel": "DEPOLARIZE1",
+            "filter": "idle",
+            "scalar": 1.0,
+            "name": null
+          }
+        ],
+        "exclusive": false,
+        "name": null
+      },
+      {
+        "operation": "MR",
+        "trigger": "all_measures",
+        "before": [
+          {
+            "channel": "X_ERROR",
+            "filter": "all_measures",
+            "scalar": 1.0,
+            "name": null
+          },
+          {
+            "channel": "DEPOLARIZE1",
+            "filter": "data",
+            "scalar": 1.0,
+            "name": null
+          }
+        ],
+        "after": [
+          {
+            "channel": "X_ERROR",
+            "filter": "all_measures",
+            "scalar": 1.0,
+            "name": null
+          },
+          {
+            "channel": "DEPOLARIZE1",
+            "filter": "data",
+            "scalar": 1.0,
+            "name": null
+          }
+        ],
+        "exclusive": false,
+        "name": null
+      },
+      {
+        "operation": "M",
+        "trigger": "data",
+        "before": [
+          {
+            "channel": "X_ERROR",
+            "filter": "all_qubits",
+            "scalar": 1.0,
+            "name": null
+          }
+        ],
+        "after": [],
+        "exclusive": false,
+        "name": null
+      }
+    ]
+  }
+}
