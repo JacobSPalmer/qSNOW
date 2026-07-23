@@ -2,6 +2,7 @@ name: Test Suite
 
 on:
   push:
+    branches: [ main ]
   pull_request: 
     branches: [ main ]
 
@@ -35,6 +36,7 @@ jobs:
           reporter: java-junit 
       
       - name: Pytest PR Comment
+        if: ${{ github.event_name == 'pull_request' }}
         uses: MishaKav/pytest-coverage-comment@v1
         with:
           pytest-xml-coverage-path: ./coverage.xml

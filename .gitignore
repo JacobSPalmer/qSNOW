@@ -12,3 +12,4 @@ requirements.txt
 notebooks/
 .*cache/
 core_flakes/
+*.prof
