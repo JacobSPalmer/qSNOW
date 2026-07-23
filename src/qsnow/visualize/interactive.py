@@ -1,4 +1,5 @@
 """Interactive figures: in-figure style switching and standalone HTML export."""
+from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import replace

@@ -97,7 +97,7 @@ class PhasedProgress:
         self._phases = phases
         self._overall: Optional[TaskID] = None
 
-    def __enter__(self) -> PhasedProgress:
+    def __enter__(self) -> "PhasedProgress":
         self._progress.start()
         self._overall = self._progress.add_task(
             f"[bold]{self._title}", total=self._phases, overall=True

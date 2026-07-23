@@ -1,3 +1,12 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from qsnow.interface.models import CSSType, Qubit, Status, Tag, Coord
+
+if TYPE_CHECKING:
+    from qsnow.interface.chip import Chip
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union

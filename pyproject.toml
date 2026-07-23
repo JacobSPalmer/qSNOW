@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "qsnow"
 version = "0.1.1"
 description = "qSNOW (Simulated Noise Orchestration Workflow) - orchestrate multiple logicals across a grid/chip of qubits."
-requires-python = ">=3.14"
+requires-python = ">=3.10"
 dependencies = [
     "numpy",
     "stim",

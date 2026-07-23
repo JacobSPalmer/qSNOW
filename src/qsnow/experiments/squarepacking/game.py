@@ -1,3 +1,12 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from qsnow.interface.models import Coord
+
+if TYPE_CHECKING:
+    from qsnow.interface.circuit import Circuit
+
 import logging
 import os
 from collections.abc import Mapping
