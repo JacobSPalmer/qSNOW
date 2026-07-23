@@ -289,20 +289,27 @@ class LogicalTile(Grid):
         self, shift_function: ShiftFunction
     ) -> Circuit:
         shifted_circuit = Circuit()
+        circ_arr = []
         # NOTE - Issue with STIM where the circuit iterator does not update type exclusivity to CircuitInstructions when flattening
         for instr in self._yield_circuit_instructions():
             match instr.name:
                 case "QUBIT_COORDS":
-                    shifted_circuit.append_from_stim_program_text(
+                    circ_arr.append(
                         self._format_instruction_to_str(
                             name=instr.name,
                             targets=[q.qubit_value for q in instr.targets_copy()],  # type: ignore
                             arg=list(shift_function(*instr.gate_args_copy())),  # type: ignore
                         )
                     )
+                case 'REPEAT':
+                    # TODO - probably handle this recursively (since it could be the case that a repeat in a repeat)
+                    circ_arr.append(f"REPEAT {instr.repeat_count} {{")
+                    circ_arr.extend([str(i) for i in instr.body_copy()])
+                    circ_arr.append("}")
                 case _:
-                    shifted_circuit.append(instr)
-        return shifted_circuit
+                    circ_arr.append(str(instr))
+
+        return Circuit("\n".join(circ_arr))
 
     # ------------------------------------------------------------------
     # General functions
@@ -395,6 +402,7 @@ class LogicalTile(Grid):
     # TODO - make debug_tags a global configuration flag when that refactor is up
     def _inject_circuit_noise(self, debug_tags=False) -> Circuit:
         circ = Circuit()
+        circ_arr = []
         i2q = self._extract_i2q_map()
         for instr in self._yield_circuit_instructions(flatten=True):
             before = []
@@ -449,8 +457,9 @@ class LogicalTile(Grid):
                     if rule.exclusive:
                         break
 
-            circ.append_from_stim_program_text("\n".join(before))
-            circ.append(instr)
-            circ.append_from_stim_program_text("\n".join(after))
+            circ_arr.extend(before)
+            circ_arr.append(str(instr))
+            circ_arr.extend(after)
 
-        return circ
+        return Circuit("\n".join(circ_arr))
+        # return circ
