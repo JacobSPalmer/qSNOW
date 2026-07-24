@@ -19,7 +19,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
+          python-version: "3.12"
 
       - name: Install Dependencies
         run: pip install -e ".[test]"
@@ -33,11 +33,37 @@ jobs:
         with:
           name: Pytest Results
           path: ./pytest.xml
-          reporter: java-junit 
-      
+          reporter: java-junit
+
       - name: Pytest PR Comment
         if: ${{ github.event_name == 'pull_request' }}
         uses: MishaKav/pytest-coverage-comment@v1
         with:
           pytest-xml-coverage-path: ./coverage.xml
           junitxml-path: ./pytest.xml
+
+  tox:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v7
+
+      - name: Install Tox
+        run: |
+          uv tool install --python ${{ matrix.python-version }} tox --with tox-gh
+
+      - name: Run Tox
+        run:
+          tox

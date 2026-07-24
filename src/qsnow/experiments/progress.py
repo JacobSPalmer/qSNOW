@@ -11,6 +11,7 @@ Phase rows are added lazily as each phase begins, so an experiment declares
 only how many phases it has (for the overall bar) and opens them one at a
 time with `phase()` or `track()`.
 """
+from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager

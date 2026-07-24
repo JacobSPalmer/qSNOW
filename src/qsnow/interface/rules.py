@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Dict, List, Literal, Optional, Union
+from typing import Dict, List, Literal, Optional, Union, TypeAlias
 
 from .models import Qubit
 
@@ -231,10 +231,10 @@ def _z_measures_filter(
 
 
 # TODO - move these to a rule_types or something along those lines
-type TriggerFunc = Callable[
+TriggerFunc: TypeAlias  = Callable[
     [List[List[int]], Dict[int, Qubit]], bool
 ]  # specifies when to trigger rule
-type FilterFunc = Callable[
+FilterFunc: TypeAlias = Callable[
     [List[List[int]], Dict[int, Qubit]], List[List[int]]
 ]  # specifies what (qubits) to trigger the rule on
 
@@ -282,7 +282,6 @@ class ChannelRule:
 
     def __repr__(self) -> str:
         return f"{f'({self.name})' if self.name is not None else ''}{self.channel}:{self.filter}"
-
 
 @dataclass
 class InjectionRule:
