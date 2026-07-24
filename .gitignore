@@ -12,4 +12,5 @@ requirements.txt
 notebooks/
 .*cache/
 core_flakes/
+.tox
 *.prof

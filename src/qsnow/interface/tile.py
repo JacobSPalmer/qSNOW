@@ -110,11 +110,6 @@ class LogicalTile(Grid):
             tag=self.tag,
         )
 
-    def __del__(self):
-        if self.initialized():
-            self._scrub_qubits()
-            self.chip.tiles.remove(self)
-
     def _init_tile_qubit_status(self):
         # 2. Change all the new qubits that are now in the scope to the tile to logical
         for c in self._qubits.keys():
