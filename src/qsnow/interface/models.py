@@ -1,12 +1,13 @@
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, Optional, Self, Tuple, overload
+from typing import Any, Dict, Optional, Self, Tuple, overload, TypeAlias
+
 from functools import total_ordering
 from numbers import Number
 
-type Coord = Tuple[float, float]
-type ShiftFunction = Callable[[*tuple[float, ...]], Coord]
+Coord: TypeAlias = Tuple[float, float]
+ShiftFunction: TypeAlias = Callable[[*tuple[float, ...]], Coord]
 
 
 @dataclass

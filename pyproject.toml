@@ -5,8 +5,8 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "qsnow"
 version = "0.1.1"
-description = "qSNOW (Simulated Noise Orchestration Workflow) - orchestrate multiple logicals across a grid/chip of qubits."
-requires-python = ">=3.14"
+description = "qSNOW (Simulated Noise Orchestration Workflow) - orchestrate multiple logicals with complex rule-based noise models across a grid/chip of qubits."
+requires-python = ">=3.11"
 dependencies = [
     "numpy",
     "stim",
@@ -37,3 +37,17 @@ omit = [
     "*/__init__.py",
     "tests/*"
 ]
+
+[tool.tox]
+requires = ["tox>=4.19"]
+env_list = ["py311", "py312", "py313", "py314"]
+
+[tool.tox.env_run_base]
+deps = ["pytest", "kaleido"]
+commands = [["pytest", { replace = "posargs", default = ["tests"], extend = true }]]
+
+[tool.tox.gh.python]
+"3.14" = ["py314"]
+"3.13" = ["py313"]
+"3.12" = ["py312"]
+"3.11" = ["py311"]

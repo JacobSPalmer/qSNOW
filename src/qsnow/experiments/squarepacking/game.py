@@ -2,7 +2,8 @@ import logging
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TYPE_CHECKING
+from stim import Circuit
 
 import sinter
 
@@ -19,7 +20,6 @@ from qsnow.visualize import (
     packing_profile_style,
     visualize_interactive,
 )
-
 
 @dataclass
 class SquarePackingExp(Experiment):
