@@ -227,6 +227,17 @@ class TestShiftRewritesCircuitAndMetadata:
         assert chip.loc((2, 2)).is_active() is True
         assert chip.loc((2, 2)).type == CSSType.DATA
 
+    def test_shift_by_c2i_matches_recomputed_map(
+        self, two_qubit_circuit, chip: Chip
+    ):
+        # shift_by builds _c2i by translating the existing map instead of
+        # re-walking the circuit; it must equal the fully re-derived map.
+        tile = placed(two_qubit_circuit, chip)
+
+        tile.shift_by(2, 2)
+
+        assert tile._c2i == tile._extract_c2i_map()
+
     def test_shift_to_no_op_when_already_at_target(self, two_qubit_circuit, chip: Chip):
         tile = placed(two_qubit_circuit, chip)
 

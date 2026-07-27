@@ -236,11 +236,15 @@ class LogicalTile(Grid):
         new_circuit: Optional[Circuit] = None,
         new_qubits: Optional[Dict[Coord, Qubit]] = None,
         new_origin: Optional[Coord] = None,
+        new_c2i: Optional[Dict[Coord, int]] = None,
     ):
-        # 1. Update underlying circuit and c2i
+        # 1. Update underlying circuit and c2i. Callers that already know the
+        # coord->index map (e.g. a pure translation, where indices are preserved
+        # and only coordinates move) can pass `new_c2i` to skip re-walking the
+        # circuit with get_final_qubit_coordinates(); otherwise it is re-derived.
         if new_circuit:
             self._circuit = new_circuit
-            self._c2i = self._extract_c2i_map()
+            self._c2i = new_c2i if new_c2i is not None else self._extract_c2i_map()
         # 2. If qubits changed, shift qubit references and update statuses
         if new_qubits:
             self._qubits = new_qubits
@@ -374,13 +378,21 @@ class LogicalTile(Grid):
             lambda *coords: (coords[0] + x, coords[1] + y)
         )
 
+        # A translation preserves every qubit's circuit index and only moves its
+        # coordinate, so the coord->index map is the current one with each key
+        # shifted by (x, y). Compute it directly instead of re-walking the circuit.
+        new_c2i = {(cx + x, cy + y): idx for (cx, cy), idx in self._c2i.items()}
+
         if self._qubits:
             self._transfer_qubit_metadata(
                 self._shift_map(lambda *coords: (coords[0] + x, coords[1] + y))
             )
 
         self._update(
-            new_circuit=new_circuit, new_qubits=new_qubits, new_origin=new_origin
+            new_circuit=new_circuit,
+            new_qubits=new_qubits,
+            new_origin=new_origin,
+            new_c2i=new_c2i,
         )
 
     def shift_to(self, new_origin: Coord):

@@ -19,6 +19,7 @@ from typing import Any, Optional, TypeVar
 
 from rich.progress import (
     BarColumn,
+    MofNCompleteColumn,
     Progress,
     ProgressColumn,
     Task,
@@ -38,6 +39,10 @@ class PhasedTimeColumn(ProgressColumn):
     speed estimate for it and a remaining-time column would render `-:--:--`
     for the whole run; its elapsed time (the running sum of all phases) is
     the meaningful number. Rows are told apart via the `overall` task field.
+
+    A phase opened with ``show_eta=False`` (e.g. one whose completion advances
+    in coarse, bursty steps, making a remaining estimate meaningless) also
+    renders elapsed time instead of a remaining estimate.
     """
 
     def __init__(self) -> None:
@@ -46,7 +51,7 @@ class PhasedTimeColumn(ProgressColumn):
         super().__init__()
 
     def render(self, task: Task):
-        if task.fields.get("overall"):
+        if task.fields.get("overall") or not task.fields.get("show_eta", True):
             return self._elapsed.render(task)
         return self._remaining.render(task)
 
@@ -56,9 +61,9 @@ def default_columns() -> Sequence[ProgressColumn]:
     return (
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TextColumn("/"),
         PhasedTimeColumn(),
+        TextColumn("/"),
+        MofNCompleteColumn(),
     )
 
 
@@ -122,9 +127,21 @@ class PhasedProgress:
         return self._progress.tasks
 
     @contextmanager
-    def phase(self, description: str, total: Optional[float] = None) -> Iterator[Phase]:
-        """Open the next sequential phase as a new indented row."""
-        task_id = self._progress.add_task(f"  {description}", total=total)
+    def phase(
+        self,
+        description: str,
+        total: Optional[float] = None,
+        show_eta: bool = True,
+    ) -> Iterator[Phase]:
+        """Open the next sequential phase as a new indented row.
+
+        `show_eta=False` renders elapsed time instead of a remaining-time
+        estimate (useful when the phase advances in coarse, bursty steps that
+        would make an ETA jump around).
+        """
+        task_id = self._progress.add_task(
+            f"  {description}", total=total, show_eta=show_eta
+        )
         yield Phase(self._progress, task_id)
         (task,) = (t for t in self._progress.tasks if t.id == task_id)
         if not task.finished:
