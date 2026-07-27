@@ -71,6 +71,9 @@ from qsnow.interface.rules import (
     Ruleset,
 )
 
+import logging
+logger = logging.getLogger(__name__)
+
 FORMAT_VERSION = 1
 
 # ------------------------------------------------------------------
@@ -151,6 +154,7 @@ def set_data_dir(path: Optional[Union[str, Path]] = None) -> None:
     """
     global _DATA_DIR
     _DATA_DIR = Path(path) if path is not None else _DEFAULT_DATA_DIR
+    logger.info(f"Data directory set to {_DATA_DIR}.")
 
 
 def get_data_dir() -> Path:
