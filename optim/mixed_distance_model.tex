@@ -7,45 +7,50 @@
 \usepackage{enumitem}
 
 \title{Mixed-Distance Tile Packing on a Checkerboard Chip:\\
-Choosing $d=3$ or $d=5$ per Site}
+Choosing a Code Distance per Site}
 \author{qSNOW square-packing experiment}
 \date{}
 
 \newcommand{\Pset}{\mathcal{P}}
+\newcommand{\Dset}{\mathcal{D}}
 \newcommand{\Fp}{F}
 
 \begin{document}
 \maketitle
 
 This note extends the single-distance model of \texttt{square\_packing\_model.tex}
-to the case where each site may host \emph{either} a distance-3 \emph{or} a
-distance-5 tile (or none). We reuse that document's terminology without change:
+to the case where each site may host a tile of \emph{any} distance drawn from a set
+$\Dset$ (or none). The set is arbitrary and discovered from the data---in the
+current experiments $\Dset = \{3, 5, 7\}$, with further distances to come---so the
+model, the code, and this document are written for a general $\Dset$ and specialize
+to any concrete choice. We reuse the base document's terminology without change:
 \textbf{site} $(r,c)$ on the checkerboard sublattice ($r \equiv c \pmod 2$, unit
 coordinate spacing), \textbf{physical qubit} (one per site), \textbf{tile}
 (a distance-$d$ rotated-surface-code patch), and \textbf{origin} (the
 minimum-coordinate corner of a tile's footprint). Only the geometry constants,
 the conflict rule, the decision variables, and the constraints change to admit
-two tile sizes; the reader is assumed familiar with Sections~1--3 of the base
+several tile sizes; the reader is assumed familiar with Sections~1--3 of the base
 document.
 
 \section{Motivation}
 
-A distance-5 tile generally has a lower logical error rate (LER) than a distance-3
-tile at the same site, but occupies a larger footprint. Whether the larger, more
-reliable tile is worth its area depends on the noise regime and on the validity
-threshold $\tau$. In the low-noise data, tightening $\tau$ invalidates $d=3$
-placements far faster than $d=5$ placements, so at strict $\tau$ only $d=5$ tiles
-remain valid over most of the chip; at looser $\tau$ the smaller $d=3$ tiles win
-by packing more densely. The mixed model chooses, per site, which distance (if
-any) to place so as to maximize the number of valid, non-overlapping tiles.
+A larger-distance tile generally has a lower logical error rate (LER) than a
+smaller-distance tile at the same site, but occupies a larger footprint. Whether a
+larger, more reliable tile is worth its area depends on the noise regime and on
+the validity threshold $\tau$. In the low-noise data, tightening $\tau$ invalidates
+small-distance placements faster than large-distance ones, so at strict $\tau$ only
+the larger tiles remain valid over most of the chip; at looser $\tau$ the smaller
+tiles win by packing more densely. The mixed model chooses, per site, which
+distance (if any) to place so as to maximize the number of valid, non-overlapping
+tiles.
 
-\section{Geometry with two footprint sizes}
+\section{Geometry with several footprint sizes}
 \label{sec:geometry}
 
 \paragraph{Per-tile span.}
 As in the base document, a distance-$d$ tile has footprint span $s_d = 2d + 1$
-(so $s_3 = 7$, $s_5 = 11$), a geometric distance in coordinate units. A tile of
-distance $d$ placed at origin $p = (r_p, c_p)$ occupies the footprint
+(so $s_3 = 7$, $s_5 = 11$, $s_7 = 15$), a geometric distance in coordinate units.
+A tile of distance $d$ placed at origin $p = (r_p, c_p)$ occupies the footprint
 \[
   \Fp(p, d) \;=\; \bigl\{\, (r, c) \;:\; r_p \le r \le r_p + s_d,\;\;
   c_p \le c \le c_p + s_d,\;\; r \equiv c \!\!\pmod 2 \,\bigr\},
@@ -71,9 +76,10 @@ The bounds are \emph{asymmetric}: the upper bound uses $b$'s span and the lower
 bound $a$'s. The relation is nonetheless symmetric in $a \leftrightarrow b$
 (swapping negates $\Delta r$ and exchanges the bounds). When $s_a = s_b = s$ it
 collapses to the base document's $|\Delta r| \le s$ and $|\Delta c| \le s$, so
-\eqref{eq:conflict} is a strict generalization. Note two placements at the same
-origin ($\Delta r = \Delta c = 0$) always conflict, since $-s_a \le 0 \le s_b$:
-at most one tile may sit at a given site.
+\eqref{eq:conflict} is a strict generalization that applies to any pair of
+distances in $\Dset$. Note two placements at the same origin
+($\Delta r = \Delta c = 0$) always conflict, since $-s_a \le 0 \le s_b$: at most
+one tile may sit at a given site.
 
 \paragraph{Worked example.}
 A $d=5$ tile at $(0,0)$ ($s_a = 11$) and a $d=3$ tile at $(0,8)$ ($s_b = 7$):
@@ -87,23 +93,41 @@ $|\Delta c| \le s$ for a single $s$.
 \section{Candidates and sets}
 
 Rather than a set of origins, the mixed model works with \emph{candidates}: a
-candidate is a pair $(p, d)$ of an origin and a distance whose measured LER
-$\ell_{p,d}$ satisfies the validity threshold. With a (possibly per-distance)
-threshold $\tau_d$,
+candidate is a pair $(p, d)$ of an origin and a distance $d \in \Dset$ whose
+measured LER $\ell_{p,d}$ satisfies the validity threshold. With a (possibly
+per-distance) threshold $\tau_d$,
 \[
-  \Pset \;=\; \bigl\{\, (p, d) \;:\; d \in \{3, 5\},\;\;
+  \Pset \;=\; \bigl\{\, (p, d) \;:\; d \in \Dset,\;\;
   \ell_{p,d} \le \tau_d \,\bigr\}.
 \]
-A single scalar $\tau$ is the common case ($\tau_3 = \tau_5 = \tau$); a stricter
-$\tau_5$ can be used to demand more of the larger tiles. Each chip site thus
-offers a choice among the distances valid there.
+A single scalar $\tau$ is the common case ($\tau_d = \tau$ for all $d$); a stricter
+$\tau_d$ for larger $d$ can be used to demand more of the larger tiles. Each chip
+site thus offers a choice among the distances valid there.
 
-\paragraph{Data note.}
-In the experiment data the $d=5$ origin set is a subset of the $d=3$ set: the
-larger $d=5$ window cannot fit in the chip's edge band (the last $s_5 - s_3 = 4$
-coordinate lines on each far side), so those edge sites offer $d=3$ only. Interior
-sites offer both. This requires no special handling---it follows automatically
-from reading each distance's results file.
+\paragraph{Data note: nesting and monotonicity.}
+Two structural facts about the experiment data simplify both the model and its
+visualization; neither is assumed by the model, but both hold in practice.
+\begin{itemize}[itemsep=2pt]
+  \item \textbf{Origin nesting.} A larger distance's origin set is contained in a
+        smaller distance's: the larger window cannot fit in the chip's edge band
+        (the last $s_d - s_{d'} $ coordinate lines on each far side for $d > d'$),
+        so edge sites offer only the smaller distances while the interior offers
+        the full range. Concretely
+        $\text{origins}(d_1) \supseteq \text{origins}(d_2) \supseteq \cdots$ for
+        $d_1 < d_2 < \cdots$.
+  \item \textbf{LER monotonicity.} Where both fit, a larger distance has the lower
+        LER: $\ell_{p,d}$ is nonincreasing in $d$ at a fixed site $p$. Hence if
+        $(p, d)$ is valid then so is $(p, d')$ for every larger $d' \in \Dset$ that
+        fits at $p$. The valid distances at a site therefore form an \emph{upper
+        set}, and the site is fully characterized by its \emph{smallest valid
+        distance}---the cheapest (densest-packing) code that meets $\tau$ there.
+        The visualization uses exactly this: each origin is drawn with the marker
+        of its smallest valid distance, or a ``no valid tile'' marker if none fits.
+\end{itemize}
+Neither fact requires special handling---both follow automatically from reading
+each distance's results file---and the model below remains correct even if a future
+data set violates monotonicity, since it enumerates candidates explicitly rather
+than assuming the upper-set structure.
 
 \section{Decision variables}
 
@@ -135,7 +159,7 @@ For each candidate we introduce one binary variable:
 \end{align}
 
 Objective~\eqref{eq:obj} counts placed tiles. Constraint~\eqref{eq:origin} forbids
-placing both a $d=3$ and a $d=5$ tile at the same site. Constraint
+placing more than one tile (of whatever distance) at the same site. Constraint
 \eqref{eq:clique} is the non-overlap requirement in clique (site-cover) form,
 defined next.
 
@@ -164,18 +188,24 @@ form
 $y_a + y_b \le 1 \;\; \forall\, a \sim b$, while describing the same integer set.
 Constraint~\eqref{eq:origin} is in fact implied by \eqref{eq:clique} (co-located
 candidates both cover the origin site and hence share a clique); it is retained
-for clarity and as a guard.
+for clarity and as a guard. Nothing in the enumeration depends on $|\Dset|$: the
+witness corner and the per-candidate membership test handle any collection of
+distances uniformly.
 
 \section{Behavior}
 \begin{itemize}[itemsep=2pt]
-  \item \textbf{Strict $\tau$ (low-noise regime).} Almost no $d=3$ placement is
-        valid while many $d=5$ placements are; the optimum is $d=5$-dominated, the
-        larger footprint being the price of having any valid tile at all.
-  \item \textbf{Loose $\tau$.} Both distances are broadly valid; the smaller $d=3$
-        tile packs more densely, so a count-maximizing optimum favors $d=3$.
-  \item \textbf{Intermediate $\tau$.} A genuine mix arises---$d=5$ tiles in the
-        quieter interior where they are valid, $d=3$ tiles filling the edge band
-        and the gaps between $d=5$ footprints.
+  \item \textbf{Strict $\tau$ (low-noise regime).} Almost no small-distance
+        placement is valid while many large-distance placements are; the optimum is
+        dominated by the largest distances, whose footprint is the price of having
+        any valid tile at all. (On the $30\times30$, $\texttt{mean\_0\_001}$ data
+        at $\tau = 4\times10^{-4}$ the optimum places six $d=7$ and five $d=5$
+        tiles and no $d=3$ tile.)
+  \item \textbf{Loose $\tau$.} Every distance is broadly valid; the smallest tile
+        packs most densely, so a count-maximizing optimum favors the smallest
+        distance in $\Dset$.
+  \item \textbf{Intermediate $\tau$.} A genuine mix arises---larger tiles in the
+        quieter interior where they are valid, smaller tiles filling the edge band
+        and the gaps between larger footprints.
 \end{itemize}
 
 \section{Notes}
@@ -188,9 +218,12 @@ for clarity and as a guard.
         trade-off). Only the objective~\eqref{eq:obj} changes.
   \item Per-distance thresholds $\tau_d$ enter only through the candidate set
         $\Pset$; the constraints are unchanged.
+  \item The distance set $\Dset$ enters only through $\Pset$ as well: adding a new
+        distance means adding its results file and its candidates, with no change to
+        the geometry, constraints, or enumeration.
   \item As in the base model, chip-boundary feasibility is baked into $\Pset$: the
         results files list only origins whose full footprint fits on the chip,
-        which is exactly why the $d=5$ edge band is absent.
+        which is exactly why the larger-distance edge bands are absent.
 \end{itemize}
 
 \end{document}

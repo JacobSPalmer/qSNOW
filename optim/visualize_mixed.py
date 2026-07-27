@@ -3,47 +3,79 @@
 Visualize the optimized MIXED-distance tile packing on the chip.
 
 Companion to `visualize_packing.py` for the mixed model (`model_mixed.py`), where
-each placed tile may be a distance-3 or a distance-5 patch.
+each placed tile may be one of any number of code distances (d3, d5, d7, ...).
 
-Every candidate origin is classified by which distances are *valid* there
-(ler <= tau), and drawn with a distinct marker:
-
-    1) no valid tile      -- faint gray dot
-    2) only D3 valid      -- blue circle
-    3) only D5 valid      -- orange triangle
-    4) both D3 and D5 valid-- green star
+Every candidate origin is classified by its SMALLEST valid distance -- the
+cheapest (densest-packing) code that meets `ler <= tau` there. Because a larger
+distance always has a lower LER (monotonicity of the data), the valid distances
+at a site form an upper set, so this single value characterizes the whole valid
+set. Origins are drawn with a distinct per-distance marker, plus a faint gray dot
+for sites where no distance is valid.
 
 On top of that, a footprint square is drawn around every placed tile, colored by
-its distance (D3 vs D5), so both the validity landscape and the chosen packing
-are readable at once. A distance-d tile at origin (r, c) occupies
-[r, r+s] x [c, c+s] with s = 2*d + 1, so D3 and D5 draw as different-size squares.
+its distance, so both the validity landscape and the chosen packing read at once.
+A distance-d tile at origin (r, c) occupies [r, r+s] x [c, c+s] with s = 2*d + 1,
+so different distances draw as different-size squares.
 
 Usage:
-    python3 visualize_mixed.py <tau> [--distances 3,5] [--data-dir DIR]
+    python3 visualize_mixed.py <tau> [--distances 3,5,7] [--data-dir DIR]
 """
 
 import argparse
 from pathlib import Path
 
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch, Rectangle
 
 from model_mixed import _parse_distances, build_and_solve
-from packing_data import chip_grid_dim, footprint_span, load_lers, mixed_candidates
+from packing_data import (
+    available_distances,
+    chip_grid_dim,
+    footprint_span,
+    load_lers,
+    mixed_candidates,
+)
 
-# Per-distance tile colors (fill/edge). Extend if more distances are ever used.
-DIST_COLORS = {
-    3: {"face": "#2980b9", "edge": "#1b4f72", "name": "D3"},
-    5: {"face": "#e67e22", "edge": "#9c640c", "name": "D5"},
+# Fixed (face, edge) colors for the common distances so plots stay consistent;
+# any other distance falls back to a colormap (see `distance_styles`).
+BASE_COLORS = {
+    3: ("#2980b9", "#1b4f72"),
+    5: ("#e67e22", "#9c640c"),
+    7: ("#8e44ad", "#5b2c6f"),
+    9: ("#16a085", "#0e6252"),
+    11: ("#c0392b", "#7b241c"),
+    13: ("#d4ac0d", "#7d6608"),
 }
-FALLBACK = {"face": "#7f8c8d", "edge": "#2c3e50", "name": "D?"}
+# Distinct marker shapes cycled per distance (ascending).
+MARKERS = ["o", "^", "s", "D", "v", "P", "X", "*", "h", "p"]
+NO_VALID = {"marker": ".", "color": "#d5d5d5", "size": 12}
 
-# Origin-validity category markers. `low`/`high` are filled in per run from the
-# two distances; `none`/`both` are fixed.
-CAT_NONE = {"marker": ".", "face": "#d5d5d5", "edge": "#d5d5d5", "size": 12}
-CAT_BOTH = {"marker": "*", "face": "#2ecc71", "edge": "#145a32", "size": 90}
-CAT_LOW = {"marker": "o", "size": 26}   # only the smaller distance valid
-CAT_HIGH = {"marker": "^", "size": 34}  # only the larger distance valid
+
+def _darken(color, factor: float = 0.6):
+    r, g, b = mcolors.to_rgb(color)
+    return (r * factor, g * factor, b * factor)
+
+
+def distance_styles(distances) -> dict:
+    """Map each distance -> {face, edge, name, marker, size}, stable by ordering."""
+    ds = sorted(distances)
+    cmap = plt.cm.tab10
+    styles = {}
+    for i, d in enumerate(ds):
+        if d in BASE_COLORS:
+            face, edge = BASE_COLORS[d]
+        else:
+            face = mcolors.to_hex(cmap(i % 10))
+            edge = _darken(face)
+        styles[d] = {
+            "face": face,
+            "edge": edge,
+            "name": f"D{d}",
+            "marker": MARKERS[i % len(MARKERS)],
+            "size": 24 + 10 * i,  # larger distances a touch bigger, to stand out
+        }
+    return styles
 
 
 def _tau_for(tau, d: int) -> float:
@@ -51,83 +83,82 @@ def _tau_for(tau, d: int) -> float:
     return tau[d] if isinstance(tau, dict) else tau
 
 
-def classify_origins(tau, low: int, high: int, data_dir=None):
+def classify_origins(tau, distances, data_dir=None) -> dict:
     """
-    Sort every candidate origin into {none, low, high, both} by validity.
+    Sort every candidate origin by its smallest valid distance.
 
-    Returns a dict of category -> list of (r, c) origins, where `low`/`high` mean
-    "only the smaller/larger distance is valid here" and `both` means both are.
-    Origins where the larger tile does not fit (chip edge band) simply never
-    qualify as high/both -- they fall into low or none.
+    Returns {None: [...origins with no valid distance...], d: [...origins whose
+    smallest valid distance is d...]}. Larger distances that do not fit at a site
+    (chip edge band) simply never qualify there.
     """
-    lers_low = load_lers(distance=low, data_dir=data_dir)
-    lers_high = load_lers(distance=high, data_dir=data_dir)
-    tau_low, tau_high = _tau_for(tau, low), _tau_for(tau, high)
+    ds = sorted(distances)
+    lers = {d: load_lers(distance=d, data_dir=data_dir) for d in ds}
 
-    cats = {"none": [], "low": [], "high": [], "both": []}
-    for p in set(lers_low) | set(lers_high):
-        lv = p in lers_low and lers_low[p] <= tau_low
-        hv = p in lers_high and lers_high[p] <= tau_high
-        if lv and hv:
-            cats["both"].append(p)
-        elif lv:
-            cats["low"].append(p)
-        elif hv:
-            cats["high"].append(p)
-        else:
-            cats["none"].append(p)
+    cats = {None: []}
+    for d in ds:
+        cats[d] = []
+    universe = set().union(*(set(lers[d]) for d in ds)) if ds else set()
+    for p in universe:
+        smallest = None
+        for d in ds:  # ascending -> first valid is the smallest valid
+            if p in lers[d] and lers[d][p] <= _tau_for(tau, d):
+                smallest = d
+                break
+        cats[smallest].append(p)
     return cats
 
 
-def _scatter(ax, pts, marker, face, edge, size, zorder, lw=0.6):
-    if pts:
-        ax.scatter(
-            [c for _, c in pts], [r for r, _ in pts],
-            marker=marker, s=size, facecolors=face, edgecolors=edge,
-            linewidths=lw, zorder=zorder,
-        )
+def visualize(tau: float, distances=None, data_dir=None) -> Path:
+    if distances is None:
+        distances = available_distances(data_dir)
+    distances = sorted(distances)
+    styles = distance_styles(distances)
 
-
-def visualize(tau: float, distances=(3, 5), data_dir=None) -> Path:
-    distances = tuple(distances)
-    low, high = min(distances), max(distances)
-    col_low = DIST_COLORS.get(low, FALLBACK)
-    col_high = DIST_COLORS.get(high, FALLBACK)
-
-    n_rows, n_cols = chip_grid_dim(distance=low, data_dir=data_dir)
-    cats = classify_origins(tau, low, high, data_dir=data_dir)
+    n_rows, n_cols = chip_grid_dim(distance=min(distances), data_dir=data_dir)
+    cats = classify_origins(tau, distances, data_dir=data_dir)
     chosen = build_and_solve(tau, distances=distances, data_dir=data_dir, verbose=False)
 
     fig, ax = plt.subplots(figsize=(10, 10))
 
-    # Origin validity markers (drawn under the translucent tiles). Order matters
-    # only for overlap; "none" is most numerous and least important, so first.
-    _scatter(ax, cats["none"], CAT_NONE["marker"], CAT_NONE["face"],
-             CAT_NONE["edge"], CAT_NONE["size"], zorder=2, lw=0)
-    _scatter(ax, cats["low"], CAT_LOW["marker"], col_low["face"],
-             col_low["edge"], CAT_LOW["size"], zorder=2.3)
-    _scatter(ax, cats["high"], CAT_HIGH["marker"], col_high["face"],
-             col_high["edge"], CAT_HIGH["size"], zorder=2.3)
-    _scatter(ax, cats["both"], CAT_BOTH["marker"], CAT_BOTH["face"],
-             CAT_BOTH["edge"], CAT_BOTH["size"], zorder=2.6)
+    # Origin validity markers (drawn under the translucent tiles): "no valid"
+    # first (most numerous, least important), then by ascending distance so the
+    # rarer larger-distance markers land on top.
+    none_pts = cats[None]
+    if none_pts:
+        ax.scatter(
+            [c for _, c in none_pts], [r for r, _ in none_pts],
+            marker=NO_VALID["marker"], s=NO_VALID["size"],
+            color=NO_VALID["color"], zorder=2,
+        )
+    for d in distances:
+        pts = cats[d]
+        st = styles[d]
+        if pts:
+            ax.scatter(
+                [c for _, c in pts], [r for r, _ in pts],
+                marker=st["marker"], s=st["size"], facecolors=st["face"],
+                edgecolors=st["edge"], linewidths=0.6, zorder=2.3 + 0.01 * d,
+            )
 
     # Placed tiles: a footprint square [r, r+s] x [c, c+s], colored by distance.
     pad = 0.5  # nudge so boundary qubits sit inside the drawn square
     for i, cand in enumerate(chosen, start=1):
         r, c = cand.origin
         s = cand.span
-        col = DIST_COLORS.get(cand.distance, FALLBACK)
+        st = styles.get(cand.distance)
+        face = st["face"] if st else "#7f8c8d"
+        edge = st["edge"] if st else "#2c3e50"
         ax.add_patch(
             Rectangle(
                 (c - pad, r - pad), s + 2 * pad, s + 2 * pad,
-                facecolor=col["face"], edgecolor=col["edge"],
+                facecolor=face, edgecolor=edge,
                 alpha=0.20, linewidth=2.0, zorder=3,
             )
         )
         ax.text(
             c + s / 2, r + s / 2, str(i),
             ha="center", va="center", fontsize=9, fontweight="bold",
-            color=col["edge"], zorder=4,
+            color=edge, zorder=4,
         )
 
     # Chip boundary.
@@ -149,34 +180,32 @@ def visualize(tau: float, distances=(3, 5), data_dir=None) -> Path:
     ax.set_ylabel("row (STIM coord)")
 
     placed_counts = {d: sum(1 for c in chosen if c.distance == d) for d in distances}
-    placed_str = "  ".join(
-        f"{DIST_COLORS.get(d, FALLBACK)['name']}: {placed_counts[d]}" for d in distances
-    )
+    placed_str = "  ".join(f"{styles[d]['name']}: {placed_counts[d]}" for d in distances)
     ax.set_title(
         f"Mixed-distance tile packing  (τ = {tau:g})\n"
         f"{len(chosen)} tiles placed  ·  {placed_str}  ·  chip {n_rows}×{n_cols}"
     )
 
-    nm_low, nm_high = col_low["name"], col_high["name"]
+    # Legend: validity categories (smallest valid distance), then placed-tile
+    # footprints per distance.
     legend_handles = [
-        plt.Line2D([], [], marker=CAT_NONE["marker"], linestyle="", color=CAT_NONE["face"],
-                   label=f"no valid tile  [{len(cats['none'])}]"),
-        plt.Line2D([], [], marker=CAT_LOW["marker"], linestyle="", markerfacecolor=col_low["face"],
-                   markeredgecolor=col_low["edge"], color=col_low["face"],
-                   label=f"only {nm_low} valid  [{len(cats['low'])}]"),
-        plt.Line2D([], [], marker=CAT_HIGH["marker"], linestyle="", markerfacecolor=col_high["face"],
-                   markeredgecolor=col_high["edge"], color=col_high["face"],
-                   label=f"only {nm_high} valid  [{len(cats['high'])}]"),
-        plt.Line2D([], [], marker=CAT_BOTH["marker"], linestyle="", markerfacecolor=CAT_BOTH["face"],
-                   markeredgecolor=CAT_BOTH["edge"], color=CAT_BOTH["face"], markersize=11,
-                   label=f"both {nm_low} & {nm_high} valid  [{len(cats['both'])}]"),
+        plt.Line2D([], [], marker=NO_VALID["marker"], linestyle="",
+                   color=NO_VALID["color"], label=f"no valid tile  [{len(cats[None])}]"),
     ]
     for d in distances:
-        col = DIST_COLORS.get(d, FALLBACK)
+        st = styles[d]
+        legend_handles.append(
+            plt.Line2D([], [], marker=st["marker"], linestyle="",
+                       markerfacecolor=st["face"], markeredgecolor=st["edge"],
+                       color=st["face"],
+                       label=f"smallest valid = {st['name']}  [{len(cats[d])}]")
+        )
+    for d in distances:
+        st = styles[d]
         span = footprint_span(d)
         legend_handles.append(
-            Patch(facecolor=col["face"], edgecolor=col["edge"], alpha=0.4,
-                  label=f"placed {col['name']} (footprint {span + 1}×{span + 1})")
+            Patch(facecolor=st["face"], edgecolor=st["edge"], alpha=0.4,
+                  label=f"placed {st['name']} (footprint {span + 1}×{span + 1})")
         )
     ax.legend(handles=legend_handles, loc="upper left", bbox_to_anchor=(1.01, 1.0),
               framealpha=0.95, borderaxespad=0.0)
@@ -191,8 +220,9 @@ def visualize(tau: float, distances=(3, 5), data_dir=None) -> Path:
 def main() -> None:
     ap = argparse.ArgumentParser(description="Visualize the mixed-distance tile packing.")
     ap.add_argument("tau", type=float, help="LER validity threshold")
-    ap.add_argument("--distances", type=_parse_distances, default=[3, 5],
-                    help="comma-separated code distances (default 3,5)")
+    ap.add_argument("--distances", type=_parse_distances, default=None,
+                    help="comma-separated code distances "
+                    "(default: all found in the data dir)")
     ap.add_argument(
         "--data-dir",
         default=None,

@@ -2,11 +2,12 @@
 """
 Mixed-distance tile packing MILP -- threshold-count objective.
 
-At each site we may place a distance-3 OR a distance-5 tile (or nothing). The
-larger D5 tile has a lower logical error rate where the chip is quiet but a
-bigger footprint, so it competes against fitting more D3 tiles. We maximize the
-number of valid, mutually non-overlapping tiles placed, choosing the distance
-per site:
+At each site we may place a tile of any available code distance (or nothing).
+A larger-distance tile has a lower logical error rate where the chip is quiet but
+a bigger footprint, so it competes against fitting more small tiles. We maximize
+the number of valid, mutually non-overlapping tiles placed, choosing the distance
+per site. The set of distances defaults to every one found in the data directory
+(see packing_data.available_distances), so d3/d5/d7/... are handled uniformly:
 
     max   sum_i y_i                       (i ranges over candidates)
     s.t.  y_i allowed only if ler_i <= tau      (baked into the candidate set)
@@ -27,7 +28,7 @@ clique membership test just uses each candidate's own span. See
 `mixed_distance_model.tex`.
 
 Usage:
-    python3 model_mixed.py <tau> [--distances 3,5] [--data-dir DIR]
+    python3 model_mixed.py <tau> [--distances 3,5,7] [--data-dir DIR]
 """
 
 import argparse
@@ -37,7 +38,7 @@ from typing import FrozenSet, List
 import gurobipy as gp
 from gurobipy import GRB
 
-from packing_data import Candidate, mixed_candidates
+from packing_data import Candidate, available_distances, mixed_candidates
 
 
 def conflict(a: Candidate, b: Candidate) -> bool:
@@ -84,7 +85,9 @@ def maximal_cliques_mixed(cands: List[Candidate]) -> List[FrozenSet[int]]:
     return [c for c in cliques if not any(c < other for other in cliques)]
 
 
-def build_and_solve(tau, distances=(3, 5), data_dir=None, verbose: bool = True):
+def build_and_solve(tau, distances=None, data_dir=None, verbose: bool = True):
+    if distances is None:
+        distances = available_distances(data_dir)
     cands = mixed_candidates(tau, distances=distances, data_dir=data_dir)
     cliques = maximal_cliques_mixed(cands)
 
@@ -165,8 +168,9 @@ def main() -> None:
     ap.add_argument(
         "--distances",
         type=_parse_distances,
-        default=[3, 5],
-        help="comma-separated code distances to consider (default 3,5)",
+        default=None,
+        help="comma-separated code distances to consider "
+        "(default: all distances found in the data dir)",
     )
     ap.add_argument(
         "--data-dir",

@@ -25,6 +25,7 @@ Both code distances share the same schema; the distance selects which results
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 from typing import Dict, Iterable, List, NamedTuple, Optional, Tuple, Union
 
@@ -90,6 +91,23 @@ def flake_path(distance: int = 3, data_dir: Union[str, Path, None] = None) -> Pa
     return matches[-1]
 
 
+def available_distances(data_dir: Union[str, Path, None] = None) -> List[int]:
+    """
+    Code distances that have a results `.flake` in `data_dir`, sorted ascending.
+
+    Discovers distances from the `d<N>` token in the results filenames (both
+    naming conventions carry it, e.g. `..._z_d5_...` and `results_d7_30x30_...`),
+    so a folder can hold any collection of distances and be picked up
+    automatically as more are added.
+    """
+    dd = Path(data_dir).expanduser() if data_dir is not None else default_data_dir()
+    dists = set()
+    for p in dd.glob("results_*.flake"):
+        for m in re.finditer(r"_d(\d+)_", p.name):
+            dists.add(int(m.group(1)))
+    return sorted(dists)
+
+
 def load_lers(
     distance: int = 3,
     data_dir: Union[str, Path, None] = None,
@@ -124,23 +142,28 @@ def valid_placements(
 
 def mixed_candidates(
     tau: Union[float, Dict[int, float]],
-    distances: Iterable[int] = (3, 5),
+    distances: Optional[Iterable[int]] = None,
     data_dir: Union[str, Path, None] = None,
 ) -> List[Candidate]:
     """
-    Union of valid candidate placements across several code distances.
+    Union of valid candidate placements across a collection of code distances.
 
     For each distance `d` we load its results flake, keep the origins whose
     `ler <= tau_d`, and emit a `Candidate(origin, d, footprint_span(d), ler)`.
-    `tau` may be a single threshold applied to every distance, or a per-distance
-    mapping `{distance: tau_d}` (e.g. to demand a stricter LER of the larger D5
-    tiles). The result is sorted by (origin, distance).
+    `distances` defaults to every distance found in `data_dir` (see
+    `available_distances`), so new distances are included automatically. `tau` may
+    be a single threshold applied to every distance, or a per-distance mapping
+    `{distance: tau_d}` (e.g. to demand a stricter LER of the larger tiles). The
+    result is sorted by (origin, distance).
 
-    Note: the D5 origin set is a subset of the D3 set (the larger D5 footprint
-    cannot fit in the chip's edge band), so a site offers a real D3-vs-D5 choice
-    only where both tiles are valid; edge-band sites offer D3 alone. This falls
-    out naturally from the per-distance flakes with no special-casing.
+    Note: a larger tile's origin set is a subset of a smaller tile's (its bigger
+    footprint cannot fit in the chip's edge band), so a site offers a choice among
+    only the distances that both fit and are valid there; edge-band sites offer
+    just the smaller distances. This falls out naturally from the per-distance
+    flakes with no special-casing.
     """
+    if distances is None:
+        distances = available_distances(data_dir)
     cands: List[Candidate] = []
     for d in distances:
         tau_d = tau[d] if isinstance(tau, dict) else tau
