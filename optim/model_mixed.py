@@ -32,7 +32,7 @@ Usage:
 """
 
 import argparse
-from collections import Counter
+from collections import Counter, defaultdict
 from typing import FrozenSet, List
 
 import gurobipy as gp
@@ -60,29 +60,81 @@ def maximal_cliques_mixed(cands: List[Candidate]) -> List[FrozenSet[int]]:
     Enumerate maximal conflict cliques as covered-site memberships.
 
     For axis-aligned boxes (any sizes), a set of pairwise-overlapping tiles has a
-    common covered site (Helly). For any conflicting pair the point
-    (max origin row, max origin col) lies in both footprints, so iterating the
-    witness corner (a, b) over the distinct origin rows x cols catches every
-    conflicting pair. Membership uses each candidate's own span. Cliques are sets
-    of candidate INDICES (two candidates can share an origin). Non-maximal
-    cliques (proper subsets of another) are dropped.
+    common covered site (Helly), and its corner (max origin row, max origin col)
+    is an origin coordinate of one of its members. So every maximal clique is
+    produced by some witness (a, b) whose members are exactly the candidates
+    covering it. Cliques are sets of candidate INDICES (two candidates can share
+    an origin). Non-maximal cliques (proper subsets of another) are dropped.
+
+    Spatial indexing keeps this tractable on large chips. A candidate covers
+    witness row ``a`` only if its origin row lies in ``[a - max_span, a]`` (span
+    is small: 2d+1), so instead of rescanning all candidates per witness we bucket
+    by origin row/col and touch only the local band. This turns the naive
+    O(rows * cols * |cands|) scan -- ~24 billion iterations on a 200x200 chip --
+    into work proportional to the (small) local footprint density. The witness
+    column is drawn only from the origin columns present in the row band, since a
+    clique's corner column is always a member's origin column.
     """
-    rows = sorted({c.origin[0] for c in cands})
-    cols = sorted({c.origin[1] for c in cands})
+    if not cands:
+        return []
+    max_span = max(c.span for c in cands)
+
+    by_row = defaultdict(list)
+    for i, c in enumerate(cands):
+        by_row[c.origin[0]].append(i)
+    rows = sorted(by_row)
 
     cliques = set()
     for a in rows:
-        for b in cols:
+        # Candidates whose footprint covers row a (origin row in [a-max_span, a],
+        # then the exact per-candidate span test a <= origin_row + span).
+        row_members = [
+            i
+            for r in range(a - max_span, a + 1)
+            for i in by_row.get(r, ())
+            if a <= cands[i].origin[0] + cands[i].span
+        ]
+        if len(row_members) < 2:
+            continue
+        # Bucket that band by origin column; the witness column ranges only over
+        # columns actually present among these members.
+        by_col = defaultdict(list)
+        for i in row_members:
+            by_col[cands[i].origin[1]].append(i)
+        for b in by_col:
             members = frozenset(
                 i
-                for i, c in enumerate(cands)
-                if c.origin[0] <= a <= c.origin[0] + c.span
-                and c.origin[1] <= b <= c.origin[1] + c.span
+                for cc in range(b - max_span, b + 1)
+                for i in by_col.get(cc, ())
+                if b <= cands[i].origin[1] + cands[i].span
             )
             if len(members) >= 2:
                 cliques.add(members)
 
-    return [c for c in cliques if not any(c < other for other in cliques)]
+    return _drop_non_maximal(cliques)
+
+
+def _drop_non_maximal(cliques) -> List[FrozenSet[int]]:
+    """
+    Keep only maximal cliques (drop any that is a proper subset of another).
+
+    A proper superset of clique ``C`` must contain every member of ``C``, so it is
+    found among the cliques containing ``C``'s rarest member. Pivoting on that
+    member bounds each check to a small candidate set instead of the whole
+    collection, avoiding the O(|cliques|^2) all-pairs comparison.
+    """
+    clique_list = list(cliques)
+    containing = defaultdict(list)
+    for k, c in enumerate(clique_list):
+        for i in c:
+            containing[i].append(k)
+
+    maximal = []
+    for k, c in enumerate(clique_list):
+        pivot = min(c, key=lambda i: len(containing[i]))
+        if not any(clique_list[k2] > c for k2 in containing[pivot] if k2 != k):
+            maximal.append(c)
+    return maximal
 
 
 def build_and_solve(tau, distances=None, data_dir=None, verbose: bool = True):
