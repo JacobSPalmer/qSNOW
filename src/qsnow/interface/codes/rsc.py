@@ -23,7 +23,7 @@ class SCTile(LogicalTile):
             code_task=f"surface_code:rotated_{t}", distance=d, rounds=r
         )
         super().__init__(
-            base_circuit=generator(task, distance, rounds).flattened(),
+            base_circuit=generator(task, distance, rounds),
             initial_shift=None,
             x_buffer=1,
             y_buffer=1,
@@ -51,7 +51,7 @@ class SCTile(LogicalTile):
         z_measures = {}
 
         i2e = self._circuit.get_final_qubit_coordinates()
-        for i in self._yield_circuit_instructions():
+        for i in self._yield_circuit_instructions(self._circuit):
             if i.name == "H":
                 x_measures = {
                     (i2e[q.value][0], i2e[q.value][1]): q.value
