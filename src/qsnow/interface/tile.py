@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-from stim import Circuit
+from stim import Circuit, CircuitRepeatBlock, CircuitInstruction
 
 from .grid import Grid
 from .models import (
@@ -211,8 +211,8 @@ class LogicalTile(Grid):
     # ------------------------------------------------------------------
     # Circuit manipulation
     # ------------------------------------------------------------------
-    def _yield_circuit_instructions(self, *, flatten: bool = False):
-        for instr in self._circuit.flattened() if flatten else self._circuit:
+    def _yield_circuit_instructions(self, circuit, *, flatten: bool = False):
+        for instr in circuit.flattened() if flatten else circuit:
             yield instr
 
     def _format_instruction_to_str(
@@ -290,7 +290,7 @@ class LogicalTile(Grid):
         shifted_circuit = Circuit()
         circ_arr = []
         # NOTE - Issue with STIM where the circuit iterator does not update type exclusivity to CircuitInstructions when flattening
-        for instr in self._yield_circuit_instructions():
+        for instr in self._yield_circuit_instructions(self._circuit):
             match instr.name:
                 case "QUBIT_COORDS":
                     circ_arr.append(
@@ -408,65 +408,74 @@ class LogicalTile(Grid):
 
     # TODO - make debug_tags a global configuration flag when that refactor is up
     def _inject_circuit_noise(self, debug_tags=False) -> Circuit:
-        circ = Circuit()
         circ_arr = []
         i2q = self._extract_i2q_map()
-        for instr in self._yield_circuit_instructions(flatten=True):
-            before = []
-            after = []
-            for rule in self._ruleset.rules:
-                if instr.name == rule.operation:
-                    operation_targs = [
-                        [t.value for t in a] for a in instr.target_groups()
-                    ]  # type: ignore
-                    if self._ruleset.check_trigger(rule.trigger, operation_targs, i2q):
-                        for c in rule.before:
-                            channel_targs = self._ruleset.apply_filter(
-                                c.filter, operation_targs, i2q
-                            )
-                            for l in channel_targs:
-                                before.append(
-                                    self._format_instruction_to_str(
-                                        name=c.channel,
-                                        targets=[i for i in l],
-                                        # TODO - move the determination of noise value to be handled by ruleset to enable arbitrary granular control of scaling
-                                        arg=[
-                                            mean([i2q.get(i).noise.p for i in l])  # type: ignore
-                                            * c.scalar
-                                        ],
-                                        tag=f"{rule.operation}:{rule.trigger} -> {c.channel}:{c.filter}"
-                                        if debug_tags
-                                        else None
-                                        if rule.name is None
-                                        else rule.name,
-                                    )
-                                )
-                        for c in rule.after:
-                            channel_targs = self._ruleset.apply_filter(
-                                c.filter, operation_targs, i2q
-                            )
-                            for l in channel_targs:
-                                after.append(
-                                    self._format_instruction_to_str(
-                                        name=c.channel,
-                                        targets=l,
-                                        arg=[
-                                            mean([i2q.get(i).noise.p for i in l])  # type: ignore
-                                            * c.scalar
-                                        ],  # type: ignore
-                                        tag=f"{rule.operation}:{rule.trigger} -> {c.channel}:{c.filter}"
-                                        if debug_tags
-                                        else None
-                                        if rule.name is None
-                                        else rule.name,
-                                    )
-                                )
-                    if rule.exclusive:
-                        break
-
-            circ_arr.extend(before)
-            circ_arr.append(str(instr))
-            circ_arr.extend(after)
-
+        circ_arr = self._process_circuit(self._circuit, i2q, debug_tags)
         return Circuit("\n".join(circ_arr))
-        # return circ
+
+    # TODO - the non-flattening of the circuit offers speedups but limits the power of the rulesets in determining rule exclusivity, which will need to be revisted
+    def _process_circuit(self, circuit, i2q, debug_tags = True) -> List[str]:
+        circ_arr: List[str] = []
+        i2q = self._extract_i2q_map()
+        for instr in self._yield_circuit_instructions(circuit, flatten=False):
+            if isinstance(instr, CircuitRepeatBlock):
+                circ_arr.append(f"REPEAT {instr.repeat_count} {{")
+                circ_arr.extend(self._process_circuit(instr.body_copy(), i2q))
+                circ_arr.append("}")
+            else:
+                before = []
+                after = []
+                for rule in self._ruleset.rules:
+                    if instr.name == rule.operation:
+                        operation_targs = [
+                            [t.value for t in a] for a in instr.target_groups()
+                        ]  # type: ignore
+                        if self._ruleset.check_trigger(rule.trigger, operation_targs, i2q):
+                            for c in rule.before:
+                                channel_targs = self._ruleset.apply_filter(
+                                    c.filter, operation_targs, i2q
+                                )
+                                for l in channel_targs:
+                                    before.append(
+                                        self._format_instruction_to_str(
+                                            name=c.channel,
+                                            targets=[i for i in l],
+                                            # TODO - move the determination of noise value to be handled by ruleset to enable arbitrary granular control of scaling
+                                            arg=[
+                                                mean([i2q.get(i).noise.p for i in l])  # type: ignore
+                                                * c.scalar
+                                            ],
+                                            tag=f"{rule.operation}:{rule.trigger} -> {c.channel}:{c.filter}"
+                                            if debug_tags
+                                            else None
+                                            if rule.name is None
+                                            else rule.name,
+                                        )
+                                    )
+                            for c in rule.after:
+                                channel_targs = self._ruleset.apply_filter(
+                                    c.filter, operation_targs, i2q
+                                )
+                                for l in channel_targs:
+                                    after.append(
+                                        self._format_instruction_to_str(
+                                            name=c.channel,
+                                            targets=l,
+                                            arg=[
+                                                mean([i2q.get(i).noise.p for i in l])  # type: ignore
+                                                * c.scalar
+                                            ],  # type: ignore
+                                            tag=f"{rule.operation}:{rule.trigger} -> {c.channel}:{c.filter}"
+                                            if debug_tags
+                                            else None
+                                            if rule.name is None
+                                            else rule.name,
+                                        )
+                                    )
+                        if rule.exclusive:
+                            break
+                circ_arr.extend(before)
+                circ_arr.append(str(instr))
+                circ_arr.extend(after)
+
+        return circ_arr
