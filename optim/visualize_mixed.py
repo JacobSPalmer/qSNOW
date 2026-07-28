@@ -108,7 +108,14 @@ def classify_origins(tau, distances, data_dir=None) -> dict:
     return cats
 
 
-def visualize(tau: float, distances=None, data_dir=None) -> Path:
+def visualize(
+    tau: float,
+    distances=None,
+    data_dir=None,
+    solution_dir=None,
+    use_cache: bool = True,
+    refresh: bool = False,
+) -> Path:
     if distances is None:
         distances = available_distances(data_dir)
     distances = sorted(distances)
@@ -116,9 +123,26 @@ def visualize(tau: float, distances=None, data_dir=None) -> Path:
 
     n_rows, n_cols = chip_grid_dim(distance=min(distances), data_dir=data_dir)
     cats = classify_origins(tau, distances, data_dir=data_dir)
-    chosen = build_and_solve(tau, distances=distances, data_dir=data_dir, verbose=False)
+    chosen = build_and_solve(
+        tau,
+        distances=distances,
+        data_dir=data_dir,
+        verbose=False,
+        solution_dir=solution_dir,
+        use_cache=use_cache,
+        refresh=refresh,
+    )
 
     fig, ax = plt.subplots(figsize=(10, 10))
+
+    # Scale-adaptive rendering. The demo chips (~60x60) get full-size markers,
+    # per-tile index labels, and heavy tile borders; big chips (e.g. 400x400,
+    # thousands of tiles) would drown in those, so markers shrink, borders thin,
+    # and the numeric labels are dropped once they can no longer be read.
+    n_max = max(n_rows, n_cols)
+    marker_scale = min(1.0, max(0.12, 60.0 / n_max))
+    tile_lw = 2.0 if len(chosen) <= 200 else max(0.3, 120.0 / len(chosen))
+    label_tiles = len(chosen) <= 200
 
     # Origin validity markers (drawn under the translucent tiles): "no valid"
     # first (most numerous, least important), then by ascending distance so the
@@ -127,7 +151,7 @@ def visualize(tau: float, distances=None, data_dir=None) -> Path:
     if none_pts:
         ax.scatter(
             [c for _, c in none_pts], [r for r, _ in none_pts],
-            marker=NO_VALID["marker"], s=NO_VALID["size"],
+            marker=NO_VALID["marker"], s=NO_VALID["size"] * marker_scale,
             color=NO_VALID["color"], zorder=2,
         )
     for d in distances:
@@ -136,8 +160,9 @@ def visualize(tau: float, distances=None, data_dir=None) -> Path:
         if pts:
             ax.scatter(
                 [c for _, c in pts], [r for r, _ in pts],
-                marker=st["marker"], s=st["size"], facecolors=st["face"],
-                edgecolors=st["edge"], linewidths=0.6, zorder=2.3 + 0.01 * d,
+                marker=st["marker"], s=st["size"] * marker_scale,
+                facecolors=st["face"], edgecolors=st["edge"],
+                linewidths=0.6 * marker_scale, zorder=2.3 + 0.01 * d,
             )
 
     # Placed tiles: a footprint square [r, r+s] x [c, c+s], colored by distance.
@@ -152,14 +177,15 @@ def visualize(tau: float, distances=None, data_dir=None) -> Path:
             Rectangle(
                 (c - pad, r - pad), s + 2 * pad, s + 2 * pad,
                 facecolor=face, edgecolor=edge,
-                alpha=0.20, linewidth=2.0, zorder=3,
+                alpha=0.20, linewidth=tile_lw, zorder=3,
             )
         )
-        ax.text(
-            c + s / 2, r + s / 2, str(i),
-            ha="center", va="center", fontsize=9, fontweight="bold",
-            color=edge, zorder=4,
-        )
+        if label_tiles:
+            ax.text(
+                c + s / 2, r + s / 2, str(i),
+                ha="center", va="center", fontsize=9, fontweight="bold",
+                color=edge, zorder=4,
+            )
 
     # Chip boundary.
     ax.add_patch(
@@ -173,7 +199,9 @@ def visualize(tau: float, distances=None, data_dir=None) -> Path:
     ax.set_ylim(-1, n_rows)
     ax.set_aspect("equal")
     ax.invert_yaxis()  # row 0 at the top, chip-layout style
-    step = 2 if n_cols <= 32 else 4
+    # Aim for ~16 evenly spaced ticks regardless of chip size (even step, since
+    # coords sit on the checkerboard); avoids the label smear on large chips.
+    step = max(2, int(round(n_max / 16 / 2)) * 2)
     ax.set_xticks(range(0, n_cols, step))
     ax.set_yticks(range(0, n_rows, step))
     ax.set_xlabel("column (STIM coord)")
@@ -229,8 +257,31 @@ def main() -> None:
         help="experiment folder to read results flakes from "
         "(default: $QSNOW_DATA_DIR or the demo path)",
     )
+    ap.add_argument(
+        "--solution-dir",
+        default=None,
+        help="directory to read/write cached solutions (default: model_mixed's)",
+    )
+    ap.add_argument(
+        "--refresh",
+        action="store_true",
+        help="re-solve and overwrite any cached solution for this case",
+    )
+    ap.add_argument(
+        "--no-cache",
+        dest="use_cache",
+        action="store_false",
+        help="do not read or write the solution cache",
+    )
     args = ap.parse_args()
-    out = visualize(args.tau, distances=args.distances, data_dir=args.data_dir)
+    out = visualize(
+        args.tau,
+        distances=args.distances,
+        data_dir=args.data_dir,
+        solution_dir=args.solution_dir,
+        use_cache=args.use_cache,
+        refresh=args.refresh,
+    )
     print(f"saved: {out}")
 
 

@@ -184,7 +184,11 @@ def chip_grid_dim(
 
     A "15x15" chip is a 30x30 checkerboard. The dimension is read from the sibling
     experiment `.flake` referenced by the results file (its stored chip `length`
-    is the unit size, half the internal grid), falling back to 30x30.
+    is the unit size, half the internal grid). If that sibling file is missing
+    (some experiment folders ship only the results flakes), we infer the extent
+    from the results data itself: origins exist only where the full footprint fits,
+    so the last origin plus the footprint span, `max(origin) + s + 1`, recovers the
+    checkerboard size. Falls back to 30x30 only if the data cannot be read at all.
     """
     path = path if path is not None else flake_path(distance, data_dir)
     try:
@@ -194,7 +198,19 @@ def chip_grid_dim(
             chip = json.load(f)["exp"]["chip"]
         return 2 * int(chip["height"]), 2 * int(chip["length"])
     except (OSError, KeyError, TypeError, ValueError):
-        return 30, 30
+        pass
+
+    # Sibling experiment file unavailable -- infer the extent from the origins.
+    try:
+        lers = load_lers(distance=distance, data_dir=data_dir, path=path)
+        if lers:
+            s = footprint_span(distance)
+            max_r = max(r for r, _ in lers) + s + 1
+            max_c = max(c for _, c in lers) + s + 1
+            return max_r, max_c
+    except (OSError, KeyError, TypeError, ValueError):
+        pass
+    return 30, 30
 
 
 def footprint_span(distance: int = 3) -> int:
