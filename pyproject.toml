@@ -16,11 +16,11 @@ dependencies = [
     "shapely",
     "scipy",
     "pymatching",
-    "rich"
+    "tqdm"
 ]
 
 [project.optional-dependencies]
-dev = ["ipykernel", "ruff"]
+dev = ["ipykernel", "ipywidgets", "ruff"]
 test = ["pytest", "pytest-cov", "kaleido"]
 
 [tool.setuptools]

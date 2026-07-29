@@ -42,7 +42,7 @@ class SquarePackingExp(Experiment):
     results: Dict = field(default_factory=dict)
 
     def __post_init__(self):
-        # TODO - probably a better way to do this, but safest to always create a copy so as to not accidentally work on the same chip
+        # NOTE - probably a better way to do this, but  safest to always create a copy so as to not accidentally work on the same chip
         self.tile = self.tile.copy()
         self.chip = self.chip.copy()
         super().__init__()
@@ -101,9 +101,8 @@ class SquarePackingExp(Experiment):
             ]
 
             collected_stats: List[sinter.TaskStats] = []
-            # NOTE - showing the ETA here was nice but with batching process it just bounced around too much too be reliable
             with prog.phase(
-                "Sampling circuits", total=len(tasks), show_eta=False
+                "Sampling circuits", total=len(tasks), show_eta=True
             ) as phase:
                 for batch in _chunked(tasks, batch_size):
                     batch_stats = sinter.collect(
