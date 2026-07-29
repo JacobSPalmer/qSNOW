@@ -1,130 +1,115 @@
-"""Shared rich-progress plumbing for experiments.
-
-`PhasedProgress` renders a single live display with one overall row plus one
-row per sequential phase::
-
-    Experiment: SquarePackingExp ━━━━━━╸━━━━━  50% / 0:00:12
-      Generating circuits       ━━━━━━━━━━━━ 100% / 0:00:03
-      Sampling circuits         ━━━╸━━━━━━━━  30% / 0:01:40
-
-Phase rows are added lazily as each phase begins, so an experiment declares
-only how many phases it has (for the overall bar) and opens them one at a
-time with `phase()` or `track()`.
+"""Progress display for experiments, backed by tqdm.
 """
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from typing import Any, Optional, TypeVar
 
-from rich.progress import (
-    BarColumn,
-    MofNCompleteColumn,
-    Progress,
-    ProgressColumn,
-    Task,
-    TaskID,
-    TextColumn,
-    TimeElapsedColumn,
-    TimeRemainingColumn,
-)
+from tqdm.auto import tqdm
 
 T = TypeVar("T")
 
+# tqdm's default bar layout, minus the ``<{remaining}`` ETA estimate. Used for a
+# phase opened with ``show_eta=False`` (one whose completion advances in coarse,
+# bursty steps that would make a remaining-time estimate jump around).
+_BAR_FORMAT_NO_ETA = (
+    "{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}, {rate_fmt}{postfix}]"
+)
 
-class PhasedTimeColumn(ProgressColumn):
-    """Elapsed time for the overall row, remaining→elapsed for phase rows.
 
-    The overall row only advances once per phase, so rich can never form a
-    speed estimate for it and a remaining-time column would render `-:--:--`
-    for the whole run; its elapsed time (the running sum of all phases) is
-    the meaningful number. Rows are told apart via the `overall` task field.
+class _Row:
+    """Bookkeeping for one phase, decoupled from the tqdm bar that displays it.
 
-    A phase opened with ``show_eta=False`` (e.g. one whose completion advances
-    in coarse, bursty steps, making a remaining estimate meaningless) also
-    renders elapsed time instead of a remaining estimate.
+    Completion state stays inspectable (and testable) even when the visible bar
+    is disabled -- the bar is treated as a pure view over this state.
     """
 
-    def __init__(self) -> None:
-        self._elapsed = TimeElapsedColumn()
-        self._remaining = TimeRemainingColumn(elapsed_when_finished=True)
-        super().__init__()
+    def __init__(self, description: str, total: Optional[float]):
+        self.description = description
+        self.total = total
+        self.completed: float = 0
+        self.fields: dict[str, Any] = {}
 
-    def render(self, task: Task):
-        if task.fields.get("overall") or not task.fields.get("show_eta", True):
-            return self._elapsed.render(task)
-        return self._remaining.render(task)
-
-
-def default_columns() -> Sequence[ProgressColumn]:
-    """Column set shared by all experiment progress displays."""
-    return (
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        PhasedTimeColumn(),
-        TextColumn("/"),
-        MofNCompleteColumn(),
-    )
+    @property
+    def finished(self) -> bool:
+        return self.total is not None and self.completed >= self.total
 
 
 class Phase:
-    """Handle for advancing a single phase row (e.g. from a worker callback)."""
+    """Handle for advancing a single phase (e.g. from a worker callback)."""
 
-    def __init__(self, progress: Progress, task_id: TaskID):
-        self._progress = progress
-        self.task_id = task_id
+    def __init__(self, row: _Row, bar: Optional[tqdm]):
+        self._row = row
+        self._bar = bar
 
-    def advance(self, step: float = 1.0) -> None:
-        self._progress.update(self.task_id, advance=step)
+    def advance(self, step: float = 1) -> None:
+        self._row.completed += step
+        if self._bar is not None:
+            self._bar.update(step)
 
-    def update(self, **kwargs: Any) -> None:
-        self._progress.update(self.task_id, **kwargs)
+    def update(
+        self,
+        *,
+        total: Optional[float] = None,
+        completed: Optional[float] = None,
+        **_ignored: Any,
+    ) -> None:
+        if total is not None:
+            self._row.total = total
+            if self._bar is not None:
+                self._bar.total = total
+        if completed is not None:
+            self._row.completed = completed
+            if self._bar is not None:
+                self._bar.n = completed
+        if self._bar is not None:
+            self._bar.refresh()
 
 
 class PhasedProgress:
-    """A live progress display for a job made of sequential sub-phases.
+    """A progress display for a job made of sequential phases.
 
-    Use as a context manager; open each phase with `phase()` (or `track()` to
-    wrap an iterable). Completing a phase advances the overall row by one.
-    A phase that stops early with no error (e.g. sinter hitting `max_errors`
-    before `max_shots`) is shrunk to its completed count so it renders as
-    finished rather than stalled.
+    Use as a context manager and open each phase with ``phase()`` (or ``track()``
+    to wrap an iterable)::
+
+        with self.progress(phases=2) as prog:
+            for item in prog.track(items, "Generating circuits"):
+                ...
+            with prog.phase("Sampling circuits", total=n, show_eta=False) as ph:
+                ...  # ph.advance(k) from a callback
+
+    ``phases`` is used only to label each bar ``[i/phases]`` for a sense of
+    overall position. A phase that stops early with no error (e.g. sinter hitting
+    ``max_errors`` before ``max_shots``) is shrunk to its completed count so it
+    reads as finished rather than stalled.
     """
 
     def __init__(
         self,
-        title: str,
+        title: str = "",
         phases: Optional[int] = None,
-        columns: Optional[Sequence[ProgressColumn]] = None,
-        **progress_kwargs: Any,
+        disable: bool = False,
+        **_ignored: Any,
     ):
-        self._progress = Progress(*(columns or default_columns()), **progress_kwargs)
         self._title = title
         self._phases = phases
-        self._overall: Optional[TaskID] = None
+        self._disable = disable
+        self._rows: list[_Row] = []
+        self._index = 0
 
     def __enter__(self) -> PhasedProgress:
-        self._progress.start()
-        self._overall = self._progress.add_task(
-            f"[bold]{self._title}", total=self._phases, overall=True
-        )
+        if self._title and not self._disable:
+            tqdm.write(self._title)
         return self
 
     def __exit__(self, exc_type, exc, tb) -> bool:
-        if exc_type is None and self._overall is not None:
-            (overall,) = (t for t in self._progress.tasks if t.id == self._overall)
-            if not overall.finished:
-                self._progress.update(self._overall, total=overall.completed)
-        # Jupyter's Live.stop() skips the final refresh, which would leave the
-        # last frame stale (e.g. the overall row's final advance never shown)
-        self._progress.refresh()
-        self._progress.stop()
         return False
 
     @property
-    def tasks(self):
-        """Snapshot of all task rows (overall first), mainly for inspection."""
-        return self._progress.tasks
+    def tasks(self) -> list[_Row]:
+        """The phase rows opened so far (in order), for inspection/testing."""
+        return list(self._rows)
 
     @contextmanager
     def phase(
@@ -133,29 +118,50 @@ class PhasedProgress:
         total: Optional[float] = None,
         show_eta: bool = True,
     ) -> Iterator[Phase]:
-        """Open the next sequential phase as a new indented row.
+        """Open the next sequential phase as its own bar.
 
-        `show_eta=False` renders elapsed time instead of a remaining-time
-        estimate (useful when the phase advances in coarse, bursty steps that
-        would make an ETA jump around).
+        ``show_eta=False`` hides the remaining-time estimate (useful when the
+        phase advances in coarse, bursty steps that make an ETA jump around).
         """
-        task_id = self._progress.add_task(
-            f"  {description}", total=total, show_eta=show_eta
-        )
-        yield Phase(self._progress, task_id)
-        (task,) = (t for t in self._progress.tasks if t.id == task_id)
-        if not task.finished:
-            self._progress.update(task_id, total=task.completed)
-        if self._overall is not None:
-            self._progress.update(self._overall, advance=1)
+        self._index += 1
+        label = f"[{self._index}/{self._phases}] {description}" if self._phases else description
+
+        row = _Row(label, total)
+        self._rows.append(row)
+
+        bar: Optional[tqdm] = None
+        if not self._disable:
+            #TODO - fix so that each bar has same width and x anchor
+            bar = tqdm(
+                total=total,
+                desc=label,
+                leave=True,
+                bar_format=(
+                    _BAR_FORMAT_NO_ETA if (not show_eta and total is not None) else None
+                ),
+            )
+        try:
+            yield Phase(row, bar)
+        except BaseException:
+            if bar is not None:
+                bar.close()
+            raise
+
+        if not row.finished:
+            row.total = row.completed
+            if bar is not None:
+                bar.total = row.completed
+                bar.refresh()
+        if bar is not None:
+            bar.close()
 
     def track(
         self,
-        iterable: Iterable[T],
+        iterable: Iterable,
         description: str,
         total: Optional[float] = None,
-    ) -> Iterator[T]:
-        """Iterate `iterable` as a phase of its own, advancing once per item."""
+    ) -> Iterator:
+        """Iterate ``iterable`` as a phase of its own, advancing once per item."""
         if total is None:
             try:
                 total = len(iterable)  # type: ignore[arg-type]

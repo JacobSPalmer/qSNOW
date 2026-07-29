@@ -51,9 +51,9 @@ class Experiment:
         """
         Create the shared phased progress display for this experiment's `run()`.
 
-        `phases` sizes the overall bar (one unit per phase; omit for an
-        indeterminate overall row). Subclasses open each sequential phase via
-        `PhasedProgress.phase()` / `PhasedProgress.track()`::
+        `phases` is the number of sequential phases, used to label each bar
+        `[i/phases]`. Subclasses open each phase via `PhasedProgress.phase()` /
+        `PhasedProgress.track()`::
 
             with self.progress(phases=2) as prog:
                 for item in prog.track(items, "Generating circuits"):
