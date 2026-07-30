@@ -414,13 +414,13 @@ class LogicalTile(Grid):
         return Circuit("\n".join(circ_arr))
 
     # TODO - the non-flattening of the circuit offers speedups but limits the power of the rulesets in determining rule exclusivity, which will need to be revisted
-    def _process_circuit(self, circuit, i2q, debug_tags = True) -> List[str]:
+    def _process_circuit(self, circuit, i2q, debug_tags = False) -> List[str]:
         circ_arr: List[str] = []
         i2q = self._extract_i2q_map()
         for instr in self._yield_circuit_instructions(circuit, flatten=False):
             if isinstance(instr, CircuitRepeatBlock):
                 circ_arr.append(f"REPEAT {instr.repeat_count} {{")
-                circ_arr.extend(self._process_circuit(instr.body_copy(), i2q))
+                circ_arr.extend(self._process_circuit(instr.body_copy(), i2q, debug_tags))
                 circ_arr.append("}")
             else:
                 before = []
