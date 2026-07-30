@@ -136,6 +136,7 @@ class PhasedProgress:
                 total=total,
                 desc=label,
                 leave=True,
+                dynamic_ncols=True,
                 bar_format=(
                     _BAR_FORMAT_NO_ETA if (not show_eta and total is not None) else None
                 ),

@@ -4,6 +4,7 @@ from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, TypeVar, TYPE_CHECKING
 from stim import Circuit
+from time import perf_counter
 
 import sinter
 
@@ -92,6 +93,7 @@ class SquarePackingExp(Experiment):
 
         #TODO - most if not all of the logic for sampling mass experiments should be extracted to a dedicated reusable class.
         with self.progress(phases=2) as prog:
+            t_start = perf_counter()
             tasks = [
                 sinter.Task(
                     circuit=self._circuit_for_profile_loc(loc),
@@ -99,7 +101,10 @@ class SquarePackingExp(Experiment):
                 )
                 for loc in prog.track(self.profile, "Generating circuits")
             ]
+            t_generation = perf_counter() - t_start
 
+            t_start = perf_counter()
+            
             collected_stats: List[sinter.TaskStats] = []
             with prog.phase(
                 "Sampling circuits", total=len(tasks), show_eta=True
@@ -118,6 +123,8 @@ class SquarePackingExp(Experiment):
                     collected_stats.extend(batch_stats)
                     phase.advance(len(batch_stats))
 
+            t_sampling = perf_counter() - t_start
+
             # sinter round-trips json_metadata through JSON, so 'loc' comes back as a list
             self.results = {
                 tuple(s.json_metadata["loc"]): {
@@ -134,6 +141,13 @@ class SquarePackingExp(Experiment):
                 max_errors=max_errors,
                 decoder=decoder,
                 batch_size=batch_size,
+                max_workers=max_workers,
+                stats = {
+                    'runtime': {
+                        'generation': f"{t_generation}",
+                        'sampling': f"{t_sampling}",
+                    }
+                }
             )
 
         return self.results
