@@ -1,4 +1,5 @@
 import pytest
+import sinter
 import stim
 
 from qsnow.interface.chip import Chip
@@ -329,3 +330,61 @@ class TestResetAndConstruction:
     def test_negative_buffer_rejected(self, two_qubit_circuit, x_buffer, y_buffer):
         with pytest.raises(ValueError):
             LogicalTile(two_qubit_circuit, x_buffer=x_buffer, y_buffer=y_buffer)
+
+
+class TestInjectionMatchesFlattened:
+    """Noise injection now walks the circuit *without* flattening it, recursing
+    into ``REPEAT`` blocks (see ``_process_circuit``) to save compute on codes
+    with many rounds. These tests pin down that the repeat-preserving injection
+    produces a circuit that is *functionally identical* to injecting noise on a
+    fully flattened circuit -- the old behavior -- so sampling is unchanged."""
+
+    def _placed_sctile(self, chip: Chip) -> SCTile:
+        tile = SCTile(distance=3, rounds=3)
+        chip.add_tile(tile, (0, 0))
+        # Non-uniform noise so channels are actually injected (and so a mistake
+        # in per-round injection would surface as differing channel arguments).
+        chip.generate_random_noise()
+        return tile
+
+    def test_repeat_block_is_preserved_in_injected_circuit(self, chip: Chip):
+        """Guards that the code path under test is exercised: injection must keep
+        the ``REPEAT`` block rather than unrolling it."""
+        tile = self._placed_sctile(chip)
+        assert "REPEAT" in str(tile.circuit)
+
+    def test_injected_circuit_samples_identically_to_flattened(self, chip: Chip):
+        """``strong_id`` is a deterministic hash of the (flattened) circuit, so
+        equal ids guarantee identical sampling under sinter. The reference is the
+        same tile injected on an already-flattened circuit, which never enters
+        the ``REPEAT`` branch -- the trusted per-instruction path."""
+        tile = self._placed_sctile(chip)
+
+        # Repeat-preserving injection (the new behavior), unrolled by STIM.
+        repeat_injected = tile.circuit.flattened()
+
+        # Flatten-then-inject reference (the old behavior), built from the same
+        # tile state so both share identical per-qubit noise.
+        flat_injected = stim.Circuit(
+            "\n".join(
+                tile._process_circuit(
+                    tile._circuit.flattened(), tile._extract_i2q_map()
+                )
+            )
+        )
+
+        # STIM structural equality -- clear, fast, and human-readable.
+        assert repeat_injected == flat_injected
+        # ... and the sampling-level invariant the sampler actually consumes:
+        # strong_id hashes the circuit, its detector error model, the decoder,
+        # and metadata, so equal ids guarantee sinter samples them identically.
+        assert self._strong_id(repeat_injected) == self._strong_id(flat_injected)
+
+    @staticmethod
+    def _strong_id(circuit: stim.Circuit) -> str:
+        return sinter.Task(
+            circuit=circuit,
+            detector_error_model=circuit.detector_error_model(),
+            decoder="pymatching",
+            json_metadata={},
+        ).strong_id()
