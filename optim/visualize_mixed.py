@@ -115,6 +115,13 @@ def visualize(
     solution_dir=None,
     use_cache: bool = True,
     refresh: bool = False,
+    time_limit: float = 1800.0,
+    mip_gap: float = 0.01,
+    lp_method: str = "auto",
+    node_method: str = "default",
+    norel_time: float = 0.0,
+    bar_conv_tol: float = 1e-4,
+    prune: bool = True,
 ) -> Path:
     if distances is None:
         distances = available_distances(data_dir)
@@ -131,6 +138,13 @@ def visualize(
         solution_dir=solution_dir,
         use_cache=use_cache,
         refresh=refresh,
+        time_limit=time_limit,
+        mip_gap=mip_gap,
+        lp_method=lp_method,
+        node_method=node_method,
+        norel_time=norel_time,
+        bar_conv_tol=bar_conv_tol,
+        prune=prune,
     )
 
     fig, ax = plt.subplots(figsize=(10, 10))
@@ -240,7 +254,7 @@ def visualize(
 
     out_path = Path(__file__).resolve().parent / f"packing_mixed_tau_{tau:g}.png"
     fig.tight_layout()
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    fig.savefig(out_path, dpi=400, bbox_inches="tight")
     plt.close(fig)
     return out_path
 
@@ -273,6 +287,53 @@ def main() -> None:
         action="store_false",
         help="do not read or write the solution cache",
     )
+    ap.add_argument(
+        "--time-limit",
+        type=float,
+        default=1800.0,
+        help="max seconds for the MIP solve on a cache miss (default: 1800 = 30 min)",
+    )
+    ap.add_argument(
+        "--mip-gap",
+        type=float,
+        default=0.01,
+        help="stop once within this relative optimality gap (default: 0.01 = 1%%)",
+    )
+    ap.add_argument(
+        "--lp-method",
+        choices=["auto", "barrier", "dual"],
+        default="auto",
+        help="root LP relaxation method: 'auto' (default; Gurobi's stock solve), "
+        "'barrier', or 'dual'",
+    )
+    ap.add_argument(
+        "--node-method",
+        choices=["default", "barrier"],
+        default="default",
+        help="B&B node relaxation method: 'barrier' sets NodeMethod=2 + Crossover=0 "
+        "to skip the forced root crossover and enter branch-and-bound off the "
+        "interior point (default: 'default')",
+    )
+    ap.add_argument(
+        "--norel-time",
+        type=float,
+        default=0.0,
+        help="seconds for Gurobi's no-relaxation heuristic (NoRelHeurTime, + "
+        "MIPFocus=1) to improve the incumbent before the root LP (default: 0 = off)",
+    )
+    ap.add_argument(
+        "--bar-conv-tol",
+        type=float,
+        default=1e-4,
+        help="barrier convergence tolerance (relative primal-dual objective gap); "
+        "default 1e-4 vs Gurobi's 1e-8; 0 uses Gurobi's default",
+    )
+    ap.add_argument(
+        "--no-prune",
+        dest="prune",
+        action="store_false",
+        help="solve the full model without geometric dominance pruning",
+    )
     args = ap.parse_args()
     out = visualize(
         args.tau,
@@ -281,6 +342,13 @@ def main() -> None:
         solution_dir=args.solution_dir,
         use_cache=args.use_cache,
         refresh=args.refresh,
+        time_limit=args.time_limit,
+        mip_gap=args.mip_gap,
+        lp_method=args.lp_method,
+        node_method=args.node_method,
+        norel_time=args.norel_time,
+        bar_conv_tol=args.bar_conv_tol,
+        prune=args.prune,
     )
     print(f"saved: {out}")
 

@@ -75,6 +75,32 @@ def conflict(a: Candidate, b: Candidate) -> bool:
     return (-a.span <= dr <= b.span) and (-a.span <= dc <= b.span)
 
 
+def prune_dominated(cands: List[Candidate]) -> List[Candidate]:
+    """
+    Drop geometrically dominated candidates: keep only the smallest valid distance
+    at each origin.
+
+    A distance-d tile at origin p covers the rectangle [p, p+s] x [p, p+s] with
+    s = 2d+1; at a shared origin the smaller distance's rectangle is a subset of
+    any larger one's (same corner). Since the objective counts every tile equally,
+    any solution placing the larger co-located tile can swap in the smaller one --
+    it blocks a subset of neighbors, so feasibility and the count are preserved.
+    The larger co-located candidate is therefore dominated and can be removed with
+    no loss of optimality. This bakes in a "prefer the smaller distance" tiebreak
+    (see `mixed_distance_model.tex`); disable it (`prune=False`) to keep every
+    candidate, e.g. to compare against the full model.
+
+    Removing these also makes the per-origin "<= 1 tile per site" constraints moot
+    (each origin keeps a single candidate), so they simply never get added.
+    """
+    best = {}
+    for c in cands:
+        cur = best.get(c.origin)
+        if cur is None or c.distance < cur.distance:
+            best[c.origin] = c
+    return sorted(best.values())
+
+
 def maximal_cliques_mixed(cands: List[Candidate]) -> List[FrozenSet[int]]:
     """
     Enumerate maximal conflict cliques as covered-site memberships.
@@ -164,15 +190,17 @@ def _tau_slug(tau) -> str:
     return f"{tau:g}"
 
 
-def solution_path(tau, distances, data_dir=None, solution_dir=None) -> Path:
+def solution_path(tau, distances, data_dir=None, solution_dir=None, prune=True) -> Path:
     """
-    Cache file for one solve case, named by (data_dir, tau, distances).
+    Cache file for one solve case, named by (data_dir, tau, distances, prune).
 
     The name carries a human-readable slug of the data directory, the tau value,
-    and the distance list, plus a short hash of the resolved data-dir path so that
-    two experiment folders sharing a leaf name never collide. `distances` should be
-    the concrete list actually solved (resolve ``None`` to ``available_distances``
-    first) so the key reflects what was computed.
+    the distance list, and whether dominance pruning was applied, plus a short hash
+    of the resolved data-dir path so that two experiment folders sharing a leaf name
+    never collide. `distances` should be the concrete list actually solved (resolve
+    ``None`` to ``available_distances`` first) so the key reflects what was computed.
+    The `prune` tag keeps the pruned and full-model solutions of the same case in
+    separate files, so switching `prune` never loads the wrong one.
     """
     dd = (
         Path(data_dir).expanduser().resolve()
@@ -187,12 +215,21 @@ def solution_path(tau, distances, data_dir=None, solution_dir=None) -> Path:
     slug = re.sub(r"[^A-Za-z0-9]+", "_", "_".join(dd.parts[-2:])).strip("_")
     digest = hashlib.sha1(str(dd).encode()).hexdigest()[:8]
     ds = "-".join(str(d) for d in sorted(distances))
-    name = f"{slug}__tau_{_tau_slug(tau)}__d{ds}__{digest}.json"
+    pr = "prune-on" if prune else "prune-off"
+    name = f"{slug}__tau_{_tau_slug(tau)}__d{ds}__{pr}__{digest}.json"
     return sol_dir / name
 
 
-def _save_solution(path, tau, distances, data_dir, cands, cliques, lp_bound, model, chosen):
-    """Write the solved packing (plus report metadata) to `path` atomically."""
+def _save_solution(
+    path, tau, distances, data_dir, cands, cliques, lp_bound, model, chosen,
+    prune=True, n_dominated=0, hit_limit=False, time_limit=None,
+):
+    """Write the solved packing (plus report metadata) to `path` atomically.
+
+    `hit_limit` records whether the solve stopped on its time limit rather than
+    proving the gap: the packing is still valid and worth caching, but it is
+    flagged `timed_out` so every later load reports it as best-found, not optimal.
+    """
     dd = (
         str(Path(data_dir).expanduser().resolve())
         if data_dir is not None
@@ -203,6 +240,8 @@ def _save_solution(path, tau, distances, data_dir, cands, cliques, lp_bound, mod
         "tau": tau,
         "distances": list(distances),
         "data_dir": dd,
+        "prune_dominated": prune,
+        "n_dominated_removed": n_dominated,
         "n_candidates": len(cands),
         "candidates_by_distance": {str(d): cand_by_d.get(d, 0) for d in distances},
         "n_cliques": len(cliques),
@@ -210,6 +249,8 @@ def _save_solution(path, tau, distances, data_dir, cands, cliques, lp_bound, mod
         "objective": int(round(model.ObjVal)),
         "solve_time": model.Runtime,
         "mip_gap": model.MIPGap,
+        "timed_out": bool(hit_limit),
+        "time_limit": time_limit,
         "placed": [
             [c.origin[0], c.origin[1], c.distance, c.span, c.ler] for c in chosen
         ],
@@ -237,6 +278,13 @@ def build_and_solve(
     data_dir=None,
     verbose: bool = True,
     lp_bound_time: float = 5.0,
+    time_limit: float = 7200.0,
+    mip_gap: float = 0.01,
+    lp_method: str = "auto",
+    node_method: str = "default",
+    norel_time: float = 0.0,
+    bar_conv_tol: float = 1e-4,
+    prune: bool = True,
     solution_dir=None,
     use_cache: bool = True,
     refresh: bool = False,
@@ -249,7 +297,9 @@ def build_and_solve(
     # loaded instead of re-solving, unless `refresh` forces a fresh solve or
     # `use_cache` is off. This is what makes repeated visualizations of a large
     # instance instant.
-    sol_path = solution_path(tau, distances, data_dir=data_dir, solution_dir=solution_dir)
+    sol_path = solution_path(
+        tau, distances, data_dir=data_dir, solution_dir=solution_dir, prune=prune
+    )
     if use_cache and not refresh and sol_path.exists():
         data, chosen = _load_solution(sol_path)
         _report(
@@ -264,16 +314,114 @@ def build_and_solve(
             data.get("solve_time", 0.0),
             data.get("mip_gap", 0.0),
             chosen,
+            prune=data.get("prune_dominated", False),
+            n_dominated=data.get("n_dominated_removed", 0),
+            timed_out=data.get("timed_out", False),
+            time_limit=data.get("time_limit"),
             source=sol_path,
             verbose=verbose,
         )
         return chosen
 
     cands = mixed_candidates(tau, distances=distances, data_dir=data_dir)
+    # Geometric dominance: keep only the smallest valid distance per origin (see
+    # `prune_dominated`). WLOG for the count objective; a "prefer smaller distance"
+    # tiebreak. Toggle with `prune` (CLI: --no-prune) to solve the full model.
+    n_dominated = 0
+    if prune:
+        n_raw = len(cands)
+        cands = prune_dominated(cands)
+        n_dominated = n_raw - len(cands)
+
+    # No valid placement anywhere (e.g. tau too strict for any distance to qualify).
+    # There is nothing to solve -- a model with no variables is not a MIP, so
+    # querying MIP attributes later would fail -- so report an empty packing and
+    # return. Not cached: recomputing the (empty) candidate set is already cheap.
+    if not cands:
+        _report(
+            tau, distances, Counter(), 0, 0, None, "no valid candidates",
+            0, 0.0, 0.0, [], prune=prune, n_dominated=n_dominated,
+            source=None, cached=False, verbose=verbose,
+        )
+        return []
+
     cliques = maximal_cliques_mixed(cands)
 
     model = gp.Model("tile_packing_mixed")
     model.Params.OutputFlag = 1 if verbose else 0
+    # Cap the MIP solve. If the limit is hit, Gurobi returns the best feasible
+    # solution found so far (reported with its remaining optimality gap); 0 lifts
+    # the cap entirely.
+    if time_limit > 0:
+        model.Params.TimeLimit = time_limit
+    # Stop once the packing is provably within `mip_gap` of optimal, rather than
+    # proving 0%. On big dense instances the exact root LP + crossover can eat the
+    # whole budget only to certify a solution found in the first few minutes; a
+    # small tolerance returns essentially the same packing far sooner (0 demands
+    # a proven optimum). See the header note on the diagnostic LP bound.
+    if mip_gap > 0:
+        model.Params.MIPGap = mip_gap
+    # Root LP method. The MIP's bound comes from the root relaxation, and on these
+    # dense instances *how* that LP is solved dominates the time spent before
+    # branch-and-bound even starts. The default leaves this to Gurobi:
+    #   "auto"    -- set nothing; Gurobi runs its concurrent optimizer (barrier +
+    #       primal + dual across cores) and manages crossover itself. This is the
+    #       stock solve; experiments forcing a single method did not beat it here.
+    #   "barrier" -- interior point with crossover disabled: quick to a bound, but
+    #       the dense columns big tiles create make the factorization huge/slow.
+    #   "dual"    -- dual simplex: never forms A A^T, so it sidesteps that dense
+    #       factorization -- but on this model its root LP still timed out.
+    # Forcing Method also disables the concurrent optimizer (which otherwise
+    # overrides Crossover=0, "Concurrent optimizer requires crossover").
+    if lp_method == "auto":
+        pass  # leave Gurobi's defaults untouched
+    elif lp_method == "barrier":
+        model.Params.Method = 2  # barrier
+        model.Params.Crossover = 0  # only need the bound, not a basic solution
+    elif lp_method == "dual":
+        model.Params.Method = 1  # dual simplex
+    else:
+        raise ValueError(
+            f"unknown lp_method {lp_method!r} (expected 'auto', 'barrier', or 'dual')"
+        )
+
+    # Barrier convergence tolerance. Barrier stops once the RELATIVE gap between its
+    # primal and dual OBJECTIVE values -- |Primal - Dual| / (1 + |Primal|) -- drops
+    # below this (not the "Compl" residual in the log, which shrinks faster). The
+    # default 1e-8 chases many slow trailing iterations after the bound is already
+    # pinned; on this model each such iteration is a ~2.4 GB factorization. As the
+    # root relaxation is only a dual bound for the MIP, 1e-4 gives essentially the
+    # same bound far sooner. Applies to every barrier solve; harmless when a simplex
+    # method is used instead. 0 leaves Gurobi's default (1e-8).
+    if bar_conv_tol > 0:
+        model.Params.BarConvTol = bar_conv_tol
+
+    # Node relaxation method. On a MIP, Gurobi needs a *basic* root solution to
+    # branch, so it silently ignores Crossover=0 and runs crossover after barrier
+    # ("Ignoring user setting 'Crossover=0'"). That crossover is the wall on these
+    # dense instances -- it eats the whole time limit before the first branch.
+    # Setting NodeMethod=2 tells Gurobi the tree nodes also solve by barrier, so it
+    # no longer needs a basis anywhere and can honor Crossover=0: it goes straight
+    # from the root interior point into branch-and-bound. Trade-off: every node
+    # re-solves by barrier (heavier per node), but the tree actually starts.
+    if node_method == "barrier":
+        model.Params.NodeMethod = 2
+        model.Params.Crossover = 0
+    elif node_method != "default":
+        raise ValueError(
+            f"unknown node_method {node_method!r} (expected 'default' or 'barrier')"
+        )
+
+    # No-relaxation heuristic. NoRelHeurTime spends this many seconds, *before*
+    # solving the root relaxation, searching for and improving feasible solutions
+    # directly. On instances where the root LP never finishes in the budget (so B&B
+    # never starts and the incumbent only comes from Gurobi's built-in heuristics),
+    # this is the most direct way to get a better packing: it works the incumbent
+    # without waiting on the LP at all. MIPFocus=1 further biases the whole solve
+    # toward finding good feasible solutions over proving the bound.
+    if norel_time > 0:
+        model.Params.NoRelHeurTime = norel_time
+        model.Params.MIPFocus = 1
 
     # Decision variables: y_i = 1 if candidate i (a distance-d tile at its
     # origin) is placed. Keyed by index so co-located D3/D5 never collide.
@@ -320,10 +468,34 @@ def build_and_solve(
 
     model.optimize()
 
+    if model.SolCount == 0:
+        # Time limit hit before any feasible packing was found. Nothing to place,
+        # save, or cache -- report the miss and bail. (A packing this large that
+        # cannot even seed a feasible solution in the budget is unusual.)
+        raise RuntimeError(
+            f"no feasible solution within the {time_limit:g}s time limit "
+            f"(status {model.Status}); raise --time-limit or reduce the instance"
+        )
+
+    # Cache the result whether or not it is proven optimal. A time-limited solve is
+    # still a valid (if suboptimal) packing worth reusing, so it is stored with
+    # `timed_out` set plus its remaining gap and runtime; every later load then
+    # reports it as best-found rather than proven-optimal. Use --refresh to force a
+    # genuine re-solve (e.g. with a larger --time-limit or a different --lp-method).
+    hit_limit = model.Status == GRB.TIME_LIMIT
+    if hit_limit and verbose:
+        print(
+            f"\n*** time limit ({time_limit:g}s) reached: caching best solution "
+            f"found (gap {model.MIPGap * 100:.2f}%, not proven optimal) ***"
+        )
+
     chosen = sorted(cands[i] for i in range(len(cands)) if y[i].X > 0.5)
-    if use_cache:
+    saved = use_cache
+    if saved:
         _save_solution(
-            sol_path, tau, distances, data_dir, cands, cliques, lp_bound, model, chosen
+            sol_path, tau, distances, data_dir, cands, cliques, lp_bound, model, chosen,
+            prune=prune, n_dominated=n_dominated, hit_limit=hit_limit,
+            time_limit=time_limit,
         )
     _report(
         tau,
@@ -337,7 +509,11 @@ def build_and_solve(
         model.Runtime,
         model.MIPGap,
         chosen,
-        source=sol_path if use_cache else None,
+        prune=prune,
+        n_dominated=n_dominated,
+        timed_out=hit_limit,
+        time_limit=time_limit,
+        source=sol_path if saved else None,
         cached=False,
     )
     return chosen
@@ -355,6 +531,10 @@ def _report(
     solve_time,
     mip_gap,
     chosen,
+    prune=True,
+    n_dominated=0,
+    timed_out=False,
+    time_limit=None,
     source=None,
     cached=True,
     verbose: bool = True,
@@ -370,7 +550,8 @@ def _report(
     if not verbose:
         if source is not None:
             verb = "loaded" if cached else "saved"
-            print(f"solution {verb}: {source}")
+            note = f"  [SUBOPTIMAL, gap {mip_gap * 100:.2f}%]" if timed_out else ""
+            print(f"solution {verb}: {source}{note}")
         return
 
     n_by_d = Counter(c.distance for c in chosen)
@@ -378,6 +559,10 @@ def _report(
     if source is not None:
         print(f"solution {'loaded from' if cached else 'saved to'}: {source}")
     print(f"tau = {tau}, distances = {tuple(distances)}")
+    if prune:
+        print(f"dominance pruning   : on (removed {n_dominated} dominated candidates)")
+    else:
+        print("dominance pruning   : off (full model, all valid candidates)")
     counts = ", ".join(f"D{d}: {cand_by_d.get(d, 0)}" for d in sorted(cand_by_d))
     print(f"|candidates| = {n_candidates} ({counts}), {n_cliques} clique constraints")
     if lp_bound is not None:
@@ -385,9 +570,16 @@ def _report(
     else:
         print(f"LP relaxation bound : skipped ({lp_skip}; diagnostic only)")
     placed = ", ".join(f"D{d}: {n_by_d.get(d, 0)}" for d in sorted(distances))
-    print(f"integer optimum     : {objective} tiles placed ({placed})")
+    tiles_label = "best feasible" if timed_out else "integer optimum"
+    print(f"{tiles_label:<20}: {objective} tiles placed ({placed})")
     print(f"solve time          : {solve_time:.3f} s{'  (cached)' if cached else ''}")
     print(f"optimality gap      : {mip_gap * 100:.4f}%")
+    if timed_out:
+        tl = f" ({time_limit:g}s limit)" if time_limit else ""
+        print(f"{'status':<20}: SUBOPTIMAL -- stopped at the time limit{tl}; "
+              f"gap above is not closed")
+    else:
+        print(f"{'status':<20}: solved to within the gap tolerance")
     print("placed (origin, distance, ler):")
     for c in chosen:
         print(f"  {c.origin}  D{c.distance}  ler = {c.ler:.4g}")
@@ -423,6 +615,60 @@ def main() -> None:
         "skipping it; 0 disables it (default: 5)",
     )
     ap.add_argument(
+        "--time-limit",
+        type=float,
+        default=7200.0,
+        help="max seconds for the MIP solve; on timeout the best solution so far "
+        "is reported with its gap; 0 lifts the cap (default: 7200 = 2 hrs)",
+    )
+    ap.add_argument(
+        "--mip-gap",
+        type=float,
+        default=0.01,
+        help="stop once within this relative optimality gap (default: 0.01 = 1%%); "
+        "0 demands a proven optimum",
+    )
+    ap.add_argument(
+        "--lp-method",
+        choices=["auto", "barrier", "dual"],
+        default="auto",
+        help="root LP relaxation method: 'auto' (default; Gurobi's stock concurrent "
+        "optimizer, no overrides), 'barrier' (interior point, no crossover), or "
+        "'dual' (dual simplex, avoids the dense-column factorization)",
+    )
+    ap.add_argument(
+        "--node-method",
+        choices=["default", "barrier"],
+        default="default",
+        help="B&B node relaxation method. 'barrier' sets NodeMethod=2 + Crossover=0 "
+        "so the solve skips the root crossover (which Gurobi otherwise forces on a "
+        "MIP) and enters branch-and-bound off the interior point; nodes then solve "
+        "by barrier (default: 'default', Gurobi's dual-simplex nodes)",
+    )
+    ap.add_argument(
+        "--norel-time",
+        type=float,
+        default=0.0,
+        help="seconds for Gurobi's no-relaxation heuristic (NoRelHeurTime) to improve "
+        "the incumbent BEFORE the root LP, plus MIPFocus=1; best lever when the root "
+        "LP cannot finish in the budget (default: 0 = off)",
+    )
+    ap.add_argument(
+        "--bar-conv-tol",
+        type=float,
+        default=1e-4,
+        help="barrier convergence tolerance: stop once the relative primal-dual "
+        "objective gap is below this (default: 1e-4; Gurobi's own default is 1e-8, "
+        "which chases many slow trailing iterations); 0 uses Gurobi's default",
+    )
+    ap.add_argument(
+        "--no-prune",
+        dest="prune",
+        action="store_false",
+        help="solve the full model without geometric dominance pruning (by default "
+        "only the smallest valid distance per origin is kept)",
+    )
+    ap.add_argument(
         "--solution-dir",
         default=None,
         help="directory to read/write cached solutions "
@@ -445,6 +691,13 @@ def main() -> None:
         distances=args.distances,
         data_dir=args.data_dir,
         lp_bound_time=args.lp_bound_time,
+        time_limit=args.time_limit,
+        mip_gap=args.mip_gap,
+        lp_method=args.lp_method,
+        node_method=args.node_method,
+        norel_time=args.norel_time,
+        bar_conv_tol=args.bar_conv_tol,
+        prune=args.prune,
         solution_dir=args.solution_dir,
         use_cache=args.use_cache,
         refresh=args.refresh,
