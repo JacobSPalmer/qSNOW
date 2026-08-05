@@ -83,13 +83,13 @@ class SquarePackingExp(Experiment):
     def run(
         self,
         shots: int = 50_000,
-        max_errors: int = 5_000,
+        max_errors: Optional[int] = 5_000,
         decoder: str = "pymatching",
         batch_size: int = DEFAULT_SAMPLING_BATCH_SIZE,
         max_workers: int = 32
     ):
         num_workers =  min(max_workers, os.cpu_count() or 1)
-        logger.info(f"Beginning run with {num_workers} workers with max batch size of {batch_size}.")
+        logger.info(f"Beginning run with {num_workers} workers with max batch size of {batch_size} and {shots} shots per sample.")
 
         #TODO - most if not all of the logic for sampling mass experiments should be extracted to a dedicated reusable class.
         with self.progress(phases=2) as prog:
@@ -136,6 +136,8 @@ class SquarePackingExp(Experiment):
                 }
                 for s in collected_stats
             }
+            #TODO - the stats is stored in config rn but will need to be moved to it's own subdictionary, which will likely require a migration
+            #TODO - create minor versioning in the serialize code
             self.config.update(
                 shots=shots,
                 max_errors=max_errors,
