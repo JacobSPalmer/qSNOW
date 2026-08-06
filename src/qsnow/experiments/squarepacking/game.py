@@ -131,7 +131,7 @@ class SquarePackingExp(Experiment):
                     "strong_id": s.strong_id,
                     "shots": s.shots,
                     "errors": s.errors,
-                    "ler": round(s.errors / s.shots, 5)
+                    "ler": s.errors / s.shots,
 
                 }
                 for s in collected_stats
