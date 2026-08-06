@@ -1,6 +1,7 @@
 from qsnow.experiments import SquarePackingExp
 from qsnow.interface import Chip, SCTile
 from qsnow.helpers import serialize
+from time import perf_counter
 
 import argparse
 import logging
@@ -19,6 +20,7 @@ def run_and_serialize_spp_experiment(chip: Chip, mean, deviation, distances, dat
                 chip.generate_derived_contour_noise(mean, deviation, seed)
             case _:
                 raise ValueError(f'Noise model {noise_model} either not supported or unknown.')
+    start = perf_counter()
     for d in distances:
         logger.info(f'Beginning profiling for distance {d}....')
         new_chip = chip.copy()
@@ -32,7 +34,35 @@ def run_and_serialize_spp_experiment(chip: Chip, mean, deviation, distances, dat
 
         logger.info(f"Experiment saved to {exp_path}")
         logger.info(f"Results saved to {res_path}")
+    m, s  = divmod(perf_counter() - start, 60)
+    time_str = f'{m}:{s} mins' if m else f'{s}'
+    logger.info(f'Completed profiling for {len(distances)} distances in {time_str}')
+    return chip
 
+def save_configuration(args: dict, chip: Chip, name: str):
+    print(args)
+    def format_str(name, values):
+        if isinstance(values, list):
+            return f'--{name}\n{"\n".join([str(v) for v in values])}\n'
+        else:
+            return f'--{name}\n{values}\n'
+    config_arr = []
+    filename = args.pop('name')
+    config_arr.append(format_str('name', filename))
+    for k, v in args.items():
+        match k:
+            case 'seed':
+                config_arr.append(format_str(k, chip.tag.metadata.get('noise_model', {}).get('seed', None)))
+            case _:
+                config_arr.append(format_str(k, v))
+
+    filepath = serialize.get_data_dir().joinpath(f'{filename}.txt')
+    with open(filepath, 'w') as file:
+        file.writelines(config_arr)
+
+    logger.info(f'Run configuration saved to {filepath}')
+
+    
 def main():
     parser = argparse.ArgumentParser(description="A script that runs Square Packing experiments conveniently.\n The arguments can either be specified individually or passed from a text file using `@<path/to/text_file>.", 
                                      fromfile_prefix_chars='@')
@@ -48,13 +78,17 @@ def main():
     parser.add_argument("--shots", type=int, required=False, default=50_000, help="Number of shots to sample for each candidate position on a chip.")
     parser.add_argument("--maxerrors", type=int, required=False, default=None, help = "Maximum number of shot errors before exiting sampling.")
     parser.add_argument("--logger", type=bool, required=False, default=True,  help="Show additional logging information along progress info.")
+    parser.add_argument("--saveconfig", type=bool, required=False, default=False, help="Exports the command arguements to a reusable <name>_config.txt file that can be used to identically run the experiment. The ")
 
     args = parser.parse_args()
+
+    if args.saveconfig and args.name is None:
+        parser.error("--name is required when --saveconfig is set.")
 
     if args.logger:
         logging.basicConfig(level=logging.INFO)
 
-    run_and_serialize_spp_experiment(chip = Chip(args.dimensions[0], args.dimensions[1]), 
+    chip = run_and_serialize_spp_experiment(chip = Chip(args.dimensions[0], args.dimensions[1]), 
                                     mean = args.mean,
                                     deviation = args.deviation,
                                     distances = args.distances,
@@ -64,6 +98,8 @@ def main():
                                     seed = args.seed,
                                     noise_model = args.model,
                                     max_errors = args.maxerrors)
+    if args.saveconfig:
+        save_configuration(vars(args), chip, args.name)
 
 if __name__ == "__main__":
     main()
