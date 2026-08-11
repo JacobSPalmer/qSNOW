@@ -81,51 +81,60 @@ class SCTile(LogicalTile):
     # TODO shift the custom_rules into the ChannelRuleset object, adding the add_rule method within the LogicalTile super class
     def _init_ruleset(self, custom_rules: List[InjectionRule] = []) -> Ruleset:
 
-        def on_operation(op: str, trig, before, after) -> InjectionRule:
-            return InjectionRule(op, trig, before, after)
+        def on_operation(op: str, trig, before, after, name = None) -> InjectionRule:
+            return InjectionRule(op, trig, before, after, name = name)
 
-        def apply_channel(channel, filter, scalar=1.0):
-            return ChannelRule(channel, filter, scalar=1.0)
+        def apply_channel(channel, filter, scalar = 1.0, name = None):
+            return ChannelRule(channel, filter, scalar=scalar, name=name)
 
+        # Default application of SI1000 ruleset
         return Ruleset(
             [
                 on_operation(
                     "R",
                     "all_qubits",
                     before=[],
-                    after=[apply_channel("X_ERROR", "all_qubits")],
+                    after=[apply_channel("X_ERROR", "all_qubits", 2.0, name='Init')],           #InitZ(p)           -> SI1000(2p)
                 ),
                 on_operation(
                     "H",
                     "x_measures",
                     before=[],
-                    after=[apply_channel("DEPOLARIZE1", "all_qubits")],
+                    after=[
+                            apply_channel("DEPOLARIZE1", "active", .1, name='Clifford1'),       #AnyClifford1(p)    -> SI1000(p/10) 
+                            apply_channel("DEPOLARIZE1", "idle", .1, name='Idle'),              #Idle(p)            -> SI1000(p/10)
+                        ],
                 ),
                 on_operation(
                     "CX",
                     "any",
                     before=[],
                     after=[
-                        apply_channel("DEPOLARIZE2", "active", 1.2),
-                        apply_channel("DEPOLARIZE1", "idle"),
+                        apply_channel("DEPOLARIZE2", "active", 1, name='Clifford2'),          #AnyClifford2(p)   -> SI1000(p)
+                        apply_channel("DEPOLARIZE1", "idle", .1, name='Idle'),                #Idle(p)           -> SI1000(p/10)
                     ],
                 ),
                 on_operation(
                     "MR",
                     "all_measures",
                     before=[
-                        apply_channel("X_ERROR", "all_measures"),
-                        apply_channel("DEPOLARIZE1", "data"),
+                        apply_channel("X_ERROR", "all_measures", 5.0, name='Measure'),        #Measure(p)        -> SI1000(5p)
+                        apply_channel("DEPOLARIZE1", "idle", 2.0, name='ResonatorIdle'),      #ResonatorIdle(p)  -> SI1000(2p)
+                        apply_channel("DEPOLARIZE1", "idle", .1, name='Idle'),                #Idle(p)           -> SI1000(p/10)
                     ],
                     after=[
-                        apply_channel("X_ERROR", "all_measures"),
-                        apply_channel("DEPOLARIZE1", "data"),
+                        apply_channel("X_ERROR", "all_measures", 2.0, name='Init'),           #InitZ(p)          -> SI1000(2p)
+                        apply_channel("DEPOLARIZE1", "idle", 2.0, name='ResonatorIdle'),      #ResonatorIdle(p)  -> SI1000(2p)
+                        apply_channel("DEPOLARIZE1", "idle", .1, name='Idle'),                #Idle(p)           -> SI1000(p/10)
                     ],
                 ),
                 on_operation(
                     "M",
                     "data",
-                    before=[apply_channel("X_ERROR", "all_qubits")],
+                    before=[
+                        apply_channel("X_ERROR", "all_qubits", 5.0),                          #Measure(p)        -> SI1000(5p)
+                        apply_channel("DEPOLARIZE1", "idle", 2.0),                            #ResonatorIdle(p)  -> SI1000(2p)
+                    ],
                     after=[],
                 ),
             ]

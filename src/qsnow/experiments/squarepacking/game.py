@@ -118,7 +118,6 @@ class SquarePackingExp(Experiment):
                         ],  # TODO - move default decoder to global config or experiment specific config file at some point
                         max_shots=shots,
                         max_errors=max_errors,
-                        max_batch_seconds=60,
                     )
                     collected_stats.extend(batch_stats)
                     phase.advance(len(batch_stats))
@@ -132,7 +131,6 @@ class SquarePackingExp(Experiment):
                     "shots": s.shots,
                     "errors": s.errors,
                     "ler": s.errors / s.shots,
-
                 }
                 for s in collected_stats
             }
