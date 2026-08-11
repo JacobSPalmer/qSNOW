@@ -35,7 +35,7 @@ def run_and_serialize_spp_experiment(chip: Chip, mean, deviation, distances, dat
         logger.info(f"Experiment saved to {exp_path}")
         logger.info(f"Results saved to {res_path}")
     m, s  = divmod(perf_counter() - start, 60)
-    time_str = f'{m}:{s} mins' if m else f'{s}'
+    time_str = f'{int(m)} mins, {s:.2g} secs' if m else f'{s:.2g}'
     logger.info(f'Completed profiling for {len(distances)} distances in {time_str}')
     return chip
 

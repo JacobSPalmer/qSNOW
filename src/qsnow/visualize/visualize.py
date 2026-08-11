@@ -200,8 +200,12 @@ def custom_heatmap_style(
 ) -> VisualizationStyle:
     if limits:
         cmin, cmax = limits
-    else:
+    elif float_map:
         cmin, cmax = min(float_map.values()), max(float_map.values())
+    else:
+        raise ValueError(
+            "custom_heatmap_style requires a non-empty `float_map` or explicit `limits`."
+        )
 
     def qubit_style_fn(qubit: Qubit) -> QubitStyle:
         # raw value; the colorscale mapping is applied trace-wide by `visualize()`

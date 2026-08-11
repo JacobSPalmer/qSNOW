@@ -188,6 +188,10 @@ class LogicalTile(Grid):
     def dims(self) -> Tuple[int, int]:
         return (self.length // 2, self.height // 2)
 
+    @property
+    def ruleset(self) -> Ruleset:
+        return self._ruleset
+
     def summary(self) -> Dict[str, object]:
         return {
             "type": "Generic",

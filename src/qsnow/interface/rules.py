@@ -281,7 +281,7 @@ class ChannelRule:
     name: Optional[str] = None
 
     def __repr__(self) -> str:
-        return f"{f'({self.name})' if self.name is not None else ''}{self.channel}:{self.filter}"
+        return f"ChannelRule({f'name={self.name},' if self.name is not None else ''}channel={self.channel}, on_qubits={self.filter}, rate={self.scalar}p)"
 
 @dataclass
 class InjectionRule:
@@ -298,7 +298,7 @@ class InjectionRule:
     name: Optional[str] = None
 
     def __repr__(self) -> str:
-        return f"{f'({self.name})' if self.name is not None else ''}{self.operation}:{self.trigger}"
+        return f"InjectionRule({f'name={self.name},' if self.name is not None else ''}gate={self.operation}, on_qubits={self.trigger}, before = [{', '.join([str(r) for r in self.before])}], after = [{','.join([str(r) for r in self.after])}])"
 
 
 _DEFAULT_FILTERS: List[Filter] = [
