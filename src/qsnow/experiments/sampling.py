@@ -48,6 +48,55 @@ def _metadata_key(metadata: Any) -> str:
     return json.dumps(metadata, sort_keys=True, default=str)
 
 
+class _TaskProgress:
+    """Advances a progress phase in fractions of a task as shots stream in.
+
+    A phase counts tasks, but a single batch of long-running circuits can take hours,
+    leaving the bar frozen between batch completions. sinter reports partial
+    statistics many times per task, so each task can instead earn credit in
+    proportion to the shots it has taken, and is trued up to a whole task the moment
+    it completes -- which may be early, when `max_errors` is hit before `max_shots`.
+
+    Credit only ever moves forward: partial updates are capped at one whole task, so
+    the bar can never overshoot its total.
+    """
+
+    def __init__(self, phase, shots_per_task: int):
+        self._phase = phase
+        self._shots_per_task = max(shots_per_task, 1)
+        self._shots: Dict[str, int] = {}
+        self._credited: Dict[str, float] = {}
+
+    def on_progress(self, update: "sinter.Progress") -> None:
+        """`progress_callback` for `sinter.collect`; new_stats are shot deltas."""
+        for stat in update.new_stats:
+            key = _metadata_key(stat.json_metadata)
+            self._shots[key] = self._shots.get(key, 0) + stat.shots
+            self._credit(key, min(1.0, self._shots[key] / self._shots_per_task))
+
+    def complete(self, key: str) -> None:
+        self._credit(key, 1.0)
+
+    def finish(self, completed: float) -> None:
+        """Snap the phase to an exact count.
+
+        Credit accumulates as a sum of floats, which lands a hair under a whole
+        number of tasks (5.999999999999999 for six). `_Row.finished` compares
+        against the integer total, so without this the phase reads as unfinished
+        and gets its total rewritten to the short value.
+        """
+        if self._phase is not None:
+            self._phase.update(completed=completed)
+
+    def _credit(self, key: str, fraction: float) -> None:
+        earned = fraction - self._credited.get(key, 0.0)
+        if earned <= 0:
+            return
+        self._credited[key] = fraction
+        if self._phase is not None:
+            self._phase.advance(earned)
+
+
 @dataclass(frozen=True)
 class SamplingRun:
     """The outcome of one `ErrorFloorSampler.collect`.
@@ -166,8 +215,12 @@ class ErrorFloorSampler:
                 needy,
                 max_shots=self.topup_shot_cap,
                 max_errors=self.min_errors,
-                description="Topping up low-error placements",
+                description="Topping up low error circuits",
                 progress=progress,
+                # a top-up task stops at the first error, not at the shot ceiling its
+                # progress is measured against, so credit arrives in coarse jumps and
+                # an ETA extrapolated from it would swing wildly
+                show_eta=False,
             )
             timings["topup"] = perf_counter() - t_start
             # TaskStats.__add__ validates that the strong ids match, so this
@@ -195,10 +248,17 @@ class ErrorFloorSampler:
         max_errors: Optional[int],
         description: str,
         progress: Optional[PhasedProgress],
+        show_eta: bool = True,
     ) -> Dict[str, sinter.TaskStats]:
         """Run one batched collection pass, keyed by task metadata."""
+        # No phase is opened for an empty pass: a bar that can only ever read 0/0
+        # is noise, and the common case is that nothing needs topping up at all.
+        if not tasks:
+            return {}
+
         stats_by_key: Dict[str, sinter.TaskStats] = {}
-        with self._phase(progress, description, total=len(tasks)) as phase:
+        with self._phase(progress, description, total=len(tasks), show_eta=show_eta) as phase:
+            tracker = _TaskProgress(phase, max_shots)
             for batch in _chunked(tasks, self.batch_size):
                 batch_stats = self.collect_fn(
                     num_workers=self.num_workers,
@@ -206,22 +266,30 @@ class ErrorFloorSampler:
                     decoders=[self.decoder],
                     max_shots=max_shots,
                     max_errors=max_errors,
+                    # streams partial results so the bar moves *within* a batch,
+                    # which may otherwise run for hours
+                    progress_callback=tracker.on_progress if phase is not None else None,
                 )
                 for stat in batch_stats:
-                    stats_by_key[_metadata_key(stat.json_metadata)] = stat
-                if phase is not None:
-                    phase.advance(len(batch_stats))
+                    key = _metadata_key(stat.json_metadata)
+                    stats_by_key[key] = stat
+                    tracker.complete(key)
+            tracker.finish(len(stats_by_key))
         return stats_by_key
 
     @staticmethod
-    def _phase(progress: Optional[PhasedProgress], description: str, total: int):
+    def _phase(
+        progress: Optional[PhasedProgress],
+        description: str,
+        total: int,
+        show_eta: bool = True,
+    ):
         """Open a progress phase, or a no-op context when there is no display."""
         from contextlib import nullcontext
 
         if progress is None:
             return nullcontext(None)
-        # Top-up progress arrives in coarse bursts, so an ETA would swing wildly.
-        return progress.phase(description, total=total, show_eta=False)
+        return progress.phase(description, total=total, show_eta=show_eta)
 
     @staticmethod
     def _reject_duplicates(tasks: Sequence[sinter.Task], keys: Sequence[str]) -> None:

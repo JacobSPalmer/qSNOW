@@ -8,6 +8,7 @@ import pytest
 import sinter
 import stim
 
+from qsnow.experiments.progress import PhasedProgress
 from qsnow.experiments.sampling import (
     DEFAULT_TOPUP_SHOT_MULTIPLIER,
     ErrorFloorSampler,
@@ -29,15 +30,28 @@ class FakeCollector:
     """Stands in for ``sinter.collect``, returning scripted per-task results.
 
     ``pass_results`` maps a placement to the (shots, errors) it records on each
-    successive pass it takes part in.
+    successive pass it takes part in. When ``partial_updates`` is set, each task's
+    shots are streamed to ``progress_callback`` in that many equal deltas first,
+    mimicking how sinter reports partial statistics during a long batch.
     """
 
-    def __init__(self, pass_results):
+    def __init__(self, pass_results, partial_updates=0, observer=None):
         self.pass_results = pass_results
+        self.partial_updates = partial_updates
+        self.observer = observer
         self.calls = []
         self._passes_taken = {}
 
-    def __call__(self, *, num_workers, tasks, decoders, max_shots, max_errors):
+    def __call__(
+        self,
+        *,
+        num_workers,
+        tasks,
+        decoders,
+        max_shots,
+        max_errors,
+        progress_callback=None,
+    ):
         self.calls.append(
             {
                 "locs": [_loc(t) for t in tasks],
@@ -45,6 +59,7 @@ class FakeCollector:
                 "max_errors": max_errors,
                 "decoders": decoders,
                 "num_workers": num_workers,
+                "progress_callback": progress_callback,
             }
         )
         out = []
@@ -55,6 +70,8 @@ class FakeCollector:
             pass_index = self._passes_taken.get(loc, 0)
             self._passes_taken[loc] = pass_index + 1
             shots, errors = self.pass_results[loc][pass_index]
+            if progress_callback is not None and self.partial_updates:
+                self._stream(progress_callback, task, decoders[0], shots)
             out.append(
                 sinter.TaskStats(
                     strong_id=f"sid-{loc}",
@@ -65,6 +82,27 @@ class FakeCollector:
                 )
             )
         return out
+
+    def _stream(self, progress_callback, task, decoder, shots):
+        """Report `shots` to the callback as equal deltas, as sinter would."""
+        delta = shots // self.partial_updates
+        for _ in range(self.partial_updates):
+            progress_callback(
+                sinter.Progress(
+                    new_stats=(
+                        sinter.TaskStats(
+                            strong_id=f"sid-{_loc(task)}",
+                            decoder=decoder,
+                            json_metadata=task.json_metadata,
+                            shots=delta,
+                            errors=0,
+                        ),
+                    ),
+                    status_message="",
+                )
+            )
+            if self.observer is not None:
+                self.observer()
 
 
 def _sampler(collector, **kwargs):
@@ -194,6 +232,112 @@ def test_tasks_still_at_zero_errors_after_the_ceiling_are_reported_as_stalled():
     run = _sampler(collector).collect(tasks)
 
     assert run.stalled == [{"loc": (0, 0)}]
+
+
+# ----------------------------------------------------------------------
+# Progress phases
+# ----------------------------------------------------------------------
+
+
+def _phase_labels(collector, tasks, **kwargs):
+    progress = PhasedProgress(phases=2, disable=True)
+    _sampler(collector, **kwargs).collect(tasks, progress)
+    return [row.description for row in progress.tasks]
+
+
+def test_no_topup_phase_is_opened_when_nothing_needs_topping_up():
+    """An empty top-up pass used to open a bar that could only ever read 0/0."""
+    tasks = [_task((0, 0)), _task((0, 2))]
+    collector = FakeCollector({(0, 0): [(1_000, 4)], (0, 2): [(1_000, 9)]})
+
+    labels = _phase_labels(collector, tasks)
+
+    assert labels == ["[1/2] Sampling circuits"]
+    assert len(collector.calls) == 1  # no empty collect call either
+
+
+def test_topup_phase_is_opened_when_there_is_work():
+    tasks = [_task((0, 0)), _task((0, 2))]
+    collector = FakeCollector({(0, 0): [(1_000, 0), (500, 1)], (0, 2): [(1_000, 9)]})
+
+    labels = _phase_labels(collector, tasks)
+
+    assert labels == [
+        "[1/2] Sampling circuits",
+        "[2/2] Topping up low error circuits",
+    ]
+
+
+def test_progress_advances_within_a_batch_not_only_on_completion():
+    """A single batch can run for hours; the bar has to move while it does."""
+    tasks = [_task((0, 0)), _task((0, 2))]
+    progress = PhasedProgress(phases=1, disable=True)
+    seen = []
+
+    collector = FakeCollector(
+        {(0, 0): [(1_000, 4)], (0, 2): [(1_000, 6)]},
+        partial_updates=4,
+        # read the bar mid-batch, right after each streamed update is credited
+        observer=lambda: seen.append(progress.tasks[0].completed),
+    )
+    # one batch holding both tasks, so any movement is necessarily intra-batch
+    _sampler(collector, min_errors=0, shots=1_000, batch_size=64).collect(
+        tasks, progress
+    )
+
+    assert seen, "progress never advanced during the batch"
+    assert seen == sorted(seen), "progress moved backwards"
+    # it moved by less than a whole task, i.e. before either task had finished
+    assert any(0 < value < 1 for value in seen)
+    # and the completed batch credits exactly one unit per task -- an exact int,
+    # so the phase reads as finished rather than a hair short from float credit
+    assert progress.tasks[0].completed == len(tasks)
+    assert progress.tasks[0].finished
+
+
+def test_progress_never_exceeds_the_task_count():
+    """Partial updates are credited against a task's shot budget, so a task that
+    reports more shots than budgeted (or completes after full credit) cannot
+    push the bar past its total."""
+    tasks = [_task((0, 0))]
+    collector = FakeCollector({(0, 0): [(5_000, 2)]}, partial_updates=5)
+    progress = PhasedProgress(phases=1, disable=True)
+
+    # budget is 1_000 but the task reports 5_000 shots
+    _sampler(collector, min_errors=0, shots=1_000).collect(tasks, progress)
+
+    row = progress.tasks[0]
+    assert row.completed == pytest.approx(1)
+    assert row.total == 1
+
+
+def test_partial_updates_are_forwarded_to_sinter_as_a_callback():
+    tasks = [_task((0, 0))]
+    collector = FakeCollector({(0, 0): [(1_000, 3)]})
+    progress = PhasedProgress(phases=1, disable=True)
+
+    _sampler(collector, min_errors=0).collect(tasks, progress)
+
+    assert callable(collector.calls[0]["progress_callback"])
+
+
+def test_no_callback_is_passed_when_there_is_no_progress_display():
+    tasks = [_task((0, 0))]
+    collector = FakeCollector({(0, 0): [(1_000, 3)]})
+
+    _sampler(collector, min_errors=0).collect(tasks)
+
+    assert collector.calls[0]["progress_callback"] is None
+
+
+def test_empty_topup_still_reports_a_timing():
+    """`topup` stays in the timings whenever the floor is enabled, so a run that
+    needed no top-up is distinguishable from one that had the floor turned off."""
+    tasks = [_task((0, 0))]
+    collector = FakeCollector({(0, 0): [(1_000, 5)]})
+    run = _sampler(collector).collect(tasks)
+
+    assert run.timings["topup"] == pytest.approx(0, abs=0.5)
 
 
 def test_timings_cover_both_passes():

@@ -13,8 +13,15 @@ T = TypeVar("T")
 # tqdm's default bar layout, minus the ``<{remaining}`` ETA estimate. Used for a
 # phase opened with ``show_eta=False`` (one whose completion advances in coarse,
 # bursty steps that would make a remaining-time estimate jump around).
+# A phase may advance in fractions of an item (e.g. a task credited by the shots it
+# has taken so far), and tqdm's `{n_fmt}` renders those at full float precision --
+# "24.05666666666667/41". Formatting the count explicitly keeps the bar readable.
+_COUNT = "{n:.0f}/{total:.0f}"
+_BAR_FORMAT = (
+    "{desc}: {percentage:3.0f}%|{bar}| " + _COUNT + " [{elapsed}<{remaining}, {rate_fmt}{postfix}]"
+)
 _BAR_FORMAT_NO_ETA = (
-    "{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}, {rate_fmt}{postfix}]"
+    "{desc}: {percentage:3.0f}%|{bar}| " + _COUNT + " [{elapsed}, {rate_fmt}{postfix}]"
 )
 
 
@@ -137,8 +144,11 @@ class PhasedProgress:
                 desc=label,
                 leave=True,
                 dynamic_ncols=True,
+                # an explicit count needs a known total to format against
                 bar_format=(
-                    _BAR_FORMAT_NO_ETA if (not show_eta and total is not None) else None
+                    None
+                    if total is None
+                    else (_BAR_FORMAT if show_eta else _BAR_FORMAT_NO_ETA)
                 ),
             )
         try:
