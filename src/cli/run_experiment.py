@@ -8,7 +8,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def run_and_serialize_spp_experiment(chip: Chip, mean, deviation, distances, data_directory, additional_label, seed, shots, max_errors, noise_model):
+def run_and_serialize_spp_experiment(chip: Chip, *, mean, deviation, distances, data_directory, additional_label, seed, shots, max_errors, noise_model, min_errors, shot_ceiling):
     if data_directory:
         serialize.set_data_dir(data_directory)
     logger.info(f'Creating chip with {noise_model} noise model')
@@ -28,7 +28,7 @@ def run_and_serialize_spp_experiment(chip: Chip, mean, deviation, distances, dat
 
         exp = SquarePackingExp(new_chip, SCTile(d))
         exp.tag.name = additional_label + f'_d{d}'
-        exp.run(shots=shots, max_errors=max_errors)
+        exp.run(shots=shots, max_errors=max_errors, min_errors=min_errors, max_topup_shots=shot_ceiling)
         exp_path = exp.save(label=label)
         res_path = exp.save_results(label=label)
 
@@ -76,9 +76,11 @@ def main():
     parser.add_argument("--directory", type=str, required=False, default=None,  help="Directory to use for saving the experiments and result.")
     parser.add_argument("--seed", type=int, required=False, default=None,  help="Seed for random sampling the gaussian noise. If you use the same seed on two experiments with identical mean and dev., the underlying chip will be identical.")
     parser.add_argument("--shots", type=int, required=False, default=50_000, help="Number of shots to sample for each candidate position on a chip.")
-    parser.add_argument("--maxerrors", type=int, required=False, default=None, help = "Maximum number of shot errors before exiting sampling.")
+    parser.add_argument("--max_errors", type=int, required=False, default=None, help = "Maximum number of errors encountered before exiting sampling. If the number of errors sampled surpasses this value then the sampling will stop regardless of maximum shot count.")
+    parser.add_argument("--min_errors", type=int, required=False, default=30, help="Minimum number of errors that should be encountered at each location. If a sample reaches the provided shot count without sampling at least this many errors, it will continue until a maximum shot ceiling. Default value is 30.")
+    parser.add_argument("--shot_ceiling", type=int, required = False, help="If minimum errors is not None, then providing shot ceiling here determines the upper bounds of shots in order to sample the minimum errors. This defaults to 20x the provided ideal shot count.")
     parser.add_argument("--logger", type=bool, required=False, default=True,  help="Show additional logging information along progress info.")
-    parser.add_argument("--saveconfig", type=bool, required=False, default=False, help="Exports the command arguements to a reusable <name>_config.txt file that can be used to identically run the experiment. The ")
+    parser.add_argument("--save_config", type=bool, required=False, default=False, help="Exports the command arguements to a reusable <name>_config.txt file that can be used to identically run the experiment.")
 
     args = parser.parse_args()
 
@@ -97,7 +99,9 @@ def main():
                                     shots = args.shots,
                                     seed = args.seed,
                                     noise_model = args.model,
-                                    max_errors = args.maxerrors)
+                                    max_errors = args.maxerrors,
+                                    min_errors = args.minerrors,
+                                    shot_ceiling = args.shotceiling)
     if args.saveconfig:
         save_configuration(vars(args), chip, args.name)
 

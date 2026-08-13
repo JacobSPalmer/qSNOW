@@ -228,6 +228,48 @@ class TestResultsFlow:
         # the setup file itself was never replaced by the results export
         assert results_path != setup_path
 
+    def test_sampling_settings_persist_to_both_flakes(self, data_dir, chip):
+        """Every knob the sampler ran with -- including the error floor and the
+        top-up ceiling -- has to survive into the setup flake *and* the results
+        flake, so a stored error rate can be read back with the sampling effort
+        that produced it."""
+        import json
+
+        from qsnow.experiments.sampling import ErrorFloorSampler
+        from qsnow.experiments.squarepacking.game import SquarePackingExp
+
+        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        # sourced from the sampler itself, so this breaks if run_config drops a key
+        exp.config.update(
+            **ErrorFloorSampler(shots=1_000, min_errors=3, max_topup_shots=5_000).run_config()
+        )
+        exp.results = {(0, 0): {"ler": 0.001, "shots": 1000, "errors": 1}}
+
+        setup_path = exp.save()
+        results_path = exp.save_results()
+
+        setup_config = json.loads(setup_path.read_text())["config"]
+        results_config = json.loads(results_path.read_text())["run_config"]
+
+        for config in (setup_config, results_config, import_flake(results_path).run_config):
+            assert config["min_errors"] == 3
+            assert config["max_topup_shots"] == 5_000
+            assert config["shots"] == 1_000
+
+    def test_disabled_error_floor_persists_as_no_ceiling(self, data_dir, chip):
+        from qsnow.experiments.sampling import ErrorFloorSampler
+        from qsnow.experiments.squarepacking.game import SquarePackingExp
+
+        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        exp.config.update(**ErrorFloorSampler(shots=1_000, min_errors=0).run_config())
+        exp.results = {(0, 0): {"ler": 0.0, "shots": 1000, "errors": 0}}
+        exp.save()
+
+        record = import_flake(exp.save_results())
+
+        assert record.run_config["min_errors"] == 0
+        assert record.run_config["max_topup_shots"] is None
+
     def test_save_with_desc_updates_description(self, data_dir, chip):
         from qsnow.experiments.squarepacking.game import SquarePackingExp
 
