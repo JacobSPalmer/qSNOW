@@ -52,7 +52,6 @@ class SquarePackingExp(Experiment):
                 if chip.is_valid_tile_placement(origin, bound):
                     profile.append(origin)
 
-        logger.info(f"{len(profile)} valid placements to sample.")
         return profile
 
 
@@ -94,6 +93,8 @@ class SquarePackingExp(Experiment):
             batch_size=batch_size,
             max_workers=max_workers,
         )
+        logger.info(f"{len(self.profile)} valid placements to sample.")
+
         logger.info(
             f"Beginning run with {sampler.num_workers} workers with max batch size of "
             f"{batch_size} and {shots} shots per sample."

@@ -35,12 +35,11 @@ def run_and_serialize_spp_experiment(chip: Chip, *, mean, deviation, distances, 
         logger.info(f"Experiment saved to {exp_path}")
         logger.info(f"Results saved to {res_path}")
     m, s  = divmod(perf_counter() - start, 60)
-    time_str = f'{int(m)} mins, {s:.2g} secs' if m else f'{s:.2g}'
-    logger.info(f'Completed profiling for {len(distances)} distances in {time_str}')
+    time_str = f'{int(m)} mins, {s:.2g} secs' if m else f'{s:.2g} secs'
+    logger.info(f'Completed profiling for {len(distances)} distance(s) in {time_str}')
     return chip
 
 def save_configuration(args: dict, chip: Chip, name: str):
-    print(args)
     def format_str(name, values):
         if isinstance(values, list):
             return f'--{name}\n{"\n".join([str(v) for v in values])}\n'
@@ -64,6 +63,11 @@ def save_configuration(args: dict, chip: Chip, name: str):
 
     
 def main():
+    def int_or_none(value):
+        if value == "None":
+            return None
+        return int(value)
+    
     parser = argparse.ArgumentParser(description="A script that runs Square Packing experiments conveniently.\n The arguments can either be specified individually or passed from a text file using `@<path/to/text_file>.", 
                                      fromfile_prefix_chars='@')
     
@@ -74,18 +78,18 @@ def main():
     parser.add_argument("--deviation", type=float, required=True, help="Mean noise to use for noise model.")
     parser.add_argument("--distances", nargs="+", type=int, required=True, help="Distance of tiles to sample for.")
     parser.add_argument("--directory", type=str, required=False, default=None,  help="Directory to use for saving the experiments and result.")
-    parser.add_argument("--seed", type=int, required=False, default=None,  help="Seed for random sampling the gaussian noise. If you use the same seed on two experiments with identical mean and dev., the underlying chip will be identical.")
+    parser.add_argument("--seed", type=int_or_none, required=False, default=None,  help="Seed for random sampling the gaussian noise. If you use the same seed on two experiments with identical mean and dev., the underlying chip will be identical.")
     parser.add_argument("--shots", type=int, required=False, default=50_000, help="Number of shots to sample for each candidate position on a chip.")
-    parser.add_argument("--max_errors", type=int, required=False, default=None, help = "Maximum number of errors encountered before exiting sampling. If the number of errors sampled surpasses this value then the sampling will stop regardless of maximum shot count.")
+    parser.add_argument("--max_errors", type=int_or_none, required=False, default=None, help = "Maximum number of errors encountered before exiting sampling. If the number of errors sampled surpasses this value then the sampling will stop regardless of maximum shot count.")
     parser.add_argument("--min_errors", type=int, required=False, default=30, help="Minimum number of errors that should be encountered at each location. If a sample reaches the provided shot count without sampling at least this many errors, it will continue until a maximum shot ceiling. Default value is 30.")
-    parser.add_argument("--shot_ceiling", type=int, required = False, help="If minimum errors is not None, then providing shot ceiling here determines the upper bounds of shots in order to sample the minimum errors. This defaults to 20x the provided ideal shot count.")
+    parser.add_argument("--shot_ceiling", type=int_or_none, required = False, default=None, help="If minimum errors is not None, then providing shot ceiling here determines the upper bounds of shots in order to sample the minimum errors. This defaults to 20x the provided ideal shot count.")
     parser.add_argument("--logger", type=bool, required=False, default=True,  help="Show additional logging information along progress info.")
     parser.add_argument("--save_config", type=bool, required=False, default=False, help="Exports the command arguements to a reusable <name>_config.txt file that can be used to identically run the experiment.")
 
     args = parser.parse_args()
 
-    if args.saveconfig and args.name is None:
-        parser.error("--name is required when --saveconfig is set.")
+    if args.save_config and args.name is None:
+        parser.error("--name is required when --save_config is set.")
 
     if args.logger:
         logging.basicConfig(level=logging.INFO)
@@ -99,10 +103,10 @@ def main():
                                     shots = args.shots,
                                     seed = args.seed,
                                     noise_model = args.model,
-                                    max_errors = args.maxerrors,
-                                    min_errors = args.minerrors,
-                                    shot_ceiling = args.shotceiling)
-    if args.saveconfig:
+                                    max_errors = args.max_errors,
+                                    min_errors = args.min_errors,
+                                    shot_ceiling = args.shot_ceiling)
+    if args.save_config:
         save_configuration(vars(args), chip, args.name)
 
 if __name__ == "__main__":
