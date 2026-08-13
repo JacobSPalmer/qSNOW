@@ -1,30 +1,17 @@
 import logging
-import os
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, TypeVar, TYPE_CHECKING
+from typing import Dict, List, Optional
 from stim import Circuit
 from time import perf_counter
 
 import sinter
 
-logger = logging.getLogger(__name__)
-
-# Default number of tasks handed to a single ``sinter.collect`` call. Sinter recomputes an O(n) status update 
-# (where n is number of circuits to sample) each time a task is completed, causing a pretty nasty scaling as 
-# chip sizes get larger. Batching it caps that recompute to O(batch_size), which drastically increases the 
-# performance on large-scale simulations. There's probably a more optimal batch size, but with some basic testing
-# it seems that ~1024 is the sweet spot.
-DEFAULT_SAMPLING_BATCH_SIZE = 1024
-
-def _chunked(items: List, size: int) -> Iterator[List]:
-    """Yield ``items`` in consecutive lists of at most ``size`` (size >= 1)."""
-    if size < 1:
-        raise ValueError(f"batch size must be >= 1, got {size}")
-    for start in range(0, len(items), size):
-        yield items[start : start + size]
-
 from qsnow.experiments.experiment import Experiment, ExperimentResults
+from qsnow.experiments.sampling import (  # noqa: F401  (re-exported for callers)
+    DEFAULT_SAMPLING_BATCH_SIZE,
+    ErrorFloorSampler,
+)
 from qsnow.interface.chip import Chip, LogicalTile
 from qsnow.interface.models import Coord
 from qsnow.visualize import (
@@ -34,6 +21,8 @@ from qsnow.visualize import (
     packing_profile_style,
     visualize_interactive,
 )
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class SquarePackingExp(Experiment):
@@ -79,20 +68,38 @@ class SquarePackingExp(Experiment):
 
         return self.tile.circuit
 
-    #TODO - the bulk of the logic here needs to be moved to a shared runner class since this logic is reusable and not unique to this SPP
     def run(
         self,
         shots: int = 50_000,
         max_errors: Optional[int] = 5_000,
-        decoder: str = "pymatching",
+        min_errors: int = 1,
+        max_topup_shots: Optional[int] = None,
+        decoder: str = "pymatching",  # TODO - move default decoder to global config or experiment specific config file at some point
         batch_size: int = DEFAULT_SAMPLING_BATCH_SIZE,
-        max_workers: int = 32
+        max_workers: int = 32,
     ):
-        num_workers =  min(max_workers, os.cpu_count() or 1)
-        logger.info(f"Beginning run with {num_workers} workers with max batch size of {batch_size} and {shots} shots per sample.")
+        """Sample the logical error rate of every candidate placement.
 
-        #TODO - most if not all of the logic for sampling mass experiments should be extracted to a dedicated reusable class.
-        with self.progress(phases=2) as prog:
+        `min_errors` is the error floor: a placement that records fewer than this
+        many errors within `shots` is resampled until it clears the floor, so no
+        placement is reported at exactly 0% LER just because it was undersampled.
+        Pass `min_errors=0` to skip that pass.
+        """
+        sampler = ErrorFloorSampler(
+            decoder=decoder,
+            shots=shots,
+            max_errors=max_errors,
+            min_errors=min_errors,
+            max_topup_shots=max_topup_shots,
+            batch_size=batch_size,
+            max_workers=max_workers,
+        )
+        logger.info(
+            f"Beginning run with {sampler.num_workers} workers with max batch size of "
+            f"{batch_size} and {shots} shots per sample."
+        )
+
+        with self.progress(phases=1 + sampler.phases) as prog:
             t_start = perf_counter()
             tasks = [
                 sinter.Task(
@@ -103,26 +110,7 @@ class SquarePackingExp(Experiment):
             ]
             t_generation = perf_counter() - t_start
 
-            t_start = perf_counter()
-            
-            collected_stats: List[sinter.TaskStats] = []
-            with prog.phase(
-                "Sampling circuits", total=len(tasks), show_eta=True
-            ) as phase:
-                for batch in _chunked(tasks, batch_size):
-                    batch_stats = sinter.collect(
-                        num_workers=num_workers,
-                        tasks=batch,
-                        decoders=[
-                            decoder
-                        ],  # TODO - move default decoder to global config or experiment specific config file at some point
-                        max_shots=shots,
-                        max_errors=max_errors,
-                    )
-                    collected_stats.extend(batch_stats)
-                    phase.advance(len(batch_stats))
-
-            t_sampling = perf_counter() - t_start
+            run = sampler.collect(tasks, prog)
 
             # sinter round-trips json_metadata through JSON, so 'loc' comes back as a list
             self.results = {
@@ -132,22 +120,18 @@ class SquarePackingExp(Experiment):
                     "errors": s.errors,
                     "ler": s.errors / s.shots,
                 }
-                for s in collected_stats
+                for s in run.stats
             }
             #TODO - the stats is stored in config rn but will need to be moved to it's own subdictionary, which will likely require a migration
             #TODO - create minor versioning in the serialize code
             self.config.update(
-                shots=shots,
-                max_errors=max_errors,
-                decoder=decoder,
-                batch_size=batch_size,
-                max_workers=max_workers,
-                stats = {
+                **sampler.run_config(),
+                stats={
                     'runtime': {
                         'generation': f"{t_generation}",
-                        'sampling': f"{t_sampling}",
+                        **{k: f"{v}" for k, v in run.timings.items()},
                     }
-                }
+                },
             )
 
         return self.results

@@ -52,6 +52,24 @@ def names(circuit) -> list[str]:
     return [instr.name for instr in circuit]
 
 
+NOISE_CHANNELS = {"X_ERROR", "Y_ERROR", "Z_ERROR", "DEPOLARIZE1", "DEPOLARIZE2"}
+
+
+def noise_before(instructions, idx) -> dict:
+    """The contiguous run of noise channels immediately preceding `idx`, by name.
+
+    A rule's `before` list can hold several channels, so the triggering operation
+    is not necessarily adjacent to any one of them; this collects the whole
+    injected block without depending on the order within it.
+    """
+    block = {}
+    i = idx - 1
+    while i >= 0 and instructions[i].name in NOISE_CHANNELS:
+        block[instructions[i].name] = instructions[i]
+        i -= 1
+    return block
+
+
 class TestNoiseInjectionOrdering:
     """`_inject_circuit_noise` is the only place noise ever enters a tile's
     circuit; these pin down the `before`/`after` behavior directly so a
@@ -175,22 +193,31 @@ class TestNoiseInjectionOrdering:
         ]
 
     def test_circuit_end_to_end_via_default_sc_tile_ruleset(self, chip: Chip):
-        """Integration check with the real ruleset used in production (rsc.py):
-        the final data-qubit `M` has a `before` X_ERROR channel and nothing
-        `after`, so an X_ERROR immediately preceding `M` is a direct signal
-        that `before`-channel injection actually ran."""
+        """Integration check with the real SI1000 ruleset used in production (rsc.py):
+        the final data-qubit `M` carries `before` channels and nothing `after`, so the
+        noise block directly preceding `M` is a direct signal that `before`-channel
+        injection ran -- and that SI1000's scalars were applied to the qubit's `p`."""
+        p = 0.02
         tile = SCTile(3, rounds=1, task="memory_z")
         assert chip.add_tile(tile)
-        chip.generate_uniform_noise(0.02)
+        chip.generate_uniform_noise(p)
 
         out = list(tile.circuit)
         m_idx = names(tile.circuit).index("M")
+        before = noise_before(out, m_idx)
 
-        assert out[m_idx - 1].name == "X_ERROR"
-        assert out[m_idx - 1].gate_args_copy() == [0.02]
+        # SI1000: Measure(p) -> 5p, ResonatorIdle(p) -> 2p
+        assert set(before) == {"X_ERROR", "DEPOLARIZE1"}
+        assert before["X_ERROR"].gate_args_copy() == [pytest.approx(5 * p)]
+        assert before["DEPOLARIZE1"].gate_args_copy() == [pytest.approx(2 * p)]
+
         m_targets = {t.value for t in out[m_idx].targets_copy()}
-        pre_targets = {t.value for t in out[m_idx - 1].targets_copy()}
-        assert m_targets <= pre_targets
+        measured = {t.value for t in before["X_ERROR"].targets_copy()}
+        idle = {t.value for t in before["DEPOLARIZE1"].targets_copy()}
+
+        assert m_targets <= measured
+        # the resonator-idle channel is for qubits that are *not* being measured
+        assert not (m_targets & idle)
 
 
 class TestCircuitPropertyAccess:
