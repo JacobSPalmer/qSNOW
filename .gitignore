@@ -11,6 +11,9 @@ notes.md
 requirements.txt
 notebooks/
 .*cache/
-core_flakes/
 .tox
 *.prof
+.ipynb_checkpoints
+.jupyter
+.jupyter_ystore.db
+writeups/

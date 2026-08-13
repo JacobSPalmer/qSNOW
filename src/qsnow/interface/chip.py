@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from warnings import warn
 
 from numpy.random import SeedSequence, default_rng
@@ -166,6 +166,70 @@ class Chip(Grid):
         )
         for q in self.qubits:
             q.noise.p = round(dist.rvs(1, random_state=rng)[0], 5)
+
+    # TODO - this works and serves it's purpose just fine for now but needs a revist and cleanup down the line
+    def generate_derived_contour_noise(
+            self, mean: float, deviation: float, seed: int | None = None, *, slope: int = 5, 
+        ):
+        from qsnow.experiments import SquarePackingExp
+        from .codes import SCTile
+
+        def adjust_map_dimensions(noise_map: Dict[Coord, Any], dims: Tuple[float, float]) -> Dict[Coord, float]:
+            for coord in list(noise_map.keys()):
+                if coord[0] >= dims[0] or coord[1] >= dims[1]:
+                    noise_map.pop(coord)
+            return noise_map
+
+        def scale_gaussian_contour(coord_dict, new_deviation, alpha_ratio=0.1):
+            import numpy as np
+            coords = list(coord_dict.keys())
+            orig_values = np.array(list(coord_dict.values()), dtype=float)
+            deviation_factor = new_deviation / np.std(orig_values)
+            
+            target_mean = np.mean(orig_values)
+            scaled_linear = target_mean + deviation_factor * (orig_values - target_mean)
+            
+            # exponential soft-clipping to the lower tail near zero
+            # alpha is our soft lower bound fence (e.g., 10% of the mean)
+            # this means we get close to zero but no qubit ever gets an absolute 0 error rate
+            alpha = target_mean * alpha_ratio 
+            
+            # smooth C1-continuous blending function
+            final_values = np.where(
+                scaled_linear >= alpha,
+                scaled_linear,
+                alpha * np.exp((scaled_linear - alpha) / alpha)
+            )
+            
+            # Step 3: Shift slightly to correct any minor mean drift caused by the tail smoothing
+            mean_drift = np.mean(final_values) - target_mean
+            final_values = final_values - mean_drift
+            
+            # Safety double-check: if the shift pushed anything below alpha, clamp it smoothly
+            final_values = np.where(
+                final_values >= alpha, 
+                final_values, 
+                alpha * np.exp((final_values - alpha) / alpha)
+            )
+            
+            return {coords[i]: final_values[i] for i in range(len(coords))}
+
+
+        if isinstance(seed, int):
+            rng_seed = seed
+        else:
+            rng_seed = self._generate_rng_seed()
+
+        buffer_chip = Chip(self.length // 2 + slope + 1, self.height // 2 + slope + 1)
+        buffer_chip.generate_gaussian_noise(mean, deviation, rng_seed)
+
+        buffed_map = scale_gaussian_contour(
+            adjust_map_dimensions(SquarePackingExp(buffer_chip, SCTile(slope))._average_per_for_candidate_placements(), (self.length, self.height)),
+            deviation)
+
+        self._set_noise_metadata("derived contour", mean = mean, deviation = deviation, slope = slope, seed = rng_seed)
+        self.set_noise_map({c:NoiseProfile(p) for c,p in buffed_map.items()})
+
 
     def generate_uniform_noise(self, p):
         """

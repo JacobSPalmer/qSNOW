@@ -146,6 +146,8 @@ _DATA_DIR = _DEFAULT_DATA_DIR
 
 _TIMESTAMP_FORMAT = "%Y-%m-%d_%H-%M-%S"
 
+def get_timestamp(format = _TIMESTAMP_FORMAT):
+    return datetime.now().strftime(_TIMESTAMP_FORMAT)
 
 def set_data_dir(path: Optional[Union[str, Path]] = None) -> None:
     """
@@ -570,8 +572,8 @@ def export_results(
     Prefer `exp.save_results()`, which also records the back-link on the experiment.
     """
     if path is None:
-        stamp = datetime.now().strftime(_TIMESTAMP_FORMAT)
-        path = (
+        stamp = get_timestamp()
+        path = ( 
             _DATA_DIR
             / _subfolder(exp)
             / f"results_{label or _label(exp)}_{stamp}.flake"
@@ -657,7 +659,7 @@ def export_flake(
         # TODO - should this overwrite or append desc. circle back once solidified v1 exporter and see what works best
         obj.tag.desc = desc
     if path is None:
-        stamp = datetime.now().strftime(_TIMESTAMP_FORMAT)
+        stamp = get_timestamp()
         path = (
             _DATA_DIR
             / _subfolder(obj)
