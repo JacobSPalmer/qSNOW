@@ -252,7 +252,11 @@ def visualize(
     ax.legend(handles=legend_handles, loc="upper left", bbox_to_anchor=(1.01, 1.0),
               framealpha=0.95, borderaxespad=0.0)
 
-    out_path = Path(__file__).resolve().parent / f"packing_mixed_tau_{tau:g}.png"
+    # Fixed-width zero-padded decimal (not {tau:g}) so a tau sweep's PNGs sort
+    # lexicographically in numeric order: {tau:g} mixes decimal ("0.1") and
+    # scientific ("1e-05") forms, which `ls`/file browsers interleave wrongly.
+    # 7 places resolves LER thresholds down to ~1e-6 without collisions.
+    out_path = Path(__file__).resolve().parent / f"packing_mixed_tau_{tau:.7f}.png"
     fig.tight_layout()
     fig.savefig(out_path, dpi=400, bbox_inches="tight")
     plt.close(fig)
