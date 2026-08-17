@@ -3,13 +3,14 @@ from __future__ import annotations
 import logging
 from copy import deepcopy
 from statistics import mean
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
 from stim import Circuit, CircuitRepeatBlock, CircuitInstruction
 
 from .grid import Grid
+from .lattice import CHECKERBOARD, Lattice
 from .models import (
     _DEFAULT_CSSTYPE,
     _DEFAULT_STATUS,
@@ -57,11 +58,19 @@ class LogicalTile(Grid):
         ruleset: Optional[Ruleset] = None,
         tag: Optional[Tag] = None,
         spec: Optional[TileSpec] = None,
+        lattice: Union[Lattice, Literal["auto"]] = CHECKERBOARD,
     ):
         if x_buffer < 0 or y_buffer < 0:
             raise ValueError(
                 f"Buffer values cannot be lower than 0. Given x_buffer of {x_buffer} and y_buffer of {y_buffer}"
             )
+
+        if lattice == "auto":
+            lattice = Lattice.infer(
+                base_circuit.get_final_qubit_coordinates().values()
+            )
+        # buffers are kept so copy()/serialization can rebuild an identical tile
+        self._x_buffer, self._y_buffer = x_buffer, y_buffer
 
         # Resolved here (before the Grid super().__init__ below) so they are usable
         # during init; the tag is passed through to Grid, which stores this same object.
@@ -108,6 +117,7 @@ class LogicalTile(Grid):
             height=dimensions[1] + y_buffer,
             origin=self.circuit_origin,
             tag=self.tag,
+            lattice=lattice,
         )
 
     def _init_tile_qubit_status(self):
@@ -186,7 +196,7 @@ class LogicalTile(Grid):
 
     @property
     def dims(self) -> Tuple[int, int]:
-        return (self.length // 2, self.height // 2)
+        return self.unit_dims
 
     @property
     def ruleset(self) -> Ruleset:
@@ -333,7 +343,12 @@ class LogicalTile(Grid):
         """Return a fresh uninitialized copy of the circuit."""
         # deepcopy so the copy never shares mutable tag/spec state (dicts included)
         return LogicalTile(
-            self.base_circuit, tag=deepcopy(self.tag), spec=deepcopy(self.spec)
+            self.base_circuit,
+            x_buffer=self._x_buffer,
+            y_buffer=self._y_buffer,
+            tag=deepcopy(self.tag),
+            spec=deepcopy(self.spec),
+            lattice=self.lattice,
         )
 
     def reset(self) -> None:
@@ -353,16 +368,19 @@ class LogicalTile(Grid):
     def shift_by(self, x: int, y: int):
         """Shifts the current tile within the chip by `x` spaces left or right and y units up or down. A (x, y) shift is valid IFF x%2 == y%2."""
 
-        new_origin = (self.origin[0] + x, self.origin[1] + y)
-        new_bound = (self.bound[0] + x, self.bound[1] + y)
+        new_footprint = self.footprint_for(
+            (self.origin[0] + x, self.origin[1] + y), self.length, self.height
+        )
+        new_origin, new_bound = new_footprint
 
         # VALIDATION (differs slightly from parent chips internal _validate to exclude the consideration of qubits owned by the current tile in the empty subregion query)
-        if not self.chip._validate_checkerboard_loc(new_origin):
+        if not self.chip._validate_lattice_origin(new_origin):
             raise ValueError(
-                f"Invalid shift that violates checkboard indexing. Both x and y must both be even or both be odd, given x = {x}, y = {y}"
+                f"Invalid shift that lands off the chip's '{self.chip.lattice.name}' "
+                f"lattice: {self.chip.lattice.site_rule}, given x = {x}, y = {y}"
             )
 
-        if not self.chip._validate_chip_bounds(new_origin, new_bound):
+        if not self.chip._validate_chip_bounds(new_footprint):
             raise ValueError("Invalid shift that violates chip boundaries. ")
 
         if not self.chip.is_empty_region_subset(

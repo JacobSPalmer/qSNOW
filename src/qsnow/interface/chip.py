@@ -15,24 +15,27 @@ from qsnow.visualize import (
 )
 
 from .grid import Grid
+from .lattice import CHECKERBOARD, Lattice
 from .models import Coord, NoiseProfile, Qubit, Tag
 from .tile import LogicalTile
 
 
 class Chip(Grid):
     """
-    Physical qubit chip as a checkerboard integer lattice.
+    Physical qubit chip, laid out on a `Lattice`.
 
-    Chip(L, H) creates a grid spanning (0,0)–(2L - 1, 2H - 1) where valid qubit positions
-    satisfy x % 2 == y % 2 (both even or both odd). "Unit cells" are 2 coordinate
-    units wide, so a 5×5 logical tile with origin (0,0) has bound of (9, 9)
+    Chip(L, H) creates L x H *unit cells*; how many coordinates that spans depends on
+    the lattice. On the default `CHECKERBOARD` a cell is 2 coordinate units wide, so
+    Chip(5, 5) spans (0,0)-(9,9) and only positions satisfying x % 2 == y % 2 hold a
+    qubit. On `SQUARE` a cell is one coordinate, so Chip(5, 5) spans (0,0)-(4,4) with a
+    qubit at every integer position.
 
-    The grid is described using selection spaces of polygons, so the 5x5 logical tile
-    occupies box(0, 0, 10, 10).
+    The grid is described using selection spaces of polygons, so a 5x5 checkerboard
+    logical tile occupies box(0, 0, 10, 10).
 
     Typical workflow:
       1. Instantiate Chip(L, H) and assign noise to individual qubits (or using the pre-defined noise samplers).
-      2. Build, place, and shift LogicalTiles within the chip by specifying origin points or movement shifts within the (2L x 2H) chip.
+      2. Build, place, and shift LogicalTiles within the chip by specifying origin points or movement shifts.
       3. Retrieve and modify noise-injected circuits by accessing `tile.circuit`.
     """
 
@@ -48,9 +51,10 @@ class Chip(Grid):
         noise_map: Optional[Dict[Coord, NoiseProfile]] = None,
         tiles: Optional[Dict[Coord, LogicalTile]] = None,
         tag: Optional[Tag] = None,
+        lattice: Lattice = CHECKERBOARD,
     ):
-        super().__init__(2 * length, 2 * height, tag=tag)
-        self._fill_checkerboard()
+        super().__init__(*lattice.span(length, height), tag=tag, lattice=lattice)
+        self._fill_lattice()
         self.tiles: List[LogicalTile] = []
 
         if noise_map:
@@ -60,20 +64,14 @@ class Chip(Grid):
 
     @classmethod
     def from_tile(cls, tile: LogicalTile):
-        "Chip constructor that builds a chip fit to a specific"
-        l = (
-            tile.length // 2
-        )  # Because height and length get converted to 0 indexed 2L x 2H chip
-        h = tile.height // 2
-        return cls(l, h, noise_map=None, tiles={(0, 0): tile})
+        "Chip constructor that builds a chip fit to a specific tile"
+        l, h = tile.unit_dims
+        return cls(l, h, noise_map=None, tiles={(0, 0): tile}, lattice=tile.lattice)
 
-    def _fill_checkerboard(self) -> None:
-        """Populate all valid checkerboard positions with default Qubits."""
-        for x in range(self.length):
-            for y in range(self.height):
-                if x % 2 == y % 2:
-                    coord: Coord = (x, y)
-                    self._qubits[coord] = Qubit(loc=coord)
+    def _fill_lattice(self) -> None:
+        """Populate every position the lattice puts a qubit on with a default Qubit."""
+        for coord in self.lattice.positions(self.length, self.height):
+            self._qubits[coord] = Qubit(loc=coord)
 
     # ------------------------------------------------------------------
     # Properties
@@ -93,8 +91,9 @@ class Chip(Grid):
         """Compact facts describing the chip, for display surfaces
         (visualization headers, HTML exports, reprs)."""
         return {
-            "unit_size": (self.length // 2, self.height // 2),
+            "unit_size": self.unit_dims,
             "grid_size": (self.length, self.height),
+            "lattice": self.lattice.name,
             "n_qubits": len(self.qubits),
             "n_tiles": len(self.tiles),
             "noise_model": self.tag.metadata.get("noise_model"),
@@ -220,7 +219,10 @@ class Chip(Grid):
         else:
             rng_seed = self._generate_rng_seed()
 
-        buffer_chip = Chip(self.length // 2 + slope + 1, self.height // 2 + slope + 1)
+        buffer_l, buffer_h = self.unit_dims
+        buffer_chip = Chip(
+            buffer_l + slope + 1, buffer_h + slope + 1, lattice=self.lattice
+        )
         buffer_chip.generate_gaussian_noise(mean, deviation, rng_seed)
 
         buffed_map = scale_gaussian_contour(
@@ -255,16 +257,8 @@ class Chip(Grid):
         If the `loc` parameter is not specified, the tile will attempt to be placed according to the origin and bound of the tile (i.e., the upperleftmost coordinate in the Stim circuits).
         If the `loc` parameter is specified, the tile will attempt to be shifted to be placed a the specified origin and cooresponding bound in respect to the now modified origin.
         """
-        if loc:
-            region_origin = loc
-            region_bound = (
-                region_origin[0] + tile.length,
-                region_origin[1] + tile.height,
-            )
-        else:
-            # try and exactly place tile using tile's origin (defaults to (0,0))
-            region_origin = tile.origin
-            region_bound = tile.bound
+        # without a `loc`, try and exactly place tile using tile's origin (defaults to (0,0))
+        region_origin = loc if loc else tile.origin
 
         if not self._validate_tile_placements_with_warnings(tile, region_origin):
             return False
@@ -314,40 +308,67 @@ class Chip(Grid):
         tile.reset()
         return tile
 
-    def is_valid_tile_placement(self, origin: Coord, bound: Coord) -> bool:
-        # 1. check that the loc is valid for the checkerboard styling
-        if not (self._validate_checkerboard_loc(origin)):
+    def candidate_placements(self, tile: LogicalTile) -> List[Coord]:
+        """Every origin on this chip where `tile` could currently be placed."""
+        return [
+            (i, j)
+            for i in range(self.length)
+            for j in range(self.height)
+            if self.is_valid_tile_placement(tile, (i, j))
+        ]
+
+    def is_valid_tile_placement(self, tile: LogicalTile, loc: Coord) -> bool:
+        footprint = self.footprint_for(loc, tile.length, tile.height)
+
+        # 1. check that the loc is a valid site on this chip's lattice
+        if not (self._validate_lattice_origin(loc)):
             return False
 
-        # 2. check if any this tile would overlap with any other tile
-        if not (self._validate_empty_region(origin, bound)):
+        # 2. check the tile's own qubits all land on chip sites at this loc
+        if not (self._validate_tile_coords_on_lattice(tile, loc)):
             return False
 
-        # 3. check that this tile is within the bounds of the chip itself
-        if not (self._validate_chip_bounds(origin, bound)):
+        # 3. check if any this tile would overlap with any other tile
+        if not (self._validate_empty_region(footprint)):
+            return False
+
+        # 4. check that this tile is within the bounds of the chip itself
+        if not (self._validate_chip_bounds(footprint)):
             return False
 
         return True
 
     def _validate_tile_placements_with_warnings(self, tile: LogicalTile, loc: Coord):
-        origin = loc
-        bound = (loc[0] + tile.length, loc[1] + tile.height)
-        # 1. check that the loc is valid for the checkerboard styling
-        if not (self._validate_checkerboard_loc(origin)):
+        footprint = self.footprint_for(loc, tile.length, tile.height)
+        origin, bound = footprint
+
+        # 1. check that the loc is a valid site on this chip's lattice
+        if not (self._validate_lattice_origin(origin)):
             raise ValueError(
-                f"Invalid tile placement. Both x and y must both be even or both be odd, given loc of ({origin[0]}, {origin[1]})"
+                f"Invalid tile placement for a '{self.lattice.name}' lattice: "
+                f"{self.lattice.site_rule}, given loc of ({origin[0]}, {origin[1]})"
             )
 
-        # 2. check if any this tile would overlap with any other tile
-        if not (self._validate_empty_region(origin, bound)):
+        # 2. check the tile's own qubits land on chip sites once moved to `origin`.
+        # Lattices nest (every checkerboard site is a square site, not the reverse), so
+        # this is decided per-coordinate rather than by comparing the two lattices.
+        if not (self._validate_tile_coords_on_lattice(tile, origin)):
+            raise ValueError(
+                f"Tile on a '{tile.lattice.name}' lattice cannot be placed at {origin} on a "
+                f"'{self.lattice.name}' chip: some of its qubits would land off-lattice, "
+                f"where the chip has no qubit. Chip rule: {self.lattice.site_rule}."
+            )
+
+        # 3. check if any this tile would overlap with any other tile
+        if not (self._validate_empty_region(footprint)):
             warn(
                 f"Invalid tile placement. Qubit's within the ({origin} x {bound}) are currently active.",
                 stacklevel=2,
             )
             return False
 
-        # 3. check that this tile is within the bounds of the chip itself
-        if not (self._validate_chip_bounds(origin, bound)):
+        # 4. check that this tile is within the bounds of the chip itself
+        if not (self._validate_chip_bounds(footprint)):
             warn(
                 f"Invalid tile placement. Placement at ({origin} x {bound}) overflows chip boundaries of ({self.origin} x {self.bound}).",
                 stacklevel=2,
@@ -356,19 +377,41 @@ class Chip(Grid):
 
         return True
 
-    def _validate_checkerboard_loc(self, origin: Coord) -> bool:
-        return origin[0] % 2 == origin[1] % 2
+    def _validate_lattice_origin(self, origin: Coord) -> bool:
+        return self.lattice.is_site(origin)
+
+    def _validate_tile_coords_on_lattice(
+        self, tile: LogicalTile, origin: Coord
+    ) -> bool:
+        """Whether every qubit of `tile` lands on a chip site when moved to `origin`."""
+        dx, dy = origin[0] - tile.origin[0], origin[1] - tile.origin[1]
+        return all(
+            self.lattice.is_site((x + dx, y + dy)) for x, y in tile._c2i
+        )
+
+    def _keepout(self, footprint: Tuple[Coord, Coord]) -> Tuple[Coord, Coord]:
+        """The region a footprint reserves: itself plus a `+x`/`+y` margin.
+
+        The margin is the half-cell a footprint shares with the next lattice site.
+        It is also what keeps two tiles from being placed flush against each other,
+        which is why it is preserved rather than dropped - existing chips (and the
+        multi-tile flakes that re-place their tiles on import) were built under it.
+        """
+        origin, bound = footprint
+        margin = self.lattice.keepout_margin
+        return origin, (bound[0] + margin, bound[1] + margin)
 
     # borderline unnecessary but keeps styling of constraint checks
-    def _validate_empty_region(self, origin: Coord, bound: Coord) -> bool:
-        return self.is_empty_region(origin, bound)
+    def _validate_empty_region(self, footprint: Tuple[Coord, Coord]) -> bool:
+        return self.is_empty_region(*self._keepout(footprint))
 
-    def _validate_chip_bounds(self, origin: Coord, bound: Coord) -> bool:
+    def _validate_chip_bounds(self, footprint: Tuple[Coord, Coord]) -> bool:
+        origin, bound = footprint
         return (
-            self.length >= bound[0]
-            and self.height >= bound[1]
-            and self.origin[0] <= origin[0]
+            self.origin[0] <= origin[0]
             and self.origin[1] <= origin[1]
+            and bound[0] <= self.bound[0]
+            and bound[1] <= self.bound[1]
         )
 
     # ------------------------------------------------------------------
@@ -412,7 +455,10 @@ class Chip(Grid):
         Optionally, the tiles placed on the chips can be deep copied as well.
         """
         new_chip = Chip(
-            self.length // 2, self.height // 2, noise_map=self.noise_map, tag=self.tag
+            *self.unit_dims,
+            noise_map=self.noise_map,
+            tag=self.tag,
+            lattice=self.lattice,
         )
         if copy_tiles:
             new_chip.add_tiles({c: t.copy() for c, t in self.tile_map.items()})

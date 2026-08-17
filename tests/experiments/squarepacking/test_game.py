@@ -1,8 +1,40 @@
 # TODO - once code is relatively stable, set this up
 # class TestSquarePacking:
 
+import pytest
+
 from qsnow.experiments.experiment import ExperimentResults
 from qsnow.experiments.squarepacking.game import SquarePackingExp
+from qsnow.interface.chip import Chip
+from qsnow.interface.codes.rsc import SCTile
+
+
+class TestProfileCharacterization:
+    """Pins the exact candidate placements produced today.
+
+    Collected LER sweeps are keyed by these origins, so any refactor of the
+    footprint/bound arithmetic must leave them untouched.
+    """
+
+    def test_small_chip_profile_is_exact(self):
+        exp = SquarePackingExp(chip=Chip(5, 5), tile=SCTile(3))
+
+        assert exp.profile == [(0, 0), (0, 2), (1, 1), (2, 0), (2, 2)]
+
+    @pytest.mark.parametrize(
+        ("distance", "expected"),
+        [(3, 85), (5, 41)],
+    )
+    def test_placement_counts_on_larger_chip(self, distance, expected):
+        exp = SquarePackingExp(chip=Chip(10, 10), tile=SCTile(distance))
+
+        assert len(exp.profile) == expected
+
+    def test_profile_origins_are_all_valid_placements(self):
+        exp = SquarePackingExp(chip=Chip(10, 10), tile=SCTile(3))
+
+        # every origin the sweep offers must survive the chip's own validation
+        assert all(exp.chip.is_valid_tile_placement(exp.tile, o) for o in exp.profile)
 
 
 def test_interactive_styles_bundle(chip, logical_tile):

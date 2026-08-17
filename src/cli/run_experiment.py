@@ -24,7 +24,7 @@ def run_and_serialize_spp_experiment(chip: Chip, *, mean, deviation, distances, 
     for d in distances:
         logger.info(f'Beginning profiling for distance {d}....')
         new_chip = chip.copy()
-        label = (f'{additional_label}_' if additional_label else '') + f'd{d}_{new_chip.length // 2}x{new_chip.height // 2}_mean_{str(mean).replace('.','_')}'
+        label = (f'{additional_label}_' if additional_label else '') + f'd{d}_{new_chip.unit_dims[0]}x{new_chip.unit_dims[1]}_mean_{str(mean).replace('.','_')}'
 
         exp = SquarePackingExp(new_chip, SCTile(d))
         exp.tag.name = additional_label + f'_d{d}'

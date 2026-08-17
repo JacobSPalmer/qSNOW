@@ -62,6 +62,7 @@ from qsnow.experiments.experiment import Experiment, ExperimentResults
 from qsnow.experiments.squarepacking.game import SquarePackingExp
 from qsnow.interface.chip import Chip, LogicalTile
 from qsnow.interface.codes.rsc import SCTile
+from qsnow.interface.lattice import CHECKERBOARD, lattice_by_name
 from qsnow.interface.models import Coord, Tag, TileSpec
 from qsnow.interface.rules import (
     _DEFAULT_FILTERS,
@@ -74,7 +75,7 @@ from qsnow.interface.rules import (
 import logging
 logger = logging.getLogger(__name__)
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 
 # ------------------------------------------------------------------
 # Format versioning / migrations
@@ -106,11 +107,24 @@ def _migration(from_version: int):
 # NOTE - This migration process is necessary so that when (inevitably) some sort of attribute change takes place the serialize function doesn't shit the bed
 #        Below is a demo patch as if
 #   @_migration(1)
-#   def _v1_to_v2(data: Dict) -> Dict:
+#   def _demo(data: Dict) -> Dict:
 #       """v2 changed chip 'noise' values from a bare p float to {'p', 'scale'}."""
 #       if data.get("__qsnow__") == "Chip":
 #           data["noise"] = {k: {"p": p, "scale": 1.0} for k, p in data["noise"].items()}
 #       return data
+
+
+@_migration(1)
+def _v1_to_v2(data: Dict) -> Dict:
+    """v2 records the lattice a chip/tile is laid out on; everything before it was
+    implicitly a checkerboard.
+
+    Tiles are discriminated by 'base_circuit' rather than '__qsnow__' because tile
+    dicts carry arbitrary subclass names there.
+    """
+    if data.get("__qsnow__") == "Chip" or "base_circuit" in data:
+        data.setdefault("lattice", CHECKERBOARD.name)
+    return data
 
 
 def _migrate(data: Dict) -> Dict:
@@ -199,7 +213,7 @@ def _label(obj: Any) -> str:
     """
     match obj:
         case Chip():
-            return f"{obj.length // 2}x{obj.height // 2}"
+            return f"{obj.unit_dims[0]}x{obj.unit_dims[1]}"
         case LogicalTile():
             return obj.tag.name or obj.spec.tile_type or type(obj).__name__.lower()
         case SquarePackingExp():
@@ -347,6 +361,7 @@ def tile_to_dict(tile: LogicalTile) -> Dict:
         "construct_origin": [0, 0] if tile.initialized() else list(tile.origin),
         "x_buffer": tile.length - dims[0],
         "y_buffer": tile.height - dims[1],
+        "lattice": tile.lattice.name,
         "tag": tag_to_dict(tile.tag),
         "spec": spec_to_dict(tile.spec),
         "ruleset": ruleset_to_dict(tile._ruleset),
@@ -362,6 +377,7 @@ def _logical_tile_from_dict(data: Dict) -> LogicalTile:
         ruleset=ruleset_from_dict(data["ruleset"]),
         tag=tag_from_dict(data["tag"]),
         spec=spec_from_dict(data["spec"]),
+        lattice=lattice_by_name(data["lattice"]),
     )
 
 
@@ -416,9 +432,11 @@ def chip_to_dict(chip: Chip) -> Dict:
         "__qsnow__": "Chip",
         "format_version": FORMAT_VERSION,
         "tag": tag_to_dict(chip.tag),
-        # the original constructor arguments (grid is 2L x 2H internally)
-        "length": chip.length // 2,
-        "height": chip.height // 2,
+        # the original constructor arguments, in unit cells (the coordinate extent
+        # they span is decided by the lattice)
+        "length": chip.unit_dims[0],
+        "height": chip.unit_dims[1],
+        "lattice": chip.lattice.name,
         "noise": {_coord_to_key(c): q.noise.p for c, q in chip.grid.items()},
         "tiles": [tile_to_dict(t) for t in chip.tiles],
     }
@@ -426,7 +444,9 @@ def chip_to_dict(chip: Chip) -> Dict:
 
 def chip_from_dict(data: Dict) -> Chip:
     data = _migrate(data)
-    chip = Chip(data["length"], data["height"])
+    chip = Chip(
+        data["length"], data["height"], lattice=lattice_by_name(data["lattice"])
+    )
     chip.tag = tag_from_dict(data["tag"])
 
     # TODO - move all this to have noise map to dict using the NoiseMap "type"

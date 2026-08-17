@@ -281,6 +281,18 @@ class TestShiftRewritesCircuitAndMetadata:
         with pytest.raises(ValueError):
             tile.shift_by(1, 0)
 
+    def test_shift_rejects_single_coordinate_overhang(self, chip: Chip):
+        """Regression: shift_by used to feed an inclusive bound to an exclusive-form
+        bounds check, letting a one-coordinate overhang slip through validation and
+        die later with a KeyError inside _transfer_qubit_metadata."""
+        tile = SCTile(3)
+        assert chip.add_tile(tile, (0, 0))
+
+        # (3,3) puts the tile's bound at (10,10) on a chip bounded at (9,9);
+        # add_tile already rejects it, so shift_to must too.
+        with pytest.raises(ValueError):
+            tile.shift_to((3, 3))
+
     def test_shift_by_rejects_out_of_bounds_shift(self, two_qubit_circuit, chip: Chip):
         tile = placed(two_qubit_circuit, chip)
 
