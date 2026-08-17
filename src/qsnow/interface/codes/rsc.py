@@ -5,6 +5,7 @@ from typing import Dict, List, Literal, Optional
 from stim import Circuit
 
 from ..chip import LogicalTile
+from ..lattice import CHECKERBOARD
 from ..models import Coord, CSSType, Tag, TileSpec
 from ..rules import ChannelRule, InjectionRule, Ruleset
 
@@ -28,6 +29,8 @@ class SCTile(LogicalTile):
             x_buffer=1,
             y_buffer=1,
             origin=origin,
+            # stim's rotated surface-code generators emit checkerboard coordinates
+            lattice=CHECKERBOARD,
             tag=Tag(name=f"rsc_{task}_d{distance}"),
             spec=TileSpec(
                 tile_type=type(self).__name__,
@@ -43,31 +46,38 @@ class SCTile(LogicalTile):
             ),
         )
 
-    # super hacky way to get typing and could probably be cleaned up but it should work
-    def _init_tile_qubit_types(self):
-        all_qubits = self._c2i
-        all_measures = {}
-        x_measures = {}
-        z_measures = {}
+    def _first_op_coords(self, operation: str) -> Dict[Coord, int]:
+        """Circuit coordinates targeted by the first `operation` instruction.
 
-        i2e = self._circuit.get_final_qubit_coordinates()
-        for i in self._yield_circuit_instructions(self._circuit):
-            if i.name == "H":
-                x_measures = {
-                    (i2e[q.value][0], i2e[q.value][1]): q.value
-                    for q in i.targets_copy()
+        Both the stabilizer readout (`MR`) and the X-basis change (`H`) appear in
+        full before the circuit's REPEAT block, so one un-flattened pass finds them -
+        which also avoids `CircuitRepeatBlock`, that has no `.name`.
+        """
+        i2c = self._circuit.get_final_qubit_coordinates()
+        for instr in self._yield_circuit_instructions(self._circuit):
+            if instr.name == operation:
+                return {
+                    (i2c[t.value][0], i2c[t.value][1]): t.value
+                    for t in instr.targets_copy()
                 }
-                break
+        return {}
 
-        for c, i in all_qubits.items():
-            if c[0] % 2 == self.origin[0] % 2:
-                all_measures[c] = i
-
+    def _init_tile_qubit_types(self):
+        # Read the CSS roles off the circuit rather than off coordinate parity: the
+        # ancillas are exactly what gets reset-and-measured, and the X ancillas are
+        # exactly those conjugated by H. Holds for any distance, task, and lattice.
+        all_qubits = self._c2i
+        all_measures = self._first_op_coords("MR")
+        if not all_measures:
+            raise ValueError(
+                f"Cannot type qubits for {type(self).__name__}: its circuit has no MR "
+                "instruction, so the stabilizer ancillas cannot be identified."
+            )
+        x_measures = self._first_op_coords("H")
         z_measures = {
             k: all_measures[k] for k in all_measures.keys() - x_measures.keys()
         }
 
-        self._indices = {"all_measuresx_measuresz_measuresdata"}
         for q in self.qubits:
             if q.loc in x_measures:
                 q.type = CSSType.X_CHECK

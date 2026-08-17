@@ -1,7 +1,7 @@
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from stim import Circuit
 from time import perf_counter
 
@@ -44,15 +44,7 @@ class SquarePackingExp(Experiment):
     # ------------------------------------------------------------------
 
     def _generate_profile(self, chip: Chip, tile: LogicalTile) -> List[Coord]:
-        profile = []
-        for i in range(chip.length - 1):
-            for j in range(chip.height - 1):
-                origin = (i, j)
-                bound = (i + tile.length, j + tile.height)
-                if chip.is_valid_tile_placement(origin, bound):
-                    profile.append(origin)
-
-        return profile
+        return chip.candidate_placements(tile)
 
 
     # ------------------------------------------------------------------
@@ -149,12 +141,15 @@ class SquarePackingExp(Experiment):
             "placements": len(self.profile),
         }
     
+    def _footprint_for(self, origin: Coord) -> Tuple[Coord, Coord]:
+        return self.chip.footprint_for(origin, self.tile.length, self.tile.height)
+
     def _average_per_for_candidate_placements(self) -> Dict[Coord, float]:
         from statistics import mean
-        return {o: mean([q.noise.p for q in self.chip.select_rect(*o, o[0] +  self.tile.length - 1, o[1] + self.tile.height - 1).values()]) for o in self.profile}
+        return {o: mean([q.noise.p for q in self.chip.select_rect(*o, *self._footprint_for(o)[1]).values()]) for o in self.profile}
 
     def _bounds_for_candidate_placements(self) -> Dict[Coord, Coord]:
-        return {o: (o[0] +  self.tile.length - 1, o[1] + self.tile.height - 1) for o in self.profile}
+        return {o: self._footprint_for(o)[1] for o in self.profile}
 
     def _interactive_styles(
         self, results: ExperimentResults
@@ -209,6 +204,6 @@ class SquarePackingExp(Experiment):
             styles,
             active="LER",
             title=self.tag.name or type(self).__name__,
-            subtitle=f"chip: {self.chip.length} x {self.chip.height} grid · tile: {self.tile.spec.distance} {self.tile.tag.name} · {len(self.profile)} placements",
+            subtitle=f"chip: {self.chip.unit_dims[0]} x {self.chip.unit_dims[1]} · tile: {self.tile.spec.distance} {self.tile.tag.name} · {len(self.profile)} placements",
             show=True,
         )

@@ -1,7 +1,66 @@
 import pytest
 
 from qsnow.interface.chip import Chip, LogicalTile
+from qsnow.interface.lattice import CHECKERBOARD, SQUARE
 from qsnow.interface.models import Status
+
+
+class TestSquareLatticeChip:
+    """A dense integer lattice: Chip(L, H) spans L x H coordinates, all occupied."""
+
+    def test_dimensions_are_not_doubled(self, square_chip: Chip):
+        assert (square_chip.length, square_chip.height) == (5, 5)
+        assert square_chip.unit_dims == (5, 5)
+
+    def test_every_integer_coordinate_holds_a_qubit(self, square_chip: Chip):
+        assert len(square_chip.qubits) == 25
+        assert set(square_chip.grid) == {(x, y) for x in range(5) for y in range(5)}
+
+    def test_summary_reports_the_lattice(self, square_chip: Chip):
+        assert square_chip.summary()["lattice"] == "square"
+        assert square_chip.summary()["n_qubits"] == 25
+
+    def test_copy_preserves_the_lattice(self, square_chip: Chip):
+        # SquarePackingExp copies its chip, so losing the lattice here would
+        # silently turn a square-lattice experiment into a checkerboard one
+        copied = square_chip.copy()
+
+        assert copied.lattice == SQUARE
+        assert len(copied.qubits) == 25
+
+    def test_accepts_a_mixed_parity_origin(self, square_chip: Chip, dense_circuit):
+        tile = LogicalTile(dense_circuit, lattice=SQUARE)
+
+        assert square_chip.add_tile(tile, (1, 0))
+
+    def test_single_coordinate_shift_is_legal(self, square_chip: Chip, dense_circuit):
+        tile = LogicalTile(dense_circuit, lattice=SQUARE)
+        assert square_chip.add_tile(tile, (0, 0))
+
+        tile.shift_by(1, 0)
+
+        assert tile.origin == (1, 0)
+
+
+class TestCrossLatticePlacement:
+    """Lattices nest - every checkerboard site is a square site, not the reverse."""
+
+    def test_checkerboard_tile_places_on_a_square_chip(self, logical_tile):
+        chip = Chip(10, 10, lattice=SQUARE)
+
+        assert chip.add_tile(logical_tile, (0, 0))
+
+    def test_dense_tile_is_rejected_on_a_checkerboard_chip(self, chip: Chip, dense_circuit):
+        tile = LogicalTile(dense_circuit, lattice=SQUARE)
+
+        with pytest.raises(ValueError, match="off-lattice"):
+            chip.add_tile(tile, (0, 0))
+
+    def test_rejection_message_names_both_lattices(self, chip: Chip, dense_circuit):
+        tile = LogicalTile(dense_circuit, lattice=SQUARE)
+
+        with pytest.raises(ValueError, match="'square'.*'checkerboard'"):
+            chip.add_tile(tile, (0, 0))
 
 
 class TestChipConstruction:
@@ -136,6 +195,28 @@ class TestChipTilePlacement:
 
         logical_tile.shift_by(-5, -1)
         assert chip.tiles[0].origin == (0, 0)
+
+    def test_abutting_placement_is_order_dependent(
+        self, lg_chip: Chip, logical_tile: LogicalTile
+    ):
+        """Characterization, NOT desired behavior.
+
+        A tile's keep-out region extends one coordinate past its footprint on the
+        +x/+y sides only. Two tiles that abut at x=8 therefore place fine in
+        left-to-right order, but the same pair is rejected right-to-left because
+        the second tile's keep-out reaches into the first tile's qubits.
+        Pinned so the footprint refactor is provably inert; the asymmetry itself
+        is a known wart tracked separately.
+        """
+        left, right = logical_tile.copy(), logical_tile.copy()
+
+        assert lg_chip.add_tile(right, (8, 0))
+        with pytest.warns(UserWarning):
+            assert lg_chip.add_tile(left, (0, 0)) is False
+
+        fresh = Chip(10, 10)
+        assert fresh.add_tile(logical_tile.copy(), (0, 0))
+        assert fresh.add_tile(logical_tile.copy(), (8, 0))
 
     def test_removing_tiles_from_chip(self, lg_chip: Chip, logical_tile: LogicalTile):
         tile1, tile2, tile3 = (logical_tile.copy() for i in range(3))

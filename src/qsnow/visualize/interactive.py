@@ -153,7 +153,7 @@ def visualize_interactive(
     active_idx = names.index(active)
 
     if title is None:
-        title = chip.tag.name or f"Chip {chip.length // 2}x{chip.height // 2}"
+        title = chip.tag.name or f"Chip {chip.unit_dims[0]}x{chip.unit_dims[1]}"
     if subtitle is None:
         subtitle = _chip_subtitle(chip)
 
@@ -472,7 +472,7 @@ def export_square_packing(
     # which imports this package (same pattern as Experiment.save)
     from qsnow.helpers.serialize import _TIMESTAMP_FORMAT, get_data_dir
 
-    chip_size_label = f"{exp.chip.length // 2}x{exp.chip.height // 2}"
+    chip_size_label = f"{exp.chip.unit_dims[0]}x{exp.chip.unit_dims[1]}"
     if title is None:
         title = exp.tag.name or "SP Experiment"
     if path is None:
@@ -547,7 +547,7 @@ def export_chip(
     # which imports this package (same pattern as Experiment.save)
     from qsnow.helpers.serialize import _TIMESTAMP_FORMAT, get_data_dir
 
-    size_label = f"{chip.length // 2}x{chip.height // 2}"
+    size_label = f"{chip.unit_dims[0]}x{chip.unit_dims[1]}"
     if title is None:
         title = chip.tag.name or "Chip"
 
