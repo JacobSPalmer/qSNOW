@@ -223,6 +223,71 @@ class TestProfileRun:
         assert s["n"] == 1
         assert s["stdev"] == 0.0
 
+    def test_show_opens_the_experiment_view_with_this_runs_results(self, data_root):
+        run = load_profile_runs([3], data_root)[3]
+        seen = {}
+        run.experiment.show = lambda results, **kw: seen.update(
+            results=results, kwargs=kw
+        )
+
+        run.show()
+
+        assert seen["results"] is run.results
+
+    def test_show_threads_extra_styles_through(self, data_root):
+        run = load_profile_runs([3], data_root)[3]
+        seen = {}
+        run.experiment.show = lambda results, **kw: seen.update(kw)
+        styles = {"custom": object()}
+
+        run.show(extra_styles=styles)
+
+        assert seen["extra_styles"] is styles
+
+    def test_chip_only_shows_the_chip_not_the_experiment(self, data_root):
+        run = load_profile_runs([3], data_root)[3]
+        called = []
+        run.experiment.show = lambda *a, **k: called.append("experiment")
+        run.chip.show = lambda **kw: called.append(("chip", kw.get("interactive")))
+
+        run.show(chip_only=True)
+
+        assert called == [("chip", True)]
+
+    def test_show_falls_back_to_the_chip_when_the_experiment_has_no_view(
+        self, data_root
+    ):
+        run = load_profile_runs([3], data_root)[3]
+        called = []
+
+        def unimplemented(*a, **k):
+            raise NotImplementedError
+
+        run.experiment.show = unimplemented
+        run.chip.show = lambda **kw: called.append("chip")
+
+        run.show()
+
+        assert called == ["chip"]
+
+    def test_export_passes_the_results_alongside_the_experiment(self, data_root, tmp_path):
+        run = load_profile_runs([3], data_root)[3]
+        out = tmp_path / "exp.html"
+
+        written = run.export(out, include_plotlyjs="cdn")
+
+        assert written == out
+        assert out.stat().st_size > 0
+
+    def test_export_chip_only_writes_the_chip_page(self, data_root, tmp_path):
+        run = load_profile_runs([3], data_root)[3]
+        out = tmp_path / "chip.html"
+
+        written = run.export(out, chip_only=True, include_plotlyjs="cdn")
+
+        assert written == out
+        assert out.stat().st_size > 0
+
     def test_chip_raises_when_the_experiment_has_none(self):
         from qsnow.experiments.experiment import Experiment, ExperimentResults
 

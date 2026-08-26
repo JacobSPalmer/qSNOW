@@ -28,9 +28,12 @@ from typing import (
 import numpy as np
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from matplotlib.figure import Figure
 
     from qsnow.experiments import Experiment, ExperimentResults
+    from qsnow.visualize.visualize import VisualizationStyle
     from qsnow.interface.chip import Chip
 
 __all__ = [
@@ -165,6 +168,47 @@ class ProfileRun:
             "stdev": float(lers.std(ddof=1)) if lers.size > 1 else 0.0,
             "zeros": float(np.count_nonzero(lers == 0)),
         }
+
+    # ------------------------------------------------------------------
+    # Interactive views of the flakes behind this run
+    # ------------------------------------------------------------------
+
+    def show(
+        self,
+        *,
+        chip_only: bool = False,
+        extra_styles: Optional["Mapping[str, VisualizationStyle]"] = None,
+    ) -> None:
+        """Open the interactive plotly view of the flakes behind this run.
+
+        By default this is the experiment's own view - for a packing sweep, the LER
+        heatmap over every placement. `chip_only` shows just the chip the sweep ran on
+        (layout / status / noise), which is the setup rather than the outcome.
+        """
+        if chip_only:
+            self.chip.show(interactive=True, extra_styles=extra_styles)
+            return
+        try:
+            self.experiment.show(self.results, extra_styles=extra_styles)
+        except NotImplementedError:
+            # a bare Experiment, or a subclass that has not implemented show(); the
+            # chip it ran on is still worth putting on screen
+            self.chip.show(interactive=True, extra_styles=extra_styles)
+
+    def export(self, path: Optional[PathLike] = None, *, chip_only: bool = False, **kwargs):
+        """Write the same view to a standalone interactive HTML page, returning its path.
+
+        Mirrors `show()`: the experiment's view by default, the chip's with `chip_only`.
+        Extra keyword arguments (`styles`, `title`, `label`, `include_plotlyjs`) are
+        forwarded to `qsnow.visualize.interactive.export_html`.
+        """
+        # deferred: interactive.py pulls in the experiment stack, which imports this
+        # package - the same cycle every other qsnow import in this module dodges
+        from qsnow.visualize.interactive import export_html
+
+        if chip_only:
+            return export_html(self.chip, path, **kwargs)
+        return export_html(self.experiment, path, results=self.results, **kwargs)
 
 
 def load_profile_runs(
