@@ -12,6 +12,7 @@ dependencies = [
     "stim",
     "sinter",
     "plotly",
+    "matplotlib",
     "nbformat",
     "shapely",
     "scipy",

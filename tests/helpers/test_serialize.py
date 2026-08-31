@@ -14,6 +14,7 @@ from qsnow.helpers.serialize import (
 )
 from qsnow.interface.chip import Chip, LogicalTile
 from qsnow.interface.codes.rsc import SCTile
+from qsnow.interface.lattice import CHECKERBOARD, SQUARE
 
 
 @pytest.fixture
@@ -91,6 +92,22 @@ class TestChipRoundTrip:
         restored = from_dict(to_dict(chip))
 
         assert str(restored.tiles[0].circuit) == str(chip.tiles[0].circuit)
+
+    def test_square_lattice_chip_round_trips(self, square_chip, dense_circuit):
+        square_chip.generate_random_noise()
+        tile = LogicalTile(dense_circuit, lattice=SQUARE)
+        assert square_chip.add_tile(tile, (1, 0)) is True
+
+        restored = from_dict(to_dict(square_chip))
+
+        assert restored.lattice == SQUARE
+        assert (restored.length, restored.height) == (5, 5)
+        assert len(restored.qubits) == 25
+        assert restored.tiles[0].origin == (1, 0)
+        assert restored.tiles[0].lattice == SQUARE
+        assert {c: q.noise.p for c, q in restored.grid.items()} == {
+            c: q.noise.p for c, q in square_chip.grid.items()
+        }
 
 
 class TestExperimentRoundTrip:
@@ -384,12 +401,48 @@ class TestFormatVersioning:
         assert len(chip.tiles) == 1
         assert chip.tiles[0].origin == (2, 2)
 
+    def test_v1_chip_predates_lattices_and_migrates_to_checkerboard(self):
+        chip = import_flake(self.FIXTURES / "chip_v1.flake")
+
+        assert chip.lattice == CHECKERBOARD
+        assert chip.unit_dims == (5, 5)
+        assert len(chip.qubits) == 50
+
     def test_v1_tile_golden_file_imports(self):
         tile = import_flake(self.FIXTURES / "tile_v1.flake")
 
         assert isinstance(tile, SCTile)
         assert tile.spec.distance == 3
         assert tile.spec.rounds == 2
+        assert tile.lattice == CHECKERBOARD
+
+    def test_nested_chip_and_tile_migrate_independently(self, chip):
+        """Nested objects stamp and migrate their own format_version, so a v1
+        experiment's chip/tile upgrade without the experiment migration touching them."""
+        from qsnow.experiments.squarepacking.game import SquarePackingExp
+
+        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        data = to_dict(exp)
+
+        # rewind the nested payloads to their pre-lattice v1 shape
+        for nested in (data["exp"]["chip"], data["exp"]["tile"]):
+            nested["format_version"] = 1
+            del nested["lattice"]
+
+        restored = from_dict(data)
+
+        assert restored.chip.lattice == CHECKERBOARD
+        assert restored.tile.lattice == CHECKERBOARD
+
+    def test_v2_square_chip_golden_file_imports(self):
+        chip = import_flake(self.FIXTURES / "chip_square_v2.flake")
+
+        assert chip.lattice == SQUARE
+        assert chip.unit_dims == (6, 6)
+        assert (chip.length, chip.height) == (6, 6)
+        assert len(chip.qubits) == 36
+        assert chip.tiles[0].origin == (1, 2)
+        assert chip.tiles[0].lattice == SQUARE
 
     def test_v1_experiment_golden_file_imports(self):
         exp = import_flake(self.FIXTURES / "experiment_v1.flake")

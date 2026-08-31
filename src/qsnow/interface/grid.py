@@ -6,13 +6,18 @@ from shapely import difference
 from shapely.geometry import Point, Polygon, box
 from shapely.strtree import STRtree
 
+from .lattice import CHECKERBOARD, Lattice
 from .models import Coord, Qubit, Tag
 
 
 class Grid:
     """
-    Integer checkerboard lattice. Valid positions (x, y) satisfy x % 2 == y % 2,
-    spanning x ∈ [0, length] and y ∈ [0, height] (both inclusive).
+    A rectangular block of qubit positions spanning x ∈ [0, length] and y ∈ [0, height]
+    (both inclusive), in *coordinate* units.
+
+    Which of those coordinates actually hold a qubit is decided by the grid's
+    `Lattice` - `CHECKERBOARD` (the default, x % 2 == y % 2) or `SQUARE` (every
+    integer coordinate). `unit_dims` converts the coordinate extent back to unit cells.
 
     Backed by a Shapely STRtree for efficient arbitrary-region selection.
     The index is built lazily on first query and cached until invalidated.
@@ -24,6 +29,7 @@ class Grid:
     origin: Coord
     height: int
     length: int
+    lattice: Lattice
     tag: Tag
     _qubits: Dict[Coord, Qubit]
     _index: Optional[Tuple[List[Coord], STRtree]]
@@ -34,6 +40,8 @@ class Grid:
         height: int,
         origin: Coord = (0, 0),
         tag: Optional[Tag] = None,
+        *,
+        lattice: Lattice = CHECKERBOARD,
     ):
         if length < 1 or height < 1:
             raise ValueError(
@@ -42,6 +50,7 @@ class Grid:
         self.origin = origin
         self.length = length
         self.height = height
+        self.lattice = lattice
         self.tag = tag if tag is not None else Tag()
         self._qubits: Dict[Coord, Qubit] = {}
         self._index: Optional[Tuple[List[Coord], STRtree]] = None
@@ -66,7 +75,22 @@ class Grid:
 
     @property
     def bound(self) -> Coord:
-        return (self.origin[0] + self.length - 1, self.origin[1] + self.height - 1)
+        return self.footprint_for(self.origin, self.length, self.height)[1]
+
+    @property
+    def unit_dims(self) -> Tuple[int, int]:
+        """The grid's size in unit cells, as opposed to coordinate units."""
+        return self.lattice.units(self.length, self.height)
+
+    @staticmethod
+    def footprint_for(origin: Coord, length: int, height: int) -> Tuple[Coord, Coord]:
+        """The `(origin, bound)` rectangle a `length x height` grid occupies at `origin`.
+
+        `bound` is *inclusive* - the last coordinate actually covered - which is the
+        single convention used for every region query in the package. Static so a
+        placement can be evaluated before anything is moved there.
+        """
+        return origin, (origin[0] + length - 1, origin[1] + height - 1)
 
     # ------------------------------------------------------------------
     # Qubit access
@@ -104,8 +128,8 @@ class Grid:
     ) -> Dict[Coord, Qubit]:
         """
         Select qubits in the axis-aligned rectangle [x0, x1] × [y0, y1] (inclusive).
-        Coordinates are in the checkerboard system where unit cells are 2 units wide/tall.
-        Example: top-left 2×2 cell block of any Chip → select_rect(0, 0, 4, 4).
+        Coordinates are coordinate units, not unit cells - on the checkerboard a cell is
+        2 units wide/tall, so the top-left 2×2 cell block is select_rect(0, 0, 4, 4).
         """
         return self.select(box(x0, y0, x1, y1))
 
@@ -118,10 +142,18 @@ class Grid:
     def select_rect_difference(
         self, origin_A: Coord, bound_A: Coord, origin_B: Coord, bound_B: Coord
     ):
+        # B is grown by half a cell because `difference` yields a closed polygon and
+        # `select` covers boundary points, so B's own outermost qubits would otherwise
+        # survive the subtraction. The margin stays below one coordinate step on a dense
+        # lattice, so it never reaches into a neighbour's qubits.
+        margin = self.lattice.keepout_margin
         box_A = box(origin_A[0], origin_A[1], bound_A[0], bound_A[1])
         box_B = box(
-            origin_B[0] - 1, origin_B[1] - 1, bound_B[0] + 1, bound_B[1] + 1
-        )  # have to expand the subtracting space slightly with wonky checkerboarding setup
+            origin_B[0] - margin,
+            origin_B[1] - margin,
+            bound_B[0] + margin,
+            bound_B[1] + margin,
+        )
         return self.select_difference(box_A, box_B)
 
     # ------------------------------------------------------------------
