@@ -63,7 +63,7 @@ from qsnow.experiments.squarepacking.game import SquarePackingExp
 from qsnow.interface.chip import Chip, LogicalTile
 from qsnow.interface.codes.rsc import SCTile
 from qsnow.interface.lattice import CHECKERBOARD, lattice_by_name
-from qsnow.interface.models import Coord, Tag, TileSpec
+from qsnow.interface.models import Coord, CouplerKey, Tag, TileSpec
 from qsnow.interface.rules import (
     _DEFAULT_FILTERS,
     _DEFAULT_TRIGGERS,
@@ -75,7 +75,7 @@ from qsnow.interface.rules import (
 import logging
 logger = logging.getLogger(__name__)
 
-FORMAT_VERSION = 2
+FORMAT_VERSION = 3
 
 # ------------------------------------------------------------------
 # Format versioning / migrations
@@ -124,6 +124,20 @@ def _v1_to_v2(data: Dict) -> Dict:
     """
     if data.get("__qsnow__") == "Chip" or "base_circuit" in data:
         data.setdefault("lattice", CHECKERBOARD.name)
+    return data
+
+
+@_migration(2)
+def _v2_to_v3(data: Dict) -> Dict:
+    """v3 records per-coupler error rates; before it, two-qubit noise was always the mean
+    of a gate's two endpoint qubits.
+
+    Left empty rather than derived here: the migration sees only the dict, and the import
+    derives couplers from the restored qubit noise when this map is empty - which
+    reproduces the pre-v3 rates exactly.
+    """
+    if data.get("__qsnow__") == "Chip":
+        data.setdefault("couplers", {})
     return data
 
 
@@ -242,6 +256,15 @@ def _key_to_coord(key: str) -> Coord:
     return tuple(int(p) if p.is_integer() else p for p in parts)  # type: ignore
 
 
+def _coupler_to_key(ends: CouplerKey) -> str:
+    return f"{_coord_to_key(ends[0])}|{_coord_to_key(ends[1])}"
+
+
+def _key_to_coupler(key: str) -> CouplerKey:
+    a, b = key.split("|")
+    return (_key_to_coord(a), _key_to_coord(b))
+
+
 # ------------------------------------------------------------------
 # Ruleset
 # ------------------------------------------------------------------
@@ -280,6 +303,7 @@ def _channel_to_dict(channel: ChannelRule) -> Dict:
         "filter": channel.filter,
         "scalar": channel.scalar,
         "name": channel.name,
+        "source": channel.source,
     }
 
 
@@ -438,6 +462,9 @@ def chip_to_dict(chip: Chip) -> Dict:
         "height": chip.unit_dims[1],
         "lattice": chip.lattice.name,
         "noise": {_coord_to_key(c): q.noise.p for c, q in chip.grid.items()},
+        "couplers": {
+            _coupler_to_key(ends): n.p for ends, n in chip.coupler_map.items()
+        },
         "tiles": [tile_to_dict(t) for t in chip.tiles],
     }
 
@@ -452,6 +479,14 @@ def chip_from_dict(data: Dict) -> Chip:
     # TODO - move all this to have noise map to dict using the NoiseMap "type"
     for key, p in data["noise"].items():
         chip.loc(_key_to_coord(key)).noise.p = p
+
+    # An export that predates couplers carries none, so derive them from the qubit noise
+    # just restored - the same default a freshly generated chip gets.
+    if data["couplers"]:
+        for key, p in data["couplers"].items():
+            chip.coupler(*_key_to_coupler(key)).noise.p = p
+    else:
+        chip.derive_coupler_noise()
     # Re-placing each tile rebuilds qubit statuses/types exactly as add_tile did originally.
     # TODO - same for TileMap when/if typing becomes explicit
     for tile_data in data["tiles"]:

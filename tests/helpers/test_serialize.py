@@ -1,4 +1,5 @@
 from pathlib import Path
+from statistics import mean
 
 import pytest
 
@@ -482,3 +483,61 @@ class TestFormatVersioning:
 
         assert applied == [1, 2]
         assert isinstance(restored, Chip)
+
+
+class TestCouplerRoundTrip:
+    def test_coupler_rates_survive_a_round_trip(self, chip):
+        chip.generate_random_noise()
+        chip.coupler((0, 0), (1, 1)).noise.p = 0.2
+
+        restored = from_dict(to_dict(chip))
+
+        assert {e: n.p for e, n in restored.coupler_map.items()} == {
+            e: n.p for e, n in chip.coupler_map.items()
+        }
+
+    def test_a_hand_set_coupler_is_not_re_derived_on_import(self, chip):
+        """The override must survive, not be recomputed from its endpoints."""
+        chip.generate_uniform_noise(0.01)
+        chip.coupler((0, 0), (1, 1)).noise.p = 0.2
+
+        restored = from_dict(to_dict(chip))
+
+        assert restored.coupler((0, 0), (1, 1)).noise.p == 0.2
+
+    def test_channel_rule_source_round_trips(self, chip):
+        chip.add_tile(SCTile(distance=3), (2, 2))
+
+        restored = from_dict(to_dict(chip))
+        cx_rule = next(
+            r for r in restored.tiles[0].ruleset.rules if r.operation == "CX"
+        )
+
+        assert cx_rule.after[0].source == "coupler"
+
+
+class TestCouplerFormatVersioning:
+    FIXTURES = Path(__file__).parent / "fixtures"
+
+    def test_v3_golden_file_imports_with_its_couplers(self):
+        chip = import_flake(self.FIXTURES / "chip_v3.flake")
+
+        assert chip.coupler((0, 0), (1, 1)).noise.p == 0.2
+        assert chip.coupler((2, 2), (3, 3)).noise.p == 0.01
+
+    def test_v2_chip_predates_couplers_and_derives_them_on_import(self):
+        """Pre-v3 exports carry no coupler rates, so they are derived from the restored
+        qubit noise - which reproduces the endpoint mean those chips were built under."""
+        chip = import_flake(self.FIXTURES / "chip_square_v2.flake")
+
+        # a 6x6 dense lattice: 2 * 6 * 5 cardinal links
+        assert len(chip.couplers) == 60
+        assert all(
+            c.noise.p == pytest.approx(mean([chip.loc(e).noise.p for e in c.ends]))
+            for c in chip.couplers
+        )
+
+    def test_v1_chip_migrates_through_to_couplers(self):
+        chip = import_flake(self.FIXTURES / "chip_v1.flake")
+
+        assert len(chip.couplers) == 81

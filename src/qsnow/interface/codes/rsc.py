@@ -94,8 +94,8 @@ class SCTile(LogicalTile):
         def on_operation(op: str, trig, before, after, name = None) -> InjectionRule:
             return InjectionRule(op, trig, before, after, name = name)
 
-        def apply_channel(channel, filter, scalar = 1.0, name = None):
-            return ChannelRule(channel, filter, scalar=scalar, name=name)
+        def apply_channel(channel, filter, scalar = 1.0, name = None, source = "qubit_mean"):
+            return ChannelRule(channel, filter, scalar=scalar, name=name, source=source)
 
         # Default application of SI1000 ruleset
         return Ruleset(
@@ -120,7 +120,10 @@ class SCTile(LogicalTile):
                     "any",
                     before=[],
                     after=[
-                        apply_channel("DEPOLARIZE2", "active", 1, name='Clifford2'),          #AnyClifford2(p)   -> SI1000(p)
+                        # The two-qubit error is the coupler's, not the endpoints'. Couplers
+                        # derive as the mean of their two qubits by default, so this is
+                        # numerically identical until a coupler is given its own rate.
+                        apply_channel("DEPOLARIZE2", "active", 1, name='Clifford2', source="coupler"),  #AnyClifford2(p)   -> SI1000(p)
                         apply_channel("DEPOLARIZE1", "idle", .1, name='Idle'),                #Idle(p)           -> SI1000(p/10)
                     ],
                 ),

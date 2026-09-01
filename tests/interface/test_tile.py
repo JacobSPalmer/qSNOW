@@ -427,3 +427,147 @@ class TestInjectionMatchesFlattened:
             decoder="pymatching",
             json_metadata={},
         ).strong_id()
+
+
+@pytest.fixture
+def coupled_pair_circuit() -> stim.Circuit:
+    """A CX across two checkerboard-adjacent sites, so the pair has a real coupler."""
+    return stim.Circuit("""
+        QUBIT_COORDS(0, 0) 0
+        QUBIT_COORDS(1, 1) 1
+        R 0 1
+        CX 0 1
+        M 0 1
+    """)
+
+
+class TestCouplerSourcedInjection:
+    def test_coupler_source_prices_the_gate_off_the_edge(
+        self, coupled_pair_circuit, chip: Chip
+    ):
+        ruleset = Ruleset(
+            injection_rules=[
+                InjectionRule(
+                    "CX",
+                    "any",
+                    after=[ChannelRule("DEPOLARIZE2", "active", source="coupler")],
+                )
+            ]
+        )
+        tile = placed(
+            coupled_pair_circuit, chip, ruleset, noise={(0, 0): 0.01, (1, 1): 0.03}
+        )
+        chip.coupler((0, 0), (1, 1)).noise.p = 0.2
+
+        out = list(tile.circuit)
+        cx_idx = names(tile.circuit).index("CX")
+
+        # 0.2 from the coupler, not 0.02 from the endpoint mean
+        assert out[cx_idx + 1].gate_args_copy() == [pytest.approx(0.2)]
+
+    def test_coupler_source_still_honours_the_scalar(
+        self, coupled_pair_circuit, chip: Chip
+    ):
+        ruleset = Ruleset(
+            injection_rules=[
+                InjectionRule(
+                    "CX",
+                    "any",
+                    after=[
+                        ChannelRule(
+                            "DEPOLARIZE2", "active", scalar=1.5, source="coupler"
+                        )
+                    ],
+                )
+            ]
+        )
+        tile = placed(coupled_pair_circuit, chip, ruleset)
+        chip.coupler((0, 0), (1, 1)).noise.p = 0.2
+
+        out = list(tile.circuit)
+        cx_idx = names(tile.circuit).index("CX")
+
+        assert out[cx_idx + 1].gate_args_copy() == [pytest.approx(0.3)]
+
+    def test_derived_couplers_reproduce_the_endpoint_mean(
+        self, coupled_pair_circuit, chip: Chip
+    ):
+        """The migration guarantee: with couplers left at their derived default, a rule
+        on the coupler source emits exactly what the endpoint mean used to."""
+        chip.generate_uniform_noise(0.01)
+        chip.loc((0, 0)).noise.p = 0.01
+        chip.loc((1, 1)).noise.p = 0.03
+        chip.derive_coupler_noise()
+
+        rule = lambda source: Ruleset(
+            injection_rules=[
+                InjectionRule(
+                    "CX",
+                    "any",
+                    after=[ChannelRule("DEPOLARIZE2", "active", source=source)],
+                )
+            ]
+        )
+        tile = placed(coupled_pair_circuit, chip, rule("coupler"))
+        coupler_out = list(tile.circuit)[names(tile.circuit).index("CX") + 1]
+        chip.pop_tile(0)
+
+        tile = placed(coupled_pair_circuit, chip, rule("qubit_mean"))
+        mean_out = list(tile.circuit)[names(tile.circuit).index("CX") + 1]
+
+        assert coupler_out.gate_args_copy() == mean_out.gate_args_copy()
+
+    def test_gate_across_an_uncoupled_pair_raises(self, four_qubit_circuit, chip: Chip):
+        """(0,0) and (2,0) are both sites but two apart, so nothing couples them."""
+        ruleset = Ruleset(
+            injection_rules=[
+                InjectionRule(
+                    "CX",
+                    "any",
+                    after=[ChannelRule("DEPOLARIZE2", "active", source="coupler")],
+                )
+            ]
+        )
+        tile = placed(four_qubit_circuit, chip, ruleset)
+
+        with pytest.raises(ValueError, match="No coupler joins"):
+            tile.circuit
+
+
+class TestSurfaceCodeCouplerNoise:
+    def test_every_sc_gate_pair_is_lattice_coupled(self, chip: Chip):
+        """The SI1000 CX rule reads the coupler, so a d=3 patch only builds at all if
+        every CX in stim's generated circuit spans a physically coupled pair."""
+        chip.generate_uniform_noise(0.01)
+        tile = SCTile(distance=3)
+        assert chip.add_tile(tile, (2, 2))
+
+        depolarize2 = [i for i in tile.circuit.flattened() if i.name == "DEPOLARIZE2"]
+
+        assert depolarize2
+        assert all(i.gate_args_copy() == [pytest.approx(0.01)] for i in depolarize2)
+
+    def test_a_defective_coupler_changes_only_its_own_gate(self, chip: Chip):
+        chip.generate_uniform_noise(0.01)
+        tile = SCTile(distance=3)
+        assert chip.add_tile(tile, (2, 2))
+
+        before = [
+            i.gate_args_copy()[0]
+            for i in tile.circuit.flattened()
+            if i.name == "DEPOLARIZE2"
+        ]
+        # pick an edge a CX in the patch actually spans (data<->ancilla, never data<->data)
+        i2c = tile._circuit.get_final_qubit_coordinates()
+        cx = next(i for i in tile._circuit.flattened() if i.name == "CX")
+        a, b = ((i2c[t.value][0], i2c[t.value][1]) for t in cx.target_groups()[0])
+        chip.coupler(a, b).noise.p = 0.2
+        after = [
+            i.gate_args_copy()[0]
+            for i in tile.circuit.flattened()
+            if i.name == "DEPOLARIZE2"
+        ]
+
+        assert 0.2 in after
+        assert sorted(set(before)) == [pytest.approx(0.01)]
+        assert sorted(set(after)) == [pytest.approx(0.01), pytest.approx(0.2)]

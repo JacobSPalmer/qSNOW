@@ -6,14 +6,16 @@ from dataclasses import replace
 from datetime import datetime
 from html import escape
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Optional, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
 
 from qsnow.visualize.visualize import (
     VisualizationStyle,
     _apply_frame,
     _build_style_layer,
     _compute_geometry,
+    coupler_heatmap_style,
     css_style,
+    device_heatmap_style,
     default_style,
     noise_heatmap_style,
 )
@@ -69,8 +71,12 @@ def _style_desc_annotation(desc: str) -> Dict[str, object]:
 
 
 def default_interactive_styles(chip: Chip) -> Dict[str, VisualizationStyle]:
-    """The standard chip-level view bundle: status, CSS type, and noise heatmap."""
-    return {
+    """The standard chip-level view bundle: status, CSS type, and noise heatmap.
+
+    Gains a coupler view only when the couplers carry rates of their own; while they are
+    still derived from their endpoints the view would restate the noise heatmap.
+    """
+    styles = {
         "Status": replace(
             default_style,
             desc="Qubit assignment status (inactive / logical / ancilla).",
@@ -83,6 +89,15 @@ def default_interactive_styles(chip: Chip) -> Dict[str, VisualizationStyle]:
             chip, desc="Heatmap of each qubit's physical error rate p."
         ),
     }
+    if chip.has_independent_couplers:
+        styles["Coupler Noise"] = coupler_heatmap_style(
+            chip, desc="Heatmap of each coupler's two-qubit error rate p."
+        )
+        styles["Qubit + Coupler"] = device_heatmap_style(
+            chip,
+            desc="Qubit and coupler error rates together, each on its own log scale.",
+        )
+    return styles
 
 
 def _noise_model_text(noise_model: Optional[Dict]) -> Optional[str]:
@@ -165,7 +180,11 @@ def visualize_interactive(
     # it) so switching styles never resizes the plot.
     geometry = _compute_geometry(
         chip,
-        reserve_colorbar=any(s.colorbar is not None for s in styles.values()),
+        # widest view wins, so switching styles never resizes the plot
+        n_colorbars=max(
+            (s.colorbar is not None) + (s.coupler_colorbar is not None)
+            for s in styles.values()
+        ),
         extra_top_margin=_DROPDOWN_MARGIN_PX
         + (_TITLE_MARGIN_PX if title else 0)
         + (_DESC_MARGIN_PX if has_desc else 0),
@@ -192,8 +211,19 @@ def visualize_interactive(
     # HTML shouldn't depend on WebGL availability. Only the active trace is
     # visible; plotly draws colorbars only for visible traces, so each view's
     # colorbar shows/hides automatically.
+    # A style contributes one trace per colorbar it draws, so visibility is tracked by
+    # each style's *span* of traces rather than by a 1:1 style-to-trace index.
+    spans: List[Tuple[int, int]] = []
+    n_traces = 0
     for i, layer in enumerate(layers.values()):
-        fig.add_trace(Scatter(**layer.trace_kwargs, visible=i == active_idx))
+        spans.append((n_traces, len(layer.traces)))
+        for trace_kwargs in layer.traces:
+            fig.add_trace(Scatter(**trace_kwargs, visible=i == active_idx))
+            n_traces += 1
+
+    def visibility(style_index: int) -> List[bool]:
+        start, count = spans[style_index]
+        return [start <= j < start + count for j in range(n_traces)]
 
     active_layer = layers[active]
     fig.update_layout(
@@ -206,7 +236,7 @@ def visualize_interactive(
                         label=name,
                         method="update",
                         args=[
-                            {"visible": [j == i for j in range(len(names))]},
+                            {"visible": visibility(i)},
                             {
                                 "shapes": layer.shapes,
                                 "annotations": layer.annotations

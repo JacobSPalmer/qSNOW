@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from statistics import mean
 from typing import Dict, List, Literal, Optional, Union, TypeAlias
 
-from .models import Qubit
+from .models import Coord, Coupler, Qubit
 
 # if TYPE_CHECKING:
 #     from interface.models import Qubit, CSSType, Status
@@ -225,6 +226,48 @@ def _z_measures_filter(
     return [[k] for k, v in qubits.items() if v.is_z_measure()]
 
 
+# -----------------------------------------------------------------------
+# Rate sources -> Where a channel's error rate is read from
+# -----------------------------------------------------------------------
+# A channel rule already says *what* channel and *which* qubits; a source says where its
+# rate comes from. Keeping that a named, swappable axis is what lets an edge-owned rate
+# (a Coupler) coexist with the endpoint-derived rates every single-qubit rule still wants.
+
+
+def _qubit_mean_source(targets, qubits, coupler_at) -> float:
+    """The mean rate of the qubits in the group - the historical, and default, behavior."""
+    return mean([qubits[i].noise.p for i in targets])
+
+
+def _qubit_max_source(targets, qubits, coupler_at) -> float:
+    """The worst rate among the qubits in the group."""
+    return max(qubits[i].noise.p for i in targets)
+
+
+def _coupler_source(targets, qubits, coupler_at) -> float:
+    """
+    The rate owned by the coupler joining a pair of qubits.
+
+    Raises rather than falling back to an endpoint average: a two-qubit gate on a pair the
+    chip does not physically couple is a modelling error, and silently averaging it would
+    hide exactly the defect this source exists to expose. Register a custom source if you
+    want lenient behavior.
+    """
+    if len(targets) != 2:
+        raise ValueError(
+            f"The 'coupler' rate source needs exactly 2 target qubits, got {len(targets)}. "
+            "Pair it with a filter that preserves operand groups, such as 'active'."
+        )
+    a, b = (qubits[i].loc for i in targets)
+    coupler = coupler_at(a, b)
+    if coupler is None:
+        raise ValueError(
+            f"No coupler joins {a} and {b}, so the 'coupler' rate source cannot price an "
+            "operation across them. The gate spans a non-adjacent pair."
+        )
+    return coupler.noise.p
+
+
 # ------------------------------------------------------------------
 # Basic rule setups
 # ------------------------------------------------------------------
@@ -237,6 +280,12 @@ TriggerFunc: TypeAlias  = Callable[
 FilterFunc: TypeAlias = Callable[
     [List[List[int]], Dict[int, Qubit]], List[List[int]]
 ]  # specifies what (qubits) to trigger the rule on
+CouplerLookup: TypeAlias = Callable[
+    [Coord, Coord], Optional[Coupler]
+]  # resolves the coupler joining two chip coordinates, or None
+RateFunc: TypeAlias = Callable[
+    [List[int], Dict[int, Qubit], CouplerLookup], float
+]  # specifies where the rule's error rate is read from
 
 
 @dataclass
@@ -249,6 +298,14 @@ class Filter:
 class Trigger:
     name: str = "empty"
     func: TriggerFunc = _blank_trigger
+
+
+@dataclass
+class Source:
+    # Defaults to the qubit mean, so an unrecognized source name degrades to the
+    # historical behavior rather than to silence (as unknown triggers/filters do).
+    name: str = "qubit_mean"
+    func: RateFunc = _qubit_mean_source
 
 
 @dataclass
@@ -279,9 +336,15 @@ class ChannelRule:
     ]  # This filter determines what qubits this channel will be applied to
     scalar: float = 1.0
     name: Optional[str] = None
+    # This source determines where the unscaled error rate is read from. Declared last so
+    # no positional caller of the fields above breaks.
+    source: Union[
+        Literal["qubit_mean", "qubit_max", "coupler"],
+        str,
+    ] = "qubit_mean"
 
     def __repr__(self) -> str:
-        return f"ChannelRule({f'name={self.name},' if self.name is not None else ''}channel={self.channel}, on_qubits={self.filter}, rate={self.scalar}p)"
+        return f"ChannelRule({f'name={self.name},' if self.name is not None else ''}channel={self.channel}, on_qubits={self.filter}, rate={self.scalar}p, from={self.source})"
 
 @dataclass
 class InjectionRule:
@@ -310,6 +373,11 @@ _DEFAULT_FILTERS: List[Filter] = [
     Filter("x_measures", _x_measures_filter),
     Filter("z_measures", _z_measures_filter),
 ]
+_DEFAULT_SOURCES: List[Source] = [
+    Source("qubit_mean", _qubit_mean_source),
+    Source("qubit_max", _qubit_max_source),
+    Source("coupler", _coupler_source),
+]
 _DEFAULT_TRIGGERS: List[Trigger] = [
     Trigger("any", _any_qubits_trigger),
     Trigger("all_qubits", _all_qubits_trigger),
@@ -325,6 +393,7 @@ class Ruleset:
         self._rules: List[InjectionRule] = injection_rules
         self._filters: Dict[str, Filter] = {f.name: f for f in _DEFAULT_FILTERS}
         self._triggers: Dict[str, Trigger] = {t.name: t for t in _DEFAULT_TRIGGERS}
+        self._sources: Dict[str, Source] = {s.name: s for s in _DEFAULT_SOURCES}
 
     # ------------------------------------------------------------------
     # Triggers
@@ -361,6 +430,39 @@ class Ruleset:
         self, name: str, targ_indexes: List[List[int]], qubits: Dict[int, Qubit]
     ) -> List[List[int]]:
         return self._filters.get(name, Filter()).func(targ_indexes, qubits)
+
+    # ------------------------------------------------------------------
+    # Sources
+    # ------------------------------------------------------------------
+    @property
+    def sources(self) -> List[Source]:
+        return list(self._sources.values())
+
+    def add_source(self, new_source: Source):
+        self._sources[new_source.name] = new_source
+
+    def remove_source(self, source_name: str):
+        self._sources.pop(source_name)
+
+    def rate_for(
+        self,
+        channel_rule: ChannelRule,
+        targets: List[int],
+        qubits: Dict[int, Qubit],
+        coupler_at: CouplerLookup,
+    ) -> float:
+        """
+        The error rate a channel rule emits: its source's value, times its scalar.
+
+        The single place a rate is decided, so scaling and sourcing stay one concern that
+        a ruleset owns rather than something the circuit emitter open-codes.
+        """
+        return (
+            self._sources.get(channel_rule.source, Source()).func(
+                targets, qubits, coupler_at
+            )
+            * channel_rule.scalar
+        )
 
     # ------------------------------------------------------------------
     # Rules

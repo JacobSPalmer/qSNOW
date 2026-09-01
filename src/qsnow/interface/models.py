@@ -8,6 +8,7 @@ from numbers import Number
 
 Coord: TypeAlias = Tuple[float, float]
 ShiftFunction: TypeAlias = Callable[[*tuple[float, ...]], Coord]
+CouplerKey: TypeAlias = Tuple[Coord, Coord]
 
 
 @dataclass
@@ -190,3 +191,62 @@ class Qubit:
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(loc={self.loc}, status={self.status}, type={self.type}, noise={self.noise})"
+
+
+def coupler_key(a: Coord, b: Coord) -> CouplerKey:
+    """
+    Order-independent key for the edge `{a, b}`, so `(a, b)` and `(b, a)` name one coupler.
+
+    A sorted tuple rather than a frozenset: it is deterministic, it round-trips through
+    JSON, and it keeps `Coupler.ends` readable.
+    """
+    return (a, b) if a <= b else (b, a)
+
+
+class Coupler:
+    """
+    The link between two adjacent qubits, owning the error rate of operations across it.
+
+    A two-qubit gate's error on real hardware is dominated by the coupler joining the
+    pair, not by the pair's endpoints - so the rate lives here rather than being derived
+    from the two `Qubit.noise` values. Couplers belong to the *physical* chip, exactly as
+    `Qubit.noise` does: a `LogicalTile` never owns one, and `shift_by` never carries one
+    along (see `LogicalTile._transfer_qubit_metadata`).
+
+    `ends` is canonical, so a coupler built as `((2,2), (1,1))` compares and keys the same
+    as one built as `((1,1), (2,2))`. Validity is the `Chip`'s business - it builds every
+    coupler off its `Lattice`, so adjacency holds by construction.
+    """
+
+    def __init__(self, ends: CouplerKey, noise: Optional[NoiseProfile] = None):
+        self._ends: CouplerKey = coupler_key(*ends)
+        self.noise = noise if noise is not None else NoiseProfile()
+
+    @property
+    def ends(self) -> CouplerKey:
+        return self._ends
+
+    @property
+    def midpoint(self) -> Coord:
+        """Halfway between the two endpoints - where a renderer would anchor the edge."""
+        (x0, y0), (x1, y1) = self._ends
+        return ((x0 + x1) / 2, (y0 + y1) / 2)
+
+    def other(self, coord: Coord) -> Coord:
+        """The endpoint opposite `coord`."""
+        a, b = self._ends
+        if coord == a:
+            return b
+        if coord == b:
+            return a
+        raise KeyError(f"Coordinate {coord} is not an endpoint of {self}.")
+
+    def __contains__(self, coord: object) -> bool:
+        return coord in self._ends
+
+    def copy(self):
+        return Coupler(self._ends, self.noise.copy())
+
+    def __repr__(self) -> str:
+        a, b = self._ends
+        return f"{self.__class__.__name__}(ends={a}<->{b}, noise={self.noise})"
