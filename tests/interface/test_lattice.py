@@ -119,3 +119,38 @@ class TestInference:
 
         with pytest.raises(ValueError, match="initial_shift"):
             Lattice.infer(coords)
+
+
+class TestAdjacency:
+    def test_checkerboard_couples_the_four_diagonals(self):
+        # cardinal (+-2, 0) steps are sites too, but twice as far
+        assert CHECKERBOARD.neighbor_offsets == ((-1, -1), (-1, 1), (1, -1), (1, 1))
+
+    def test_square_couples_the_four_cardinals(self):
+        assert SQUARE.neighbor_offsets == ((-1, 0), (0, -1), (0, 1), (1, 0))
+
+    def test_every_neighbor_offset_lands_on_a_site(self):
+        for lattice in (CHECKERBOARD, SQUARE):
+            assert all(lattice.is_site(o) for o in lattice.neighbor_offsets)
+
+    def test_neighbors_are_unclipped_by_any_extent(self):
+        assert set(CHECKERBOARD.neighbors((0, 0))) == {(-1, -1), (-1, 1), (1, -1), (1, 1)}
+
+    def test_edges_yield_each_pair_exactly_once(self):
+        edges = list(CHECKERBOARD.edges(10, 10))
+
+        assert len(edges) == len({frozenset(e) for e in edges})
+
+    def test_edges_stay_inside_the_extent(self):
+        for a, b in SQUARE.edges(5, 5):
+            assert all(0 <= v < 5 for v in (*a, *b))
+
+    def test_edge_counts_match_the_lattice(self):
+        # checkerboard 10x10 coords: diagonals form a 9x9 grid of links
+        assert len(list(CHECKERBOARD.edges(10, 10))) == 81
+        # square 5x5: 2 * 5 * 4 cardinal links
+        assert len(list(SQUARE.edges(5, 5))) == 40
+
+    def test_every_edge_joins_two_sites_one_offset_apart(self):
+        for a, b in CHECKERBOARD.edges(10, 10):
+            assert (b[0] - a[0], b[1] - a[1]) in CHECKERBOARD.neighbor_offsets

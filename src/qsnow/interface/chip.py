@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Dict, List, Optional, Tuple, Any
+from math import isclose
+from statistics import mean
+from typing import Dict, List, Literal, Optional, Tuple, Any, Union
 from warnings import warn
 
 from numpy.random import SeedSequence, default_rng
@@ -9,15 +11,22 @@ from scipy.stats import truncnorm, uniform
 
 from qsnow.visualize import (
     VisualizationStyle,
+    default_style,
     default_interactive_styles,
+    with_couplers,
     visualize,
     visualize_interactive,
 )
 
 from .grid import Grid
 from .lattice import CHECKERBOARD, Lattice
-from .models import Coord, NoiseProfile, Qubit, Tag
+from .models import Coord, Coupler, CouplerKey, NoiseProfile, Qubit, Tag, coupler_key
 from .tile import LogicalTile
+
+# How a coupler's rate is combined from its two endpoints. Shared by
+# `derive_coupler_noise` and `has_independent_couplers` so the two can never disagree
+# about what "still derived" means.
+_COUPLER_DERIVATIONS = {"mean": mean, "max": max, "min": min}
 
 
 class Chip(Grid):
@@ -49,16 +58,24 @@ class Chip(Grid):
         height: int,
         *,
         noise_map: Optional[Dict[Coord, NoiseProfile]] = None,
+        coupler_map: Optional[Dict[CouplerKey, NoiseProfile]] = None,
         tiles: Optional[Dict[Coord, LogicalTile]] = None,
         tag: Optional[Tag] = None,
         lattice: Lattice = CHECKERBOARD,
     ):
         super().__init__(*lattice.span(length, height), tag=tag, lattice=lattice)
+        self._couplers: Dict[CouplerKey, Coupler] = {}
         self._fill_lattice()
+        self._fill_couplers()
         self.tiles: List[LogicalTile] = []
 
         if noise_map:
             self.set_noise_map(noise_map)
+            # A whole-landscape assignment, so couplers follow their endpoints unless the
+            # caller supplies their own below.
+            self.derive_coupler_noise()
+        if coupler_map:
+            self.set_coupler_noise_map(coupler_map)
         if tiles:
             self.add_tiles(tiles)
 
@@ -73,6 +90,11 @@ class Chip(Grid):
         for coord in self.lattice.positions(self.length, self.height):
             self._qubits[coord] = Qubit(loc=coord)
 
+    def _fill_couplers(self) -> None:
+        """Populate every adjacent site pair the lattice couples with a default Coupler."""
+        for a, b in self.lattice.edges(self.length, self.height):
+            self._couplers[coupler_key(a, b)] = Coupler((a, b))
+
     # ------------------------------------------------------------------
     # Properties
     # ------------------------------------------------------------------
@@ -81,6 +103,53 @@ class Chip(Grid):
     def noise_map(self) -> Dict[Coord, NoiseProfile]:
         """Returns a map of coords to noise profile of qubit as a dict."""
         return {coord: q.noise for coord, q in self._qubits.items()}
+
+    @property
+    def couplers(self) -> List[Coupler]:
+        """Return all couplers on the chip as a flat list."""
+        return list(self._couplers.values())
+
+    @property
+    def coupler_map(self) -> Dict[CouplerKey, NoiseProfile]:
+        """Returns a map of endpoint pairs to the coupler's noise profile as a dict."""
+        return {ends: c.noise for ends, c in self._couplers.items()}
+
+    def coupler(self, a: Coord, b: Coord) -> Coupler:
+        """Return the coupler joining `a` and `b`, raising KeyError if they are unlinked."""
+        try:
+            return self._couplers[coupler_key(a, b)]
+        except KeyError:
+            raise KeyError(
+                f"No coupler between {a} and {b}. On the '{self.lattice.name}' lattice "
+                f"a coupler joins sites one of {self.lattice.neighbor_offsets} apart."
+            ) from None
+
+    def find_coupler(self, a: Coord, b: Coord) -> Optional[Coupler]:
+        """`coupler` without the raise - for hot paths that decide what to do on a miss."""
+        return self._couplers.get(coupler_key(a, b))
+
+    @property
+    def has_independent_couplers(self) -> bool:
+        """
+        Whether any coupler carries information its two qubits do not.
+
+        False while every coupler still equals the endpoint combination
+        `derive_coupler_noise` produced: in that state the coupler rates are a function of
+        the qubit rates, so anything reading them - a heatmap especially - would present
+        the qubit data back as if it were a second measurement.
+
+        Computed rather than tracked, because `set_coupler_noise_map` and direct
+        `coupler.noise.p` writes both bypass any bookkeeping a setter could do.
+        """
+        combine = _COUPLER_DERIVATIONS[
+            self.tag.metadata.get("coupler_model", {}).get("mode", "mean")
+        ]
+        # isclose, not ==, so a chip whose rates round-tripped through JSON is not
+        # misreported as independent over a final-digit difference.
+        return any(
+            not isclose(c.noise.p, combine([self.loc(e).noise.p for e in c.ends]))
+            for c in self.couplers
+        )
 
     @property
     def tile_map(self) -> Dict[Coord, LogicalTile]:
@@ -95,8 +164,10 @@ class Chip(Grid):
             "grid_size": (self.length, self.height),
             "lattice": self.lattice.name,
             "n_qubits": len(self.qubits),
+            "n_couplers": len(self.couplers),
             "n_tiles": len(self.tiles),
             "noise_model": self.tag.metadata.get("noise_model"),
+            "independent_couplers": self.has_independent_couplers,
         }
 
     # ------------------------------------------------------------------
@@ -109,11 +180,46 @@ class Chip(Grid):
     def _set_noise_metadata(self, name, **kwargs):
         self.tag.metadata["noise_model"] = {"name": name, **kwargs}
 
+    def _finalize_noise_model(self, name, **kwargs) -> None:
+        """
+        Close out a whole-landscape noise assignment: record it, then re-derive couplers.
+
+        Every generator ends here, so a coupler rate is never left stale behind the qubit
+        rates it was derived from. `set_noise_map` deliberately does *not* call this - it
+        is a targeted edit, and re-deriving would silently discard manual coupler
+        overrides. Re-derive those explicitly with `derive_coupler_noise()`.
+        """
+        self._set_noise_metadata(name, **kwargs)
+        self.derive_coupler_noise()
+
     def set_noise_map(self, noise_map: Dict[Coord, NoiseProfile] | Dict[Coord, float]):
         for c, n in noise_map.items():
             self.loc(c).noise = (
                 NoiseProfile(n.p) if isinstance(n, NoiseProfile) else NoiseProfile(n)
             )
+
+    def set_coupler_noise_map(
+        self, coupler_map: Dict[CouplerKey, NoiseProfile] | Dict[CouplerKey, float]
+    ):
+        """Assign coupler rates directly, overriding whatever they were derived from."""
+        for ends, n in coupler_map.items():
+            self.coupler(*ends).noise = (
+                NoiseProfile(n.p) if isinstance(n, NoiseProfile) else NoiseProfile(n)
+            )
+
+    def derive_coupler_noise(self, mode: Literal["mean", "max", "min"] = "mean") -> None:
+        """
+        Set every coupler's rate as a function of the two qubits it joins.
+
+        The default a chip starts from: absent measured per-coupler data, the endpoints
+        are the best available estimate, and `mean` reproduces exactly what the injector
+        computed before couplers existed. Call again after editing qubit noise by hand, or
+        override individual couplers with `set_coupler_noise_map`.
+        """
+        combine = _COUPLER_DERIVATIONS[mode]
+        self.tag.metadata["coupler_model"] = {"name": "derived", "mode": mode}
+        for c in self.couplers:
+            c.noise.p = combine([self.loc(e).noise.p for e in c.ends])
 
     def generate_random_noise(
         self, range: Tuple[float, float] = (0.01, 0.05), seed: int | None = None
@@ -131,11 +237,11 @@ class Chip(Grid):
             rng_seed = self._generate_rng_seed()
         rng = default_rng(seed=rng_seed)
 
-        self._set_noise_metadata("uniform random", range=range, seed=rng_seed)
-
         dist = uniform(loc=range[0], scale=range[1])
         for q in self.qubits:
             q.noise.p = round(dist.rvs(1, random_state=rng)[0], 5)
+
+        self._finalize_noise_model("uniform random", range=range, seed=rng_seed)
 
     def generate_gaussian_noise(
         self, mean, deviation, seed: int | None = None
@@ -153,10 +259,6 @@ class Chip(Grid):
             rng_seed = self._generate_rng_seed()
         rng = default_rng(seed=rng_seed)
 
-        self._set_noise_metadata(
-            "gaussian", mean=mean, deviation=deviation, seed=rng_seed
-        )
-
         dist = truncnorm(
             (0.0000000001 - mean) / deviation,
             (1 - mean) / deviation,
@@ -165,6 +267,10 @@ class Chip(Grid):
         )
         for q in self.qubits:
             q.noise.p = round(dist.rvs(1, random_state=rng)[0], 5)
+
+        self._finalize_noise_model(
+            "gaussian", mean=mean, deviation=deviation, seed=rng_seed
+        )
 
     # TODO - this works and serves it's purpose just fine for now but needs a revist and cleanup down the line
     def generate_derived_contour_noise(
@@ -229,8 +335,8 @@ class Chip(Grid):
             adjust_map_dimensions(SquarePackingExp(buffer_chip, SCTile(slope))._average_per_for_candidate_placements(), (self.length, self.height)),
             deviation)
 
-        self._set_noise_metadata("derived contour", mean = mean, deviation = deviation, slope = slope, seed = rng_seed)
         self.set_noise_map({c:NoiseProfile(p) for c,p in buffed_map.items()})
+        self._finalize_noise_model("derived contour", mean = mean, deviation = deviation, slope = slope, seed = rng_seed)
 
 
     def generate_uniform_noise(self, p):
@@ -239,10 +345,10 @@ class Chip(Grid):
         of the `p` provided.
         """
 
-        self._set_noise_metadata("uniform homogeneous", p=p)
-
         for q in self.qubits:
             q.noise.p = p
+
+        self._finalize_noise_model("uniform homogeneous", p=p)
 
     # ------------------------------------------------------------------
     # Tile operations
@@ -424,21 +530,31 @@ class Chip(Grid):
         *,
         extra_styles: Optional[Mapping[str, VisualizationStyle]] = None,
         interactive: bool = False,
+        couplers: Union[bool, str] = "auto",
     ) -> None:
         """
         Display a visualization of the chip's qubit layout.
 
-        With no arguments, shows an interactive figure with a dropdown to switch
-        between the standard views (status / CSS type / noise heatmap), extended
-        by any `extra_styles` (name -> style). Passing `style` renders that
-        single style statically instead.
+        Renders a single static view by default. With `interactive=True`, shows a figure
+        with a dropdown to switch between the standard views (status / CSS type / noise
+        heatmap, plus couplers where they apply), extended by any `extra_styles`
+        (name -> style). Passing `style` renders that one style statically instead.
+
+        `couplers` controls the edge layer: "auto" (default) draws it only when the
+        couplers carry rates of their own rather than values derived from their qubits;
+        True or False force it on or off.
         """
+        if extra_styles and (style is not None or not interactive):
+            warn(
+                "`extra_styles` populates the view dropdown and is only used when "
+                "`interactive=True` with no explicit `style`; ignoring it here.",
+                stacklevel=2,
+            )
+
         if style is not None:
             visualize(self, style=style, show=True)
-            return
         elif not interactive:
-            visualize(self, show=True)
-            return
+            visualize(self, style=with_couplers(default_style, self, couplers), show=True)
         else:
             styles = default_interactive_styles(self)
             styles.update(extra_styles or {})
@@ -457,6 +573,7 @@ class Chip(Grid):
         new_chip = Chip(
             *self.unit_dims,
             noise_map=self.noise_map,
+            coupler_map=self.coupler_map,
             tag=self.tag,
             lattice=self.lattice,
         )
