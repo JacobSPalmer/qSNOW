@@ -25,6 +25,19 @@ ColorLike = Union[str, float]
 _COLORBAR_PX = 100
 _COLORBAR_TITLE_PX = 40
 
+# Plot-area sizing. One scale covers both axes (see `_compute_geometry`), so the cap and
+# floor bound the *longer* side and the shorter one follows from the chip's aspect ratio.
+_PX_PER_COORD = 60
+_MIN_FIG_PX = 600
+_MAX_FIG_PX = 900
+
+# Half a cell of breathing room before the first coordinate and after the last.
+# `_compute_geometry` sizes the plot area from these and `_apply_frame` installs them as
+# the axis ranges; they must not drift, or plotly's scaleanchor silently distorts the
+# range to reconcile the two.
+_RANGE_LO = -0.75
+_RANGE_HI = -0.25
+
 _SHAPE_TYPES = {
     "s": "rect",
     "o": "circle",
@@ -63,7 +76,7 @@ class ColorbarSpec:
 
 @dataclass
 class CouplerStyle:
-    """How one coupler is drawn: a line between the two qubits it joins."""
+    """How one coupler is drawn, represented as a line between the two qubits it joins."""
 
     color: ColorLike = "lightgray"
     width: float = 2.0
@@ -369,7 +382,7 @@ _DEVICE_PRESETS: Dict[str, Dict[str, Any]] = {
     # The device site-map look: circular qubits, perceptually uniform ramps, log rates.
     "device": dict(
         marker="o",
-        size=0.62,
+        size=0.7,
         edgecolor="#e5ecf6",
         linewidths=1.5,
         qubit_colorscale="Viridis_r",
@@ -383,7 +396,7 @@ _DEVICE_PRESETS: Dict[str, Dict[str, Any]] = {
     ),
 }
 
-
+# TODO - allow for custom device stylings (i.e., manually override each individual attr above via a helper function that can be passed into preset such that preset is ultimately a dict)
 def device_heatmap_style(
     chip: Chip,
     *,
@@ -676,6 +689,25 @@ class _LayoutGeometry:
     colorbar_len: float
 
 
+def _axis_ranges(chip: Chip) -> Tuple[List[float], List[float]]:
+    """
+    The x and y ranges the frame installs - the single source of the figure's data aspect.
+
+    The y range runs high-to-low so row 0 renders at the top, matching how a chip's
+    coordinates are read.
+    """
+    return (
+        [_RANGE_LO, chip.length + _RANGE_HI],
+        [chip.height + _RANGE_HI, _RANGE_LO],
+    )
+
+
+def _axis_spans(chip: Chip) -> Tuple[float, float]:
+    """Coordinate width and height of `_axis_ranges`, i.e. the aspect the plot must match."""
+    (x0, x1), (y1, y0) = _axis_ranges(chip)
+    return (x1 - x0, y1 - y0)
+
+
 def _compute_geometry(
     chip: Chip, n_colorbars: int = 0, *, extra_top_margin: int = 0
 ) -> _LayoutGeometry:
@@ -687,8 +719,17 @@ def _compute_geometry(
     margin_l, margin_r, margin_b = base_margin, base_margin, base_margin
     margin_t = base_margin + 20 + extra_top_margin
 
-    plot_px_width = min(900, max(600, chip.length * 60)) - 2 * base_margin
-    plot_px_height = min(900, max(600, chip.height * 60)) - 2 * base_margin
+    # One px-per-coordinate scale for both axes, sized off the longer side, so the plot
+    # area's aspect matches the data's and plotly's scaleanchor has nothing to reconcile.
+    # Clamping each axis independently (as this used to) collapsed the frame to a square
+    # whenever both sides saturated the same bound - which on a checkerboard chip, whose
+    # coordinate span is `pitch` times its unit extent, was essentially always.
+    span_x, span_y = _axis_spans(chip)
+    longest = max(span_x, span_y)
+    fig_px = min(_MAX_FIG_PX, max(_MIN_FIG_PX, longest * _PX_PER_COORD))
+    scale = (fig_px - 2 * base_margin) / longest
+    plot_px_width = round(span_x * scale)
+    plot_px_height = round(span_y * scale)
     base_width = plot_px_width + margin_l + margin_r
     fig_height = plot_px_height + margin_t + margin_b
     colorbar_px = _COLORBAR_PX * n_colorbars + _COLORBAR_TITLE_PX * max(0, n_colorbars - 1)
@@ -971,12 +1012,13 @@ def _build_style_layer(
 
 def _apply_frame(fig: Figure, chip: Chip, geometry: _LayoutGeometry) -> None:
     ## Axis and Layout Configuration ##
+    x_range, y_range = _axis_ranges(chip)
     fig.update_xaxes(
         side="top",
         dtick=1,
         showgrid=True,
         zeroline=True,
-        range=[-0.75, chip.length - 0.25],
+        range=x_range,
         domain=[0, geometry.domain_frac],
         showline=True,
         linecolor="black",
@@ -987,7 +1029,7 @@ def _apply_frame(fig: Figure, chip: Chip, geometry: _LayoutGeometry) -> None:
         dtick=1,
         showgrid=True,
         zeroline=True,
-        range=[chip.height - 0.25, -0.75],
+        range=y_range,
         scaleanchor="x",
         scaleratio=1,
         showline=True,

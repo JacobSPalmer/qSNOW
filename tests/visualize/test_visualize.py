@@ -87,6 +87,19 @@ class TestVisualizeFigure:
         assert full.layout.xaxis.range == requested_x
         assert full.layout.yaxis.range == requested_y
 
+    def test_non_square_chip_keeps_its_aspect_ratio(self, wide_chip):
+        # regression: plot pixels were clamped per-axis, so a checkerboard chip -
+        # whose coordinate span is `pitch` times its unit extent - saturated the
+        # 900px cap on *both* axes and rendered square. Plotly then padded the y
+        # range out to fill the surplus (19.75 -> 21.75 on a 12x10 chip).
+        fig = visualize(wide_chip)
+        assert fig.layout.width > fig.layout.height
+        full = fig.full_figure_for_development(warn=False)
+        # not exact, unlike the square case above: plotly quantizes the plot area to
+        # whole pixels, which leaves a few thousandths of a coordinate unit behind.
+        assert full.layout.xaxis.range == pytest.approx(fig.layout.xaxis.range, abs=0.01)
+        assert full.layout.yaxis.range == pytest.approx(fig.layout.yaxis.range, abs=0.01)
+
     def test_logical_color_gradient_overrides_default_edgecolor(
         self, lg_chip, logical_tile
     ):

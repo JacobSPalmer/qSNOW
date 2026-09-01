@@ -16,6 +16,12 @@ def lg_chip() -> Chip:
 
 
 @pytest.fixture
+def wide_chip() -> Chip:
+    """A non-square checkerboard chip: 24x20 coordinates, so width != height."""
+    return Chip(12, 10)
+
+
+@pytest.fixture
 def square_chip() -> Chip:
     """A dense integer lattice: 5x5 coordinates, a qubit at every one of them."""
     return Chip(5, 5, lattice=SQUARE)
