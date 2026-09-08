@@ -74,7 +74,7 @@ def main():
                                      fromfile_prefix_chars='@')
     
     parser.add_argument("--name", type=str, required=False, default=None, help="Name of the experiment. This is appended to the beginning of the saved flake filenames.")
-    parser.add_argument("--dimensions", nargs=2, type=int, required=True, help="(Length x Height) of the chip in unit cells.")
+    parser.add_argument("--dimensions", nargs=2, type=int, required=False, default=(10,10), help="(Length x Height) of the chip in unit cells.")
     parser.add_argument("--model", choices=['gaussian', 'derived-contour', 'uniform'], default="The noise distribution of the chip.")
     parser.add_argument("--mean", type=float, required=True, help="Mean noise to use for noise model. If uniform distribution is selected, then the mean ")
     parser.add_argument("--deviation", type=float, required=False, default=0.0, help="Deviation of PER noise distribution to use for noise model.")
@@ -87,6 +87,7 @@ def main():
     parser.add_argument("--shot_ceiling", type=int_or_none, required = False, default=None, help="If minimum errors is not None, then providing shot ceiling here determines the upper bounds of shots in order to sample the minimum errors. This defaults to 20x the provided ideal shot count.")
     parser.add_argument("--logger", type=bool, required=False, default=True,  help="Show additional logging information along progress info.")
     parser.add_argument("--save_config", type=bool, required=False, default=False, help="Exports the command arguements to a reusable <name>_config.txt file that can be used to identically run the experiment.")
+    parser.add_argument("--chip", type=str, required=False, default=None, help="Path to a flake file containing a chip. If specified, the provided dimensions and noise parameters will be ignored")
 
     args = parser.parse_args()
 
@@ -96,7 +97,14 @@ def main():
     if args.logger:
         logging.basicConfig(level=logging.INFO)
 
-    chip = run_and_serialize_spp_experiment(chip = Chip(args.dimensions[0], args.dimensions[1]), 
+    if args.chip:
+        chip = serialize.import_flake(args.chip)
+        if not chip:
+             parser.error(f"path at {args.chip} provided for --chip yielded no valid chip flake file.") 
+    else:
+        chip = Chip(args.dimensions[0], args.dimensions[1])
+
+    chip = run_and_serialize_spp_experiment(chip = chip, 
                                     mean = args.mean,
                                     deviation = args.deviation,
                                     distances = args.distances,
