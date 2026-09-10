@@ -126,6 +126,14 @@ class TestNoiseGeneration:
         assert all(low <= q.noise.p for q in chip.qubits)
         assert any(q.noise.p != 0.0 for q in chip.qubits)
 
+    def test_random_noise_upper_bound_is_the_range_end(self, lg_chip: Chip):
+        # regression: `range[1]` was passed as scipy's `scale` (the width), so
+        # (low, high) actually sampled [low, low + high]
+        low, high = 0.01, 0.02
+        lg_chip.generate_random_noise((low, high), seed=1)
+        assert all(low <= q.noise.p <= high for q in lg_chip.qubits)
+        assert max(q.noise.p for q in lg_chip.qubits) > (low + high) / 2
+
     def test_random_noise_values_vary_across_qubits(self, chip: Chip):
         chip.generate_random_noise((0.01, 0.05), seed=1)
         assert len({q.noise.p for q in chip.qubits}) > 1
@@ -231,6 +239,17 @@ class TestChipTilePlacement:
         assert all(q.is_active() for q in t2_region.values())
         assert tile2 == lg_chip.pop_tile(1)
         assert all(not q.is_active() for q in t2_region.values())
+
+
+    def test_clear_tiles_removes_every_tile(self, lg_chip: Chip, logical_tile: LogicalTile):
+        # regression: popping by index while enumerating skipped every other tile
+        for loc in [(0, 0), (8, 0), (12, 8)]:
+            lg_chip.add_tile(logical_tile.copy(), loc)
+
+        lg_chip.clear_tiles()
+
+        assert lg_chip.tiles == []
+        assert all(not q.is_active() for q in lg_chip.qubits)
 
 
 class TestChipSummary:
@@ -361,6 +380,20 @@ class TestIndependentCouplerDetection:
         chip.set_coupler_noise_map({((0, 0), (1, 1)): 0.2})
 
         assert chip.has_independent_couplers is True
+
+    def test_regenerating_noise_keeps_the_derivation_mode(self, chip: Chip):
+        # regression: generators re-derived with the default `mean`, silently
+        # discarding a `max`/`min` choice recorded on the chip
+        chip.generate_uniform_noise(0.01)
+        chip.derive_coupler_noise("max")
+
+        chip.generate_gaussian_noise(0.01, 0.002, seed=1)
+
+        assert chip.tag.metadata["coupler_model"]["mode"] == "max"
+        assert all(
+            c.noise.p == max(chip.loc(e).noise.p for e in c.ends) for c in chip.couplers
+        )
+        assert chip.has_independent_couplers is False
 
     def test_re_deriving_clears_independence(self, chip: Chip):
         chip.generate_uniform_noise(0.01)
