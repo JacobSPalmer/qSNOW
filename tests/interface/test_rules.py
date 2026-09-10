@@ -48,9 +48,26 @@ class TestTriggers:
 
 
 class TestRuleset:
-    # NOTE - Ruleset(injection_rules=[]) is passed explicitly in every test here rather than
-    # relying on the constructor default, since `Ruleset.__init__`'s `injection_rules: List = []`
-    # default argument is mutable and shared across instances that omit it.
+    def test_default_rules_are_not_shared_between_rulesets(self):
+        a, b = Ruleset(), Ruleset()
+        a.add_rule(InjectionRule("R", "all_qubits"))
+
+        assert b.rules == []
+
+    def test_constructor_copies_the_callers_list(self):
+        rules = [InjectionRule("R", "all_qubits")]
+        ruleset = Ruleset(rules)
+        ruleset.add_rule(InjectionRule("H", "any"))
+
+        assert len(rules) == 1
+
+    def test_add_rule_at_priority_zero_inserts_first(self):
+        first, second = InjectionRule("R", "all_qubits"), InjectionRule("H", "any")
+        ruleset = Ruleset([first])
+
+        ruleset.add_rule(second, priority_index=0)
+
+        assert ruleset.rules == [second, first]
 
     def test_add_and_list_rules(self):
         ruleset = Ruleset(injection_rules=[])
@@ -72,13 +89,11 @@ class TestRuleset:
         assert popped is rule
         assert ruleset.rules == []
 
-    def test_pop_rule_invalid_index_raises(self):
-        # NOTE: index 0 is not usable here - `_validate_rule_index` does
-        # `index and index >= len(self._rules)`, and `0 and ...` short-circuits
-        # to falsy regardless of list length, so index=0 always "validates" as in-bounds.
+    @pytest.mark.parametrize("index", [0, 1])
+    def test_pop_rule_invalid_index_raises(self, index):
         ruleset = Ruleset(injection_rules=[])
         with pytest.raises(ValueError):
-            ruleset.pop_rule(1)
+            ruleset.pop_rule(index)
 
 
 def _pair(p_a=0.01, p_b=0.03):

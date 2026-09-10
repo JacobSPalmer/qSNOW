@@ -392,14 +392,12 @@ def _format_stat_rows(stats: Mapping[str, object]) -> str:
 # TODO - revist the whole look of the exportable. fine for now and unimportant overall but it looks clunky and lame
 # TODO - cleanup the noise and chip stats
 def _noise_stats(summary: Dict[str, object]) -> Dict[str, str]:
-    noise = summary.get("noise_model", {})
-    stats = {}
-    if isinstance(noise, dict):
-        if noise.get("name"):
-            stats["type"] = noise.pop("name")
-        stats |= {k: v for k, v in noise.items() if k not in ("seed")}
-
-        stats.pop("seed", None)
+    """Noise-model facts for the stats strip, built without mutating the summary."""
+    noise = summary.get("noise_model")
+    if not isinstance(noise, dict):
+        return {}
+    stats = {"type": noise["name"]} if noise.get("name") else {}
+    stats |= {k: v for k, v in noise.items() if k not in ("name", "seed")}
     return stats
 
 

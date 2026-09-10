@@ -128,6 +128,16 @@ class Chip(Grid):
         """`coupler` without the raise - for hot paths that decide what to do on a miss."""
         return self._couplers.get(coupler_key(a, b))
 
+    def _coupler_derivation_mode(self) -> Literal["mean", "max", "min"]:
+        """
+        The mode the couplers were last derived with, `mean` before any derivation.
+
+        The single reader of `coupler_model.mode`, shared by `has_independent_couplers`
+        and `_finalize_noise_model` so that detecting "still derived" and re-deriving
+        can never disagree about which combination the chip is using.
+        """
+        return self.tag.metadata.get("coupler_model", {}).get("mode", "mean")
+
     @property
     def has_independent_couplers(self) -> bool:
         """
@@ -141,9 +151,7 @@ class Chip(Grid):
         Computed rather than tracked, because `set_coupler_noise_map` and direct
         `coupler.noise.p` writes both bypass any bookkeeping a setter could do.
         """
-        combine = _COUPLER_DERIVATIONS[
-            self.tag.metadata.get("coupler_model", {}).get("mode", "mean")
-        ]
+        combine = _COUPLER_DERIVATIONS[self._coupler_derivation_mode()]
         # isclose, not ==, so a chip whose rates round-tripped through JSON is not
         # misreported as independent over a final-digit difference.
         return any(
@@ -166,7 +174,8 @@ class Chip(Grid):
             "n_qubits": len(self.qubits),
             "n_couplers": len(self.couplers),
             "n_tiles": len(self.tiles),
-            "noise_model": self.tag.metadata.get("noise_model"),
+            # a copy, so display surfaces can reshape it without editing the chip
+            "noise_model": dict(self.tag.metadata.get("noise_model") or {}) or None,
             "independent_couplers": self.has_independent_couplers,
         }
 
@@ -185,12 +194,14 @@ class Chip(Grid):
         Close out a whole-landscape noise assignment: record it, then re-derive couplers.
 
         Every generator ends here, so a coupler rate is never left stale behind the qubit
-        rates it was derived from. `set_noise_map` deliberately does *not* call this - it
-        is a targeted edit, and re-deriving would silently discard manual coupler
-        overrides. Re-derive those explicitly with `derive_coupler_noise()`.
+        rates it was derived from. Couplers are re-derived with the mode the chip already
+        uses, so a chip derived with `max` stays a `max` chip across regenerations.
+        `set_noise_map` deliberately does *not* call this - it is a targeted edit, and
+        re-deriving would silently discard manual coupler overrides. Re-derive those
+        explicitly with `derive_coupler_noise()`.
         """
         self._set_noise_metadata(name, **kwargs)
-        self.derive_coupler_noise()
+        self.derive_coupler_noise(self._coupler_derivation_mode())
 
     def set_noise_map(self, noise_map: Dict[Coord, NoiseProfile] | Dict[Coord, float]):
         for c, n in noise_map.items():
@@ -237,7 +248,7 @@ class Chip(Grid):
             rng_seed = self._generate_rng_seed()
         rng = default_rng(seed=rng_seed)
 
-        dist = uniform(loc=range[0], scale=range[1])
+        dist = uniform(loc=range[0], scale=range[1] - range[0])
         for q in self.qubits:
             q.noise.p = round(dist.rvs(1, random_state=rng)[0], 5)
 
@@ -395,8 +406,8 @@ class Chip(Grid):
         """
         Remove and clean all tiles currently on the chip.
         """
-        for i, t in enumerate(self.tiles):
-            self.pop_tile(i)
+        while self.tiles:
+            self.pop_tile(len(self.tiles) - 1)
 
     def pop_tile(self, index: int) -> LogicalTile:
         """

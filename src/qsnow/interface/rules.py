@@ -389,8 +389,10 @@ _DEFAULT_TRIGGERS: List[Trigger] = [
 
 
 class Ruleset:
-    def __init__(self, injection_rules: List[InjectionRule] = []):
-        self._rules: List[InjectionRule] = injection_rules
+    def __init__(self, injection_rules: Optional[List[InjectionRule]] = None):
+        # Copied, so neither a constructor default nor a caller's list is ever aliased
+        # between rulesets: adding a rule to one tile must not add it to every other.
+        self._rules: List[InjectionRule] = list(injection_rules) if injection_rules else []
         self._filters: Dict[str, Filter] = {f.name: f for f in _DEFAULT_FILTERS}
         self._triggers: Dict[str, Trigger] = {t.name: t for t in _DEFAULT_TRIGGERS}
         self._sources: Dict[str, Source] = {s.name: s for s in _DEFAULT_SOURCES}
@@ -477,7 +479,7 @@ class Ruleset:
         if not (self._validate_rule_index(priority_index)):
             raise ValueError(f"""Priority index is larger than the # of rules. Given {priority_index} but only {len(self._rules)} # of rules.
                              \n To add rule to the end, priority index should be set to `None` (default for parameter).""")
-        if priority_index:
+        if priority_index is not None:
             self._rules.insert(priority_index, injection_rule)
         else:
             self._rules.append(injection_rule)
@@ -490,7 +492,8 @@ class Ruleset:
         return self._rules.pop(priority_index)
 
     def _validate_rule_index(self, index: Optional[int]) -> bool:
-        return False if (index and index >= len(self._rules)) else True
+        # `is None`, not truthiness: index 0 is the highest priority, not "no index".
+        return index is None or index < len(self._rules)
 
     # ------------------------------------------------------------------
     # Misc.
