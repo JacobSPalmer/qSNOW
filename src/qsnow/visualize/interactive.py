@@ -23,7 +23,7 @@ from qsnow.visualize.visualize import (
 if TYPE_CHECKING:
     from plotly.graph_objs._figure import Figure
 
-    from qsnow.experiments import ExperimentResults, SquarePackingExp
+    from qsnow.experiments import ResultsLike, SquarePackingExp
     from qsnow.interface.chip import Chip
 
 __all__ = [
@@ -482,7 +482,7 @@ def export_html(
 
 def export_square_packing(
     exp: SquarePackingExp,
-    results: ExperimentResults,
+    results: ResultsLike,
     path: Optional[Union[str, Path]] = None,
     *,
     styles: Optional[Mapping[str, VisualizationStyle]] = None,
@@ -494,7 +494,8 @@ def export_square_packing(
     """
     Write a standalone interactive HTML page for `SquarePackingExp` results and return its path.
 
-    Either the experiment should have results stored in `Experiments.result` or `results` should be provided as a keyword argument.
+    `results` is either a persisted `ExperimentResults` record or the dict
+    `SquarePackingExp.run()` returns (`exp.results`).
     """
     # deferred import: qsnow.helpers.serialize imports the experiment stack,
     # which imports this package (same pattern as Experiment.save)
@@ -514,6 +515,7 @@ def export_square_packing(
         path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
+    results = exp._results_record(results)
     if styles is None:
         styles = exp._interactive_styles(results)
 
@@ -535,7 +537,7 @@ def export_square_packing(
     tile_stats_html = _format_stat_box("Tile", _format_stat_rows(tile_stats))
 
     exp_stats: Dict = _spp_stats(summary)
-    exp_stats |= {"Shots": str(results.run_config["shots"])}
+    exp_stats |= {"Shots": str(results.run_config.get("shots", "N/A"))}
     exp_stats_html = _format_stat_box("Experiment", _format_stat_rows(exp_stats))
 
     if summary["chip"].get("noise_model", False):

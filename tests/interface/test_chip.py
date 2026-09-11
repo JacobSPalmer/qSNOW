@@ -241,6 +241,19 @@ class TestChipTilePlacement:
         assert all(not q.is_active() for q in t2_region.values())
 
 
+    def test_remove_tile_takes_that_tile_off_by_identity(
+        self, lg_chip: Chip, logical_tile: LogicalTile
+    ):
+        first, second = logical_tile.copy(), logical_tile.copy()
+        lg_chip.add_tile(first, (0, 0))
+        lg_chip.add_tile(second, (10, 10))
+
+        assert lg_chip.remove_tile(second) is second
+        assert lg_chip.tiles == [first]
+        assert not second.initialized()
+        with pytest.raises(ValueError):
+            lg_chip.remove_tile(second)
+
     def test_clear_tiles_removes_every_tile(self, lg_chip: Chip, logical_tile: LogicalTile):
         # regression: popping by index while enumerating skipped every other tile
         for loc in [(0, 0), (8, 0), (12, 8)]:
