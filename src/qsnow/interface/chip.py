@@ -3,7 +3,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from math import isclose
 from statistics import mean
-from typing import Dict, List, Literal, Optional, Tuple, Any, Union
+from dataclasses import dataclass
+from copy import deepcopy
+from typing import Dict, List, Optional, Tuple, Any, Union
 from warnings import warn
 
 from numpy.random import SeedSequence, default_rng
@@ -20,13 +22,39 @@ from qsnow.visualize import (
 
 from .grid import Grid
 from .lattice import CHECKERBOARD, Lattice
-from .models import Coord, Coupler, CouplerKey, NoiseProfile, Qubit, Tag, coupler_key
+from .models import (
+    ChipSpec,
+    Coord,
+    Coupler,
+    CouplerKey,
+    CouplerMode,
+    NoiseModelSpec,
+    NoiseProfile,
+    Qubit,
+    Tag,
+    coupler_key,
+)
 from .tile import LogicalTile
 
 # How a coupler's rate is combined from its two endpoints. Shared by
 # `derive_coupler_noise` and `has_independent_couplers` so the two can never disagree
 # about what "still derived" means.
 _COUPLER_DERIVATIONS = {"mean": mean, "max": max, "min": min}
+
+
+@dataclass(frozen=True)
+class PlacementRejection:
+    """
+    Why a tile cannot go at a location, and how the caller should treat that.
+
+    `fatal` marks a malformed request (an off-lattice origin, a tile whose qubits
+    would land where the chip has no sites) that a caller should never silently
+    swallow; the alternative is an occupied or overflowing site, which is an ordinary
+    outcome of asking and is reported rather than raised.
+    """
+
+    reason: str
+    fatal: bool
 
 
 class Chip(Grid):
@@ -61,9 +89,11 @@ class Chip(Grid):
         coupler_map: Optional[Dict[CouplerKey, NoiseProfile]] = None,
         tiles: Optional[Dict[Coord, LogicalTile]] = None,
         tag: Optional[Tag] = None,
+        spec: Optional[ChipSpec] = None,
         lattice: Lattice = CHECKERBOARD,
     ):
         super().__init__(*lattice.span(length, height), tag=tag, lattice=lattice)
+        self.spec: ChipSpec = spec if spec is not None else ChipSpec()
         self._couplers: Dict[CouplerKey, Coupler] = {}
         self._fill_lattice()
         self._fill_couplers()
@@ -73,7 +103,7 @@ class Chip(Grid):
             self.set_noise_map(noise_map)
             # A whole-landscape assignment, so couplers follow their endpoints unless the
             # caller supplies their own below.
-            self.derive_coupler_noise()
+            self.derive_coupler_noise(self.spec.coupler_mode)
         if coupler_map:
             self.set_coupler_noise_map(coupler_map)
         if tiles:
@@ -128,16 +158,6 @@ class Chip(Grid):
         """`coupler` without the raise - for hot paths that decide what to do on a miss."""
         return self._couplers.get(coupler_key(a, b))
 
-    def _coupler_derivation_mode(self) -> Literal["mean", "max", "min"]:
-        """
-        The mode the couplers were last derived with, `mean` before any derivation.
-
-        The single reader of `coupler_model.mode`, shared by `has_independent_couplers`
-        and `_finalize_noise_model` so that detecting "still derived" and re-deriving
-        can never disagree about which combination the chip is using.
-        """
-        return self.tag.metadata.get("coupler_model", {}).get("mode", "mean")
-
     @property
     def has_independent_couplers(self) -> bool:
         """
@@ -151,7 +171,7 @@ class Chip(Grid):
         Computed rather than tracked, because `set_coupler_noise_map` and direct
         `coupler.noise.p` writes both bypass any bookkeeping a setter could do.
         """
-        combine = _COUPLER_DERIVATIONS[self._coupler_derivation_mode()]
+        combine = _COUPLER_DERIVATIONS[self.spec.coupler_mode]
         # isclose, not ==, so a chip whose rates round-tripped through JSON is not
         # misreported as independent over a final-digit difference.
         return any(
@@ -174,8 +194,11 @@ class Chip(Grid):
             "n_qubits": len(self.qubits),
             "n_couplers": len(self.couplers),
             "n_tiles": len(self.tiles),
-            # a copy, so display surfaces can reshape it without editing the chip
-            "noise_model": dict(self.tag.metadata.get("noise_model") or {}) or None,
+            # a fresh dict each call, so display surfaces can reshape it freely
+            "noise_model": (
+                self.spec.noise_model.as_dict() if self.spec.noise_model else None
+            ),
+            "coupler_mode": self.spec.coupler_mode,
             "independent_couplers": self.has_independent_couplers,
         }
 
@@ -185,11 +208,7 @@ class Chip(Grid):
     def _generate_rng_seed(self):
         return SeedSequence().entropy
 
-    # TODO - at some point this should just become a dataclass and can migrate flakes to always have this present
-    def _set_noise_metadata(self, name, **kwargs):
-        self.tag.metadata["noise_model"] = {"name": name, **kwargs}
-
-    def _finalize_noise_model(self, name, **kwargs) -> None:
+    def _finalize_noise_model(self, name: str, seed: Optional[int] = None, **params) -> None:
         """
         Close out a whole-landscape noise assignment: record it, then re-derive couplers.
 
@@ -200,8 +219,8 @@ class Chip(Grid):
         re-deriving would silently discard manual coupler overrides. Re-derive those
         explicitly with `derive_coupler_noise()`.
         """
-        self._set_noise_metadata(name, **kwargs)
-        self.derive_coupler_noise(self._coupler_derivation_mode())
+        self.spec.noise_model = NoiseModelSpec(name=name, seed=seed, params=params)
+        self.derive_coupler_noise(self.spec.coupler_mode)
 
     def set_noise_map(self, noise_map: Dict[Coord, NoiseProfile] | Dict[Coord, float]):
         for c, n in noise_map.items():
@@ -218,7 +237,7 @@ class Chip(Grid):
                 NoiseProfile(n.p) if isinstance(n, NoiseProfile) else NoiseProfile(n)
             )
 
-    def derive_coupler_noise(self, mode: Literal["mean", "max", "min"] = "mean") -> None:
+    def derive_coupler_noise(self, mode: CouplerMode = "mean") -> None:
         """
         Set every coupler's rate as a function of the two qubits it joins.
 
@@ -228,7 +247,7 @@ class Chip(Grid):
         override individual couplers with `set_coupler_noise_map`.
         """
         combine = _COUPLER_DERIVATIONS[mode]
-        self.tag.metadata["coupler_model"] = {"name": "derived", "mode": mode}
+        self.spec.coupler_mode = mode
         for c in self.couplers:
             c.noise.p = combine([self.loc(e).noise.p for e in c.ends])
 
@@ -435,64 +454,76 @@ class Chip(Grid):
         ]
 
     def is_valid_tile_placement(self, tile: LogicalTile, loc: Coord) -> bool:
-        footprint = self.footprint_for(loc, tile.length, tile.height)
+        """Whether `tile` could be placed at `loc` right now, with no side effects."""
+        return self.placement_rejection(tile, loc) is None
 
-        # 1. check that the loc is a valid site on this chip's lattice
-        if not (self._validate_lattice_origin(loc)):
-            return False
+    def placement_rejection(
+        self,
+        tile: LogicalTile,
+        loc: Coord,
+        *,
+        ignoring: Optional[Tuple[Coord, Coord]] = None,
+    ) -> Optional[PlacementRejection]:
+        """
+        The first reason `tile` cannot go at `loc`, or None if it can.
 
-        # 2. check the tile's own qubits all land on chip sites at this loc
-        if not (self._validate_tile_coords_on_lattice(tile, loc)):
-            return False
+        The single home of the placement constraints, in the order they are checked:
+        the origin is a lattice site; every tile qubit lands on a chip site; the
+        footprint plus its keep-out margin is unoccupied; the footprint is in bounds.
+        `is_valid_tile_placement`, `add_tile`, and `LogicalTile.shift_by` all decide
+        through here, so a new constraint is added once.
 
-        # 3. check if any this tile would overlap with any other tile
-        if not (self._validate_empty_region(footprint)):
-            return False
-
-        # 4. check that this tile is within the bounds of the chip itself
-        if not (self._validate_chip_bounds(footprint)):
-            return False
-
-        return True
-
-    def _validate_tile_placements_with_warnings(self, tile: LogicalTile, loc: Coord):
+        `ignoring` is a footprint whose qubits do not count as occupied - the region a
+        placed tile currently holds, so that shifting it is not rejected for
+        overlapping itself.
+        """
         footprint = self.footprint_for(loc, tile.length, tile.height)
         origin, bound = footprint
 
-        # 1. check that the loc is a valid site on this chip's lattice
-        if not (self._validate_lattice_origin(origin)):
-            raise ValueError(
+        if not self._validate_lattice_origin(origin):
+            return PlacementRejection(
                 f"Invalid tile placement for a '{self.lattice.name}' lattice: "
-                f"{self.lattice.site_rule}, given loc of ({origin[0]}, {origin[1]})"
+                f"{self.lattice.site_rule}, given loc of ({origin[0]}, {origin[1]})",
+                fatal=True,
             )
 
-        # 2. check the tile's own qubits land on chip sites once moved to `origin`.
         # Lattices nest (every checkerboard site is a square site, not the reverse), so
         # this is decided per-coordinate rather than by comparing the two lattices.
-        if not (self._validate_tile_coords_on_lattice(tile, origin)):
-            raise ValueError(
+        if not self._validate_tile_coords_on_lattice(tile, origin):
+            return PlacementRejection(
                 f"Tile on a '{tile.lattice.name}' lattice cannot be placed at {origin} on a "
                 f"'{self.lattice.name}' chip: some of its qubits would land off-lattice, "
-                f"where the chip has no qubit. Chip rule: {self.lattice.site_rule}."
+                f"where the chip has no qubit. Chip rule: {self.lattice.site_rule}.",
+                fatal=True,
             )
 
-        # 3. check if any this tile would overlap with any other tile
-        if not (self._validate_empty_region(footprint)):
-            warn(
-                f"Invalid tile placement. Qubit's within the ({origin} x {bound}) are currently active.",
-                stacklevel=2,
+        if not self._validate_empty_region(footprint, ignoring):
+            return PlacementRejection(
+                f"Invalid tile placement. Qubits within ({origin} x {bound}) are currently "
+                "active.",
+                fatal=False,
             )
-            return False
 
-        # 4. check that this tile is within the bounds of the chip itself
-        if not (self._validate_chip_bounds(footprint)):
-            warn(
-                f"Invalid tile placement. Placement at ({origin} x {bound}) overflows chip boundaries of ({self.origin} x {self.bound}).",
-                stacklevel=2,
+        if not self._validate_chip_bounds(footprint):
+            return PlacementRejection(
+                f"Invalid tile placement. Placement at ({origin} x {bound}) overflows chip "
+                f"boundaries of ({self.origin} x {self.bound}).",
+                fatal=False,
             )
-            return False
 
-        return True
+        return None
+
+    def _validate_tile_placements_with_warnings(
+        self, tile: LogicalTile, loc: Coord
+    ) -> bool:
+        """`placement_rejection` as `add_tile` reports it: raise if fatal, else warn."""
+        rejection = self.placement_rejection(tile, loc)
+        if rejection is None:
+            return True
+        if rejection.fatal:
+            raise ValueError(rejection.reason)
+        warn(rejection.reason, stacklevel=3)
+        return False
 
     def _validate_lattice_origin(self, origin: Coord) -> bool:
         return self.lattice.is_site(origin)
@@ -518,9 +549,16 @@ class Chip(Grid):
         margin = self.lattice.keepout_margin
         return origin, (bound[0] + margin, bound[1] + margin)
 
-    # borderline unnecessary but keeps styling of constraint checks
-    def _validate_empty_region(self, footprint: Tuple[Coord, Coord]) -> bool:
-        return self.is_empty_region(*self._keepout(footprint))
+    def _validate_empty_region(
+        self,
+        footprint: Tuple[Coord, Coord],
+        ignoring: Optional[Tuple[Coord, Coord]] = None,
+    ) -> bool:
+        """Whether the footprint's keep-out region is free, discounting `ignoring`."""
+        origin, bound = self._keepout(footprint)
+        if ignoring is None:
+            return self.is_empty_region(origin, bound)
+        return self.is_empty_region_subset(origin, bound, *ignoring)
 
     def _validate_chip_bounds(self, footprint: Tuple[Coord, Coord]) -> bool:
         origin, bound = footprint
@@ -581,11 +619,14 @@ class Chip(Grid):
 
         Optionally, the tiles placed on the chips can be deep copied as well.
         """
+        # deepcopy so the copy never shares mutable tag/spec state with the original:
+        # deriving couplers on a copy must not rewrite the original's recorded mode
         new_chip = Chip(
             *self.unit_dims,
             noise_map=self.noise_map,
             coupler_map=self.coupler_map,
-            tag=self.tag,
+            tag=deepcopy(self.tag),
+            spec=deepcopy(self.spec),
             lattice=self.lattice,
         )
         if copy_tiles:

@@ -4,7 +4,7 @@ import pytest
 
 from qsnow.interface.chip import Chip, LogicalTile
 from qsnow.interface.lattice import CHECKERBOARD, SQUARE
-from qsnow.interface.models import NoiseProfile, Status
+from qsnow.interface.models import NoiseModelSpec, NoiseProfile, Status
 
 
 class TestSquareLatticeChip:
@@ -252,6 +252,70 @@ class TestChipTilePlacement:
         assert all(not q.is_active() for q in lg_chip.qubits)
 
 
+class TestChipSpec:
+    def test_generators_record_a_typed_noise_model(self, chip: Chip):
+        chip.generate_gaussian_noise(mean=0.01, deviation=0.002, seed=7)
+
+        assert chip.spec.noise_model == NoiseModelSpec(
+            name="gaussian", seed=7, params={"mean": 0.01, "deviation": 0.002}
+        )
+        assert chip.summary()["noise_model"] == {
+            "name": "gaussian", "mean": 0.01, "deviation": 0.002, "seed": 7
+        }
+
+    def test_tool_state_stays_out_of_tag_metadata(self, chip: Chip):
+        chip.generate_gaussian_noise(mean=0.01, deviation=0.002, seed=7)
+        chip.derive_coupler_noise("max")
+
+        assert chip.tag.metadata == {}
+
+    def test_copy_does_not_share_tag_or_spec(self, chip: Chip):
+        # regression: copies shared the original's Tag, so deriving couplers on a
+        # copy rewrote the original's recorded mode
+        chip.generate_uniform_noise(0.01)
+        clone = chip.copy()
+
+        clone.derive_coupler_noise("max")
+        clone.tag.metadata["note"] = "only on the clone"
+
+        assert chip.spec.coupler_mode == "mean"
+        assert clone.spec.coupler_mode == "max"
+        assert "note" not in chip.tag.metadata
+        assert clone.spec.noise_model == chip.spec.noise_model
+
+
+class TestPlacementRejection:
+    def test_valid_placement_has_no_rejection(self, chip: Chip, logical_tile):
+        assert chip.placement_rejection(logical_tile, (0, 0)) is None
+
+    def test_off_lattice_origin_is_fatal(self, chip: Chip, logical_tile):
+        rejection = chip.placement_rejection(logical_tile, (1, 0))
+        assert rejection is not None and rejection.fatal
+
+    def test_occupied_site_is_not_fatal(self, chip: Chip, logical_tile):
+        chip.add_tile(logical_tile, (0, 0))
+        rejection = chip.placement_rejection(logical_tile.copy(), (0, 0))
+        assert rejection is not None and not rejection.fatal
+
+    def test_overflow_is_not_fatal(self, chip: Chip, logical_tile):
+        rejection = chip.placement_rejection(logical_tile, (10, 10))
+        assert rejection is not None and not rejection.fatal
+
+    def test_is_valid_agrees_with_rejection(self, chip: Chip, logical_tile):
+        chip.add_tile(logical_tile.copy(), (0, 0))
+        for loc in [(0, 0), (1, 0), (2, 2), (6, 0), (10, 10)]:
+            assert chip.is_valid_tile_placement(logical_tile, loc) == (
+                chip.placement_rejection(logical_tile, loc) is None
+            )
+
+    def test_ignoring_discounts_a_tiles_own_footprint(self, chip: Chip, logical_tile):
+        chip.add_tile(logical_tile, (0, 0))
+        own = (logical_tile.origin, logical_tile.bound)
+
+        assert chip.placement_rejection(logical_tile, (2, 2)) is not None
+        assert chip.placement_rejection(logical_tile, (2, 2), ignoring=own) is None
+
+
 class TestChipSummary:
     def test_summary_facts(self, chip: Chip):
         summary = chip.summary()
@@ -322,7 +386,7 @@ class TestCouplerNoise:
     def test_derive_records_the_model_in_metadata(self, chip: Chip):
         chip.derive_coupler_noise("max")
 
-        assert chip.tag.metadata["coupler_model"] == {"name": "derived", "mode": "max"}
+        assert chip.spec.coupler_mode == "max"
 
     def test_set_coupler_noise_map_accepts_floats_and_profiles(self, chip: Chip):
         chip.set_coupler_noise_map({((0, 0), (1, 1)): 0.2})
@@ -389,7 +453,7 @@ class TestIndependentCouplerDetection:
 
         chip.generate_gaussian_noise(0.01, 0.002, seed=1)
 
-        assert chip.tag.metadata["coupler_model"]["mode"] == "max"
+        assert chip.spec.coupler_mode == "max"
         assert all(
             c.noise.p == max(chip.loc(e).noise.p for e in c.ends) for c in chip.couplers
         )

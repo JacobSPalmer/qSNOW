@@ -4,6 +4,7 @@ import pytest
 
 matplotlib.use("Agg")  # never open a window from the test suite
 
+from qsnow.interface.models import NoiseModelSpec
 from qsnow.experiments.squarepacking.game import SquarePackingExp  # noqa: E402
 from qsnow.helpers import serialize  # noqa: E402
 from qsnow.interface.chip import Chip  # noqa: E402
@@ -82,7 +83,7 @@ def named_roots(tmp_path):
         try:
             for d in DISTANCES:
                 exp = SquarePackingExp(chip=Chip(10, 10), tile=SCTile(d))
-                exp.chip.tag.metadata["noise_model"] = {"name": model}
+                exp.chip.spec.noise_model = NoiseModelSpec(name=model)
                 exp.config["shots"] = 1_000
                 exp.results = {
                     loc: {"shots": 1_000, "errors": 2, "ler": 0.002}

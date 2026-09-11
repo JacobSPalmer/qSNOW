@@ -258,9 +258,12 @@ class LogicalTile(Grid):
         if new_circuit:
             self._circuit = new_circuit
             self._c2i = new_c2i if new_c2i is not None else self._extract_c2i_map()
-        # 2. If qubits changed, shift qubit references and update statuses
-        if new_qubits:
+        # 2. If qubits changed, swap the references and drop the spatial index built
+        # over the old ones; `select` would otherwise look up coordinates this tile no
+        # longer holds. `is not None` so an empty map (a reset tile) is a real update.
+        if new_qubits is not None:
             self._qubits = new_qubits
+            self._invalidate_index()
         # 3. Update the new origin
         if new_origin:
             self.origin = new_origin
@@ -352,11 +355,12 @@ class LogicalTile(Grid):
 
     def reset(self) -> None:
         """Resets the tile back to uninitialized state, removing it from any active chip and housekeeping qubit statuses."""
-        self._circuit = self._base_circuit.copy()
         self._scrub_qubits()
+        # A reset tile holds no chip qubits, so the next placement starts clean rather
+        # than transferring statuses from sites on a chip it no longer belongs to.
         # TODO - remove _c2i as a property and just use extract_c2i_map when necessary. It could technically save time to not have to remake the map everytime but
         #       it's hardly being used as is except just to keep track of updating it when necessary so lil bit of a headache for no purpose as is
-        self._c2i = self._extract_c2i_map()
+        self._update(new_circuit=self._base_circuit.copy(), new_qubits={})
         self._chip = None
 
     # ------------------------------------------------------------------
@@ -372,25 +376,17 @@ class LogicalTile(Grid):
         )
         new_origin, new_bound = new_footprint
 
-        # VALIDATION (differs slightly from parent chips internal _validate to exclude the consideration of qubits owned by the current tile in the empty subregion query)
-        if not self.chip._validate_lattice_origin(new_origin):
-            raise ValueError(
-                f"Invalid shift that lands off the chip's '{self.chip.lattice.name}' "
-                f"lattice: {self.chip.lattice.site_rule}, given x = {x}, y = {y}"
-            )
-
-        if not self.chip._validate_chip_bounds(new_footprint):
-            raise ValueError("Invalid shift that violates chip boundaries. ")
-
-        if not self.chip.is_empty_region_subset(
-            new_origin, new_bound, self.origin, self.bound
-        ):
+        # The chip's placement rules, discounting the region this tile already holds so
+        # it is not rejected for overlapping itself. A shift of a placed tile is always
+        # a programming error when rejected, so every rejection raises.
+        rejection = self.chip.placement_rejection(
+            self, new_origin, ignoring=(self.origin, self.bound)
+        )
+        if rejection is not None:
             logger.debug(
                 f"Current (O:{self.origin}, B:{self.bound}) ->  New (O:{new_origin}, B:{new_bound})"
             )
-            raise ValueError(
-                "Invalid shift operation that violates tile overlap constraints. This shift results in the tile overlapping an existing tile on chip."
-            )
+            raise ValueError(f"Invalid shift by ({x}, {y}). {rejection.reason}")
 
         new_qubits = self.chip.select_rect(
             self.origin[0] + x, self.origin[1] + y, self.bound[0] + x, self.bound[1] + y
@@ -489,8 +485,11 @@ class LogicalTile(Grid):
                                     rule.after, operation_targs, i2q, rule, debug_tags
                                 )
                             )
-                        if rule.exclusive:
-                            break
+                            # Exclusivity is a property of a rule that *fired*: a rule
+                            # whose trigger failed has said nothing about this
+                            # instruction, so lower-priority rules still get their turn.
+                            if rule.exclusive:
+                                break
                 circ_arr.extend(before)
                 circ_arr.append(str(instr))
                 circ_arr.extend(after)
