@@ -7,7 +7,7 @@ from time import perf_counter
 
 import sinter
 
-from qsnow.experiments.experiment import Experiment, ExperimentResults
+from qsnow.experiments.experiment import Experiment, ResultsLike
 from qsnow.experiments.sampling import (  # noqa: F401  (re-exported for callers)
     DEFAULT_SAMPLING_BATCH_SIZE,
     ErrorFloorSampler,
@@ -52,12 +52,25 @@ class SquarePackingExp(Experiment):
     # ------------------------------------------------------------------
     
     def _circuit_for_profile_loc(self, loc: Coord) -> Circuit:
-        if self.tile.initialized() and self.tile.chip == self.chip:
+        """The tile's noise-injected circuit at `loc`, moving or placing the tile there."""
+        if self.tile.initialized() and self.tile.chip is self.chip:
             self.tile.shift_to(loc)
-        else:
-            self.chip.add_tile(self.tile, loc)
+        elif not self.chip.add_tile(self.tile, loc):
+            # `shift_to` raises on a bad move; a rejected first placement has to as
+            # well, or the sweep would sample whatever circuit the tile last held
+            raise ValueError(
+                f"Profile placement {loc} is not valid on the chip in its current "
+                "state, so no circuit can be generated for it."
+            )
 
         return self.tile.circuit
+
+    def _release_tile(self) -> None:
+        """Take the sweep tile back off the chip, so a run leaves the setup as it found it."""
+        # membership, not `initialized()`: this runs from a `finally`, and a placement
+        # that failed midway must not turn into a second error that hides the first
+        if any(placed is self.tile for placed in self.chip.tiles):
+            self.chip.remove_tile(self.tile)
 
     def run(
         self,
@@ -94,13 +107,19 @@ class SquarePackingExp(Experiment):
 
         with self.progress(phases=1 + sampler.phases) as prog:
             t_start = perf_counter()
-            tasks = [
-                sinter.Task(
-                    circuit=self._circuit_for_profile_loc(loc),
-                    json_metadata={"loc": loc},
-                )
-                for loc in prog.track(self.profile, "Generating circuits")
-            ]
+            try:
+                tasks = [
+                    sinter.Task(
+                        circuit=self._circuit_for_profile_loc(loc),
+                        json_metadata={"loc": loc},
+                    )
+                    for loc in prog.track(self.profile, "Generating circuits")
+                ]
+            finally:
+                # the circuits are captured, so the tile has no business staying on
+                # the chip: a save() after the run would otherwise embed it, and a
+                # second run() would find its first placement occupied
+                self._release_tile()
             t_generation = perf_counter() - t_start
 
             run = sampler.collect(tasks, prog)
@@ -152,10 +171,10 @@ class SquarePackingExp(Experiment):
         return {o: self._footprint_for(o)[1] for o in self.profile}
 
     def _interactive_styles(
-        self, results: ExperimentResults
+        self, results: Optional[ResultsLike] = None
     ) -> Dict[str, VisualizationStyle]:
         """The view bundle for `show`: chip-level views plus LER/placement results."""
-        ler_map = {k: v["ler"] for k, v in results.results.items()}
+        ler_map = {k: v["ler"] for k, v in self._results_record(results).results.items()}
         bounds_map = self._bounds_for_candidate_placements()
         avg_per_map = self._average_per_for_candidate_placements()
         base_map = {k: f'{k} → {bounds_map.get(k) if bounds_map.get(k) else k}' for k in self.profile}
@@ -193,7 +212,7 @@ class SquarePackingExp(Experiment):
 
     def show(
         self,
-        results: ExperimentResults,
+        results: Optional[ResultsLike] = None,
         *,
         extra_styles: Optional[Mapping[str, VisualizationStyle]] = None,
     ):

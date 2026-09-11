@@ -8,7 +8,7 @@ The qSNOW serialization library supports round-tripping (1:1 import-export) of `
 (and code subclasses like `SCTile`), `SquarePackingExp`, and the generic `Experiment` through JSON
 files (.flake) files, capturing everything needed to rebuild the object with the exact same setup:
 
-    from qsnow.helpers.serialize import export_json, import_json, import_latest
+    from qsnow.helpers.serialize import export_flake, import_flake, import_latest
 
     export_flake(chip)                      # -> data/chips/chip_5x5_<timestamp>.flake
     export_flake(tile)                      # -> data/tiles/tile_rsc_memory_z_d3_<timestamp>.flake
@@ -50,6 +50,7 @@ Any change to an export's structure must:
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable
 from datetime import datetime
 from logging import getLogger
@@ -191,15 +192,15 @@ def _find_repo_root() -> Path:
 
 # TODO - consider moving this to platform specific cache location (like .)
 # TODO - move the default to be a part of the package-wide configuration file when refactoring for package distribution
-# Default export root: `.qsnow/` at the repo root. Override with set_data_dir()
+# Default export root: `data/` at the repo root. Override with set_data_dir()
 # for tests, notebooks, or an absolute location.
 _DEFAULT_DATA_DIR = _find_repo_root() / "data"
 _DATA_DIR = _DEFAULT_DATA_DIR
 
 _TIMESTAMP_FORMAT = "%Y-%m-%d_%H-%M-%S"
 
-def get_timestamp(format = _TIMESTAMP_FORMAT):
-    return datetime.now().strftime(_TIMESTAMP_FORMAT)
+def get_timestamp(format: str = _TIMESTAMP_FORMAT) -> str:
+    return datetime.now().strftime(format)
 
 def set_data_dir(path: Optional[Union[str, Path]] = None) -> None:
     """
@@ -216,6 +217,29 @@ def get_data_dir() -> Path:
     The current root folder used for automatic export paths.
     """
     return _DATA_DIR
+
+
+def flake_ref(target: Union[str, Path], relative_to: Optional[Union[str, Path]]) -> str:
+    """
+    How one flake names another on disk: a path relative to the referring flake's
+    own directory (just the filename in the usual layout, where a setup and its
+    results are siblings under `experiments/`), so a data folder can be moved or
+    renamed as a unit without breaking the link. When the referring flake has no
+    location yet, the target is named absolutely, which is the only thing that
+    still resolves. `resolve_flake_ref` is the inverse.
+    """
+    target = Path(target).resolve()
+    if relative_to is None:
+        return str(target)
+    return os.path.relpath(target, Path(relative_to).resolve().parent)
+
+
+def resolve_flake_ref(ref: str, relative_to: Optional[Union[str, Path]]) -> Path:
+    """The path a `flake_ref` written into the flake at `relative_to` points at."""
+    path = Path(ref)
+    if path.is_absolute() or relative_to is None:
+        return path
+    return Path(relative_to).parent / path
 
 
 def _subfolder(obj: Any) -> str:
@@ -582,17 +606,6 @@ def square_packing_from_dict(data: Dict) -> SquarePackingExp:
     exp.tag = tag_from_dict(data["tag"])
     exp.config = data["config"]
     exp.results_refs = data["results_refs"]
-
-    if exp.results_refs:
-        for p in exp.results_refs:
-            try:
-                exp.results = import_flake(p).results
-                break
-            except FileNotFoundError:
-                logger.debug(
-                    f"Experiment result flake with filename {p} could not be loaded."
-                )
-
     return exp
 
 
@@ -605,27 +618,34 @@ def experiment_from_dict(data: Dict) -> Experiment:
     exp = Experiment(**data["config"])
     exp.tag = tag_from_dict(data["tag"])
     exp.results_refs = data["results_refs"]
-
-    # This is the one violation to the round-tripping technically:
-    # While the experiment objects contain a Experiment.result, the flakes do not.
-    # While an experiment can be ran many times and provide different results, the setup never changes.
-    # Thus, we only store a reference to any result .flakes for this exp.
-    # However, for convenience, this will see if it can find the latest result (if there is one)
-    # referenced in the experiment.flake and load it into the Experiment.result.
-    if exp.results_refs:
-        for p in exp.results_refs:
-            try:
-                exp.results = import_flake(p).results
-                break
-            except FileNotFoundError:
-                logger.debug(
-                    f"Experiment result flake with filename {p} could not be loaded."
-                )
     return exp
 
 
-def results_to_dict(exp: Experiment) -> Dict:
-    """Serialize an experiment's `results` as a standalone record referencing its setup."""
+def _load_latest_results(exp: Experiment) -> None:
+    """
+    Fill `exp.results` from the newest results flake the setup references, if it is
+    on disk.
+
+    This is the one deliberate break from strict round-tripping: an experiment
+    object holds `results`, but its flake only names the results flakes it produced
+    (a setup is written once, each run writes a new results file). Refs are
+    resolved against the setup flake's own location, so this can only run once
+    `exp.source` is known - i.e. from `import_flake`, not from a bare dict.
+    """
+    for ref in reversed(exp.results_refs):
+        path = resolve_flake_ref(ref, exp.source)
+        if path.exists():
+            exp.results = import_flake(path).results
+            return
+        logger.debug(f"Experiment results flake {path} is not on disk; skipping.")
+
+
+def results_to_dict(exp: Experiment, path: Optional[Union[str, Path]] = None) -> Dict:
+    """
+    Serialize an experiment's `results` as a standalone record referencing its setup.
+    `path` is where the record will be written, so the setup can be named relative
+    to it (see `flake_ref`); without it the setup is named absolutely.
+    """
     if exp.source is None:
         warn(
             "Experiment has no saved setup file, so these results will not reference "
@@ -635,7 +655,7 @@ def results_to_dict(exp: Experiment) -> Dict:
     return {
         "__qsnow__": "ExperimentResults",
         "format_version": FORMAT_VERSION,
-        "experiment": exp.source.name if exp.source is not None else None,
+        "experiment": flake_ref(exp.source, path) if exp.source is not None else None,
         "desc": exp.desc,
         "run_config": exp.config,
         "results": {
@@ -677,7 +697,7 @@ def export_results(
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
-        json.dump(results_to_dict(exp), f, indent=indent)
+        json.dump(results_to_dict(exp, path), f, indent=indent)
     return path
 
 
@@ -774,6 +794,7 @@ def import_flake(path: Union[str, Path]) -> Any:
         obj = from_dict(json.load(f))
     if isinstance(obj, Experiment):
         obj.source = Path(path)
+        _load_latest_results(obj)
     return obj
 
 

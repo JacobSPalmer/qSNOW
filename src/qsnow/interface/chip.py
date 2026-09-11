@@ -444,6 +444,16 @@ class Chip(Grid):
         tile.reset()
         return tile
 
+    def remove_tile(self, tile: LogicalTile) -> LogicalTile:
+        """
+        `pop_tile` for a tile held by reference rather than by index: take `tile` off
+        the chip, scrub its qubits, and return it clean.
+        """
+        for i, placed in enumerate(self.tiles):
+            if placed is tile:
+                return self.pop_tile(i)
+        raise ValueError("Tile is not placed on this chip.")
+
     def candidate_placements(self, tile: LogicalTile) -> List[Coord]:
         """Every origin on this chip where `tile` could currently be placed."""
         return [

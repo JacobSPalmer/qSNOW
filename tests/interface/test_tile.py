@@ -326,6 +326,18 @@ class TestShiftRewritesCircuitAndMetadata:
         assert after == {(x + 2, y + 2) for x, y in before}
         assert all(c in tile.grid for c in after)
 
+    def test_popped_tile_can_be_placed_again_somewhere_else(self, chip: Chip):
+        # regression: reset() restored the base circuit but kept the origin of the
+        # last placement, so the next add_tile shifted the circuit by a stale offset
+        tile = SCTile(3)
+        assert chip.add_tile(tile, (2, 2))
+        chip.pop_tile(0)
+
+        assert tile.origin == tile.circuit_origin
+        assert chip.add_tile(tile, (0, 0))
+        assert tile.origin == (0, 0)
+        assert all(c in chip.grid for c in tile.grid)
+
     def test_reset_tile_holds_no_chip_qubits(self, chip: Chip):
         tile = SCTile(3)
         chip.add_tile(tile, (0, 0))

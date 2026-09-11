@@ -157,13 +157,18 @@ class LogicalTile(Grid):
         """
         return self._base_circuit
 
+    @staticmethod
+    def _origin_of(circuit: Circuit) -> Coord:
+        """The upper-leftmost qubit coordinate a circuit is expressed in."""
+        coords = list(circuit.get_final_qubit_coordinates().values())
+        return tuple(min(coord) for coord in zip(*coords))[:2]
+
     @property
     def circuit_origin(self) -> Coord:
         """
         The origin (upper leftmost) coordinate of the qubit coordiantes ~within~ the circuit.
         """
-        coords = list(self._circuit.get_final_qubit_coordinates().values())
-        return tuple(min(coord) for coord in zip(*coords))[:2]
+        return self._origin_of(self._circuit)
 
     @property
     def circuit_bound(self) -> Coord:
@@ -360,7 +365,14 @@ class LogicalTile(Grid):
         # than transferring statuses from sites on a chip it no longer belongs to.
         # TODO - remove _c2i as a property and just use extract_c2i_map when necessary. It could technically save time to not have to remake the map everytime but
         #       it's hardly being used as is except just to keep track of updating it when necessary so lil bit of a headache for no purpose as is
-        self._update(new_circuit=self._base_circuit.copy(), new_qubits={})
+        # The origin follows the circuit back too: `origin == circuit_origin` is the
+        # invariant every shift preserves, and a re-placement computes its shift from
+        # `origin`, so leaving it at the last placement would move the base circuit
+        # by a stale offset.
+        base = self._base_circuit.copy()
+        self._update(
+            new_circuit=base, new_qubits={}, new_origin=self._origin_of(base)
+        )
         self._chip = None
 
     # ------------------------------------------------------------------

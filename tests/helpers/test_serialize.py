@@ -322,6 +322,99 @@ class TestResultsFlow:
         assert import_flake(results_path).experiment_ref is None
 
 
+class TestResultsLinkage:
+    """A setup flake and its results flakes name each other relative to their own
+    locations, so the link survives any working directory and a moved data folder."""
+
+    @staticmethod
+    def _saved_pair(chip):
+        from qsnow.experiments.squarepacking.game import SquarePackingExp
+
+        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        exp.results = {(0, 0): {"ler": 0.001, "shots": 1000, "errors": 1}}
+        setup_path = exp.save()
+        results_path = exp.save_results()
+        return exp, setup_path, results_path
+
+    def test_reimported_setup_carries_its_results_from_any_cwd(
+        self, data_dir, chip, tmp_path, monkeypatch
+    ):
+        # regression: refs were bare filenames resolved against the cwd, so a setup
+        # imported from anywhere but the data folder silently came back with no results
+        exp, setup_path, _ = self._saved_pair(chip)
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        monkeypatch.chdir(elsewhere)
+
+        assert import_flake(setup_path).results == exp.results
+
+    def test_moved_data_folder_keeps_the_pair_linked(self, data_dir, chip, tmp_path):
+        import shutil
+
+        exp, setup_path, _ = self._saved_pair(chip)
+        moved = shutil.move(str(data_dir), str(tmp_path / "archive"))
+        set_data_dir(tmp_path / "unrelated")
+
+        restored = import_flake(Path(moved) / "experiments" / setup_path.name)
+
+        assert restored.results == exp.results
+
+    def test_newest_results_flake_wins(self, data_dir, chip):
+        exp, setup_path, _ = self._saved_pair(chip)
+        exp.results = {(0, 0): {"ler": 0.5, "shots": 10, "errors": 5}}
+        exp.save_results(path=data_dir / "experiments" / "results_later.flake")
+
+        assert import_flake(setup_path).results == exp.results
+
+    def test_bare_filename_refs_from_older_flakes_resolve_beside_the_setup(
+        self, data_dir, chip
+    ):
+        # pre-fix setups recorded only the filename; that is the sibling-relative
+        # form, so it resolves without a migration
+        exp, setup_path, results_path = self._saved_pair(chip)
+        assert exp.results_refs == [results_path.name]
+
+        assert import_flake(setup_path).results == exp.results
+
+    def test_results_flake_names_its_setup_relative_to_itself(self, data_dir, chip):
+        from qsnow.experiments.squarepacking.game import SquarePackingExp
+
+        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        exp.results = {(0, 0): {"ler": 0.001}}
+        setup_path = exp.save()
+        results_path = exp.save_results(path=data_dir / "experiments" / "runs" / "r.flake")
+
+        record = import_flake(results_path)
+
+        assert record.experiment_ref == f"../{setup_path.name}"
+        assert exp.results_refs == ["runs/r.flake"]
+
+    def test_missing_results_flake_leaves_results_empty(self, data_dir, chip):
+        exp, setup_path, results_path = self._saved_pair(chip)
+        results_path.unlink()
+
+        assert import_flake(setup_path).results == {}
+
+    def test_flake_ref_round_trips(self, tmp_path):
+        from qsnow.helpers.serialize import flake_ref, resolve_flake_ref
+
+        referrer = tmp_path / "experiments" / "setup.flake"
+        target = tmp_path / "experiments" / "runs" / "r.flake"
+
+        assert flake_ref(target, referrer) == "runs/r.flake"
+        assert resolve_flake_ref(flake_ref(target, referrer), referrer) == target
+        # nothing to be relative to: the absolute path is the only thing that resolves
+        assert Path(flake_ref(target, None)).is_absolute()
+        assert resolve_flake_ref(flake_ref(target, None), None) == target.resolve()
+
+
+def test_get_timestamp_honours_its_format():
+    from qsnow.helpers.serialize import get_timestamp
+
+    # regression: the argument was accepted and ignored
+    assert len(get_timestamp("%Y")) == 4
+
+
 class TestJsonFileRoundTrip:
     def test_export_import_json_file(self, tmp_path, chip):
         chip.generate_random_noise()
