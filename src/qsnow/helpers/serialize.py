@@ -28,6 +28,9 @@ Notes:
     carry a `TileSpec` which contains tile-specific information. Specifically,
     the arguements to the generator/generation function that produced the underlying
     tile are passed here and used to regenerate the flake upon import.
+  - Chips carry a `ChipSpec`: the noise generator record (name, seed, parameters)
+    and the coupler derivation mode. Before v4 both lived in `tag.metadata`; the
+    v3->v4 migration lifts them out, so metadata is free text again.
   - Ruleset injection rules are fully serialized. Custom triggers/filters
     (beyond the built-in defaults) hold arbitrary callables and cannot be
     serialized; a warning is raised if any are present at export (the handling of
@@ -63,7 +66,7 @@ from qsnow.experiments.squarepacking.game import SquarePackingExp
 from qsnow.interface.chip import Chip, LogicalTile
 from qsnow.interface.codes.rsc import SCTile
 from qsnow.interface.lattice import CHECKERBOARD, lattice_by_name
-from qsnow.interface.models import Coord, CouplerKey, Tag, TileSpec
+from qsnow.interface.models import ChipSpec, Coord, CouplerKey, NoiseModelSpec, Tag, TileSpec
 from qsnow.interface.rules import (
     _DEFAULT_FILTERS,
     _DEFAULT_TRIGGERS,
@@ -75,7 +78,7 @@ from qsnow.interface.rules import (
 import logging
 logger = logging.getLogger(__name__)
 
-FORMAT_VERSION = 3
+FORMAT_VERSION = 4
 
 # ------------------------------------------------------------------
 # Format versioning / migrations
@@ -138,6 +141,27 @@ def _v2_to_v3(data: Dict) -> Dict:
     """
     if data.get("__qsnow__") == "Chip":
         data.setdefault("couplers", {})
+    return data
+
+
+@_migration(3)
+def _v3_to_v4(data: Dict) -> Dict:
+    """v4 moves the noise-model record and coupler derivation mode out of
+    `tag.metadata` into a typed `spec`, so code no longer branches on free-form
+    annotation. Pre-v4 chips wrote `noise_model` and `coupler_model` into metadata;
+    both are lifted out here and removed, so a migrated chip carries them once.
+    """
+    if data.get("__qsnow__") == "Chip":
+        metadata = data.get("tag", {}).get("metadata", {})
+        noise_model = metadata.pop("noise_model", None)
+        coupler_model = metadata.pop("coupler_model", None) or {}
+        data.setdefault(
+            "spec",
+            {
+                "noise_model": noise_model,
+                "coupler_mode": coupler_model.get("mode", "mean"),
+            },
+        )
     return data
 
 
@@ -344,6 +368,21 @@ def tag_from_dict(data: Dict) -> Tag:
     )
 
 
+def chip_spec_to_dict(spec: ChipSpec) -> Dict:
+    return {
+        "noise_model": spec.noise_model.as_dict() if spec.noise_model else None,
+        "coupler_mode": spec.coupler_mode,
+    }
+
+
+def chip_spec_from_dict(data: Dict) -> ChipSpec:
+    noise_model = data.get("noise_model")
+    return ChipSpec(
+        noise_model=NoiseModelSpec.from_dict(noise_model) if noise_model else None,
+        coupler_mode=data.get("coupler_mode", "mean"),
+    )
+
+
 def spec_to_dict(spec: TileSpec) -> Dict:
     # callables (generator, initial_shift_fn) are not serialized: the generator is
     # rebuilt by code-subclass constructors and the shift is baked into base_circuit
@@ -456,6 +495,7 @@ def chip_to_dict(chip: Chip) -> Dict:
         "__qsnow__": "Chip",
         "format_version": FORMAT_VERSION,
         "tag": tag_to_dict(chip.tag),
+        "spec": chip_spec_to_dict(chip.spec),
         # the original constructor arguments, in unit cells (the coordinate extent
         # they span is decided by the lattice)
         "length": chip.unit_dims[0],
@@ -475,6 +515,7 @@ def chip_from_dict(data: Dict) -> Chip:
         data["length"], data["height"], lattice=lattice_by_name(data["lattice"])
     )
     chip.tag = tag_from_dict(data["tag"])
+    chip.spec = chip_spec_from_dict(data["spec"])
 
     # TODO - move all this to have noise map to dict using the NoiseMap "type"
     for key, p in data["noise"].items():
@@ -486,7 +527,7 @@ def chip_from_dict(data: Dict) -> Chip:
         for key, p in data["couplers"].items():
             chip.coupler(*_key_to_coupler(key)).noise.p = p
     else:
-        chip.derive_coupler_noise()
+        chip.derive_coupler_noise(chip.spec.coupler_mode)
     # Re-placing each tile rebuilds qubit statuses/types exactly as add_tile did originally.
     # TODO - same for TileMap when/if typing becomes explicit
     for tile_data in data["tiles"]:

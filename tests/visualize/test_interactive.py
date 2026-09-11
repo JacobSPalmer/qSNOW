@@ -169,11 +169,11 @@ class TestExportHtml:
     def test_export_leaves_the_chip_noise_model_intact(self, tmp_path, chip):
         # regression: the stats strip popped `name` out of the chip's live metadata
         chip.generate_gaussian_noise(0.01, 0.002, seed=1)
-        before = dict(chip.tag.metadata["noise_model"])
+        before = chip.summary()["noise_model"]
 
         path = export_html(chip, tmp_path / "chip.html", include_plotlyjs="cdn")
 
-        assert chip.tag.metadata["noise_model"] == before
+        assert chip.summary()["noise_model"] == before
         assert "<dt>type</dt><dd>gaussian</dd>" in path.read_text()
 
     def test_default_styles_are_bundled(self, tmp_path, chip):

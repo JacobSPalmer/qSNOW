@@ -168,6 +168,26 @@ class TestNoiseInjectionOrdering:
 
         assert names(tile.circuit) == ["QUBIT_COORDS", "H", "DEPOLARIZE1"]
 
+    def test_exclusive_rule_whose_trigger_fails_does_not_block_lower_rules(
+        self, one_qubit_circuit, chip: Chip
+    ):
+        # regression: exclusivity broke the scan on an operation-name match even
+        # when the trigger failed, so lower-priority rules never fired
+        ruleset = Ruleset(
+            injection_rules=[
+                InjectionRule(
+                    "H",
+                    "data",  # the bare tile's qubit is untyped, so this fails
+                    after=[ChannelRule("DEPOLARIZE1", "all_qubits")],
+                    exclusive=True,
+                ),
+                InjectionRule("H", "any", after=[ChannelRule("Z_ERROR", "all_qubits")]),
+            ]
+        )
+        tile = placed(one_qubit_circuit, chip, ruleset, noise={(0, 0): 0.02})
+
+        assert names(tile.circuit) == ["QUBIT_COORDS", "H", "Z_ERROR"]
+
     def test_multiple_channel_rules_in_one_before_list_all_appear(
         self, one_qubit_circuit, chip: Chip
     ):
@@ -292,6 +312,28 @@ class TestShiftRewritesCircuitAndMetadata:
         # add_tile already rejects it, so shift_to must too.
         with pytest.raises(ValueError):
             tile.shift_to((3, 3))
+
+    def test_region_queries_follow_the_tile_after_a_shift(self, chip: Chip):
+        # regression: the tile's spatial index was built over its pre-shift qubits
+        # and never invalidated, so a query after shifting raised KeyError
+        tile = SCTile(3)
+        assert chip.add_tile(tile, (0, 0))
+        before = set(tile.select_rect(0, 0, 20, 20))
+
+        tile.shift_by(2, 2)
+
+        after = set(tile.select_rect(0, 0, 20, 20))
+        assert after == {(x + 2, y + 2) for x, y in before}
+        assert all(c in tile.grid for c in after)
+
+    def test_reset_tile_holds_no_chip_qubits(self, chip: Chip):
+        tile = SCTile(3)
+        chip.add_tile(tile, (0, 0))
+
+        chip.pop_tile(0)
+
+        assert tile.grid == {}
+        assert tile.select_rect(0, 0, 20, 20) == {}
 
     def test_shift_by_rejects_out_of_bounds_shift(self, two_qubit_circuit, chip: Chip):
         tile = placed(two_qubit_circuit, chip)

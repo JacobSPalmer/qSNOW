@@ -357,7 +357,7 @@ class InjectionRule:
     ]  # This filter determines IF the before or after channels will be applied to this operation
     before: List[ChannelRule] = field(default_factory=list)
     after: List[ChannelRule] = field(default_factory=list)
-    exclusive: bool = False  # if true, then once this rule triggers no lower priority rules will be checked
+    exclusive: bool = False  # if true, once this rule fires (its trigger passes) no lower priority rules are checked for that instruction
     name: Optional[str] = None
 
     def __repr__(self) -> str:

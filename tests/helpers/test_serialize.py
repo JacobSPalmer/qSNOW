@@ -16,6 +16,7 @@ from qsnow.helpers.serialize import (
 from qsnow.interface.chip import Chip, LogicalTile
 from qsnow.interface.codes.rsc import SCTile
 from qsnow.interface.lattice import CHECKERBOARD, SQUARE
+from qsnow.interface.models import NoiseModelSpec
 
 
 @pytest.fixture
@@ -516,8 +517,66 @@ class TestCouplerRoundTrip:
         assert cx_rule.after[0].source == "coupler"
 
 
+class TestChipSpecRoundTrip:
+    def test_noise_model_and_coupler_mode_round_trip(self, chip):
+        chip.generate_gaussian_noise(mean=0.01, deviation=0.002, seed=7)
+        chip.derive_coupler_noise("max")
+
+        restored = from_dict(to_dict(chip))
+
+        assert restored.spec.noise_model == NoiseModelSpec(
+            name="gaussian", seed=7, params={"mean": 0.01, "deviation": 0.002}
+        )
+        assert restored.spec.coupler_mode == "max"
+        assert restored.has_independent_couplers is False
+
+    def test_spec_is_not_written_into_tag_metadata(self, chip):
+        chip.generate_uniform_noise(0.01)
+
+        data = to_dict(chip)
+
+        assert "noise_model" not in data["tag"]["metadata"]
+        assert data["spec"]["noise_model"] == {"name": "uniform homogeneous", "p": 0.01}
+
+    def test_pre_v4_chip_derives_couplers_with_its_migrated_mode(self, chip):
+        chip.generate_uniform_noise(0.01)
+        chip.derive_coupler_noise("max")
+        data = to_dict(chip)
+        # rewrite as a v3 export: record in metadata, no spec, no coupler map
+        data["format_version"] = 3
+        del data["spec"]
+        data["couplers"] = {}
+        data["tag"]["metadata"]["noise_model"] = {"name": "uniform homogeneous", "p": 0.01}
+        data["tag"]["metadata"]["coupler_model"] = {"name": "derived", "mode": "max"}
+
+        restored = from_dict(data)
+
+        assert restored.spec.coupler_mode == "max"
+        assert restored.has_independent_couplers is False
+
+
 class TestCouplerFormatVersioning:
     FIXTURES = Path(__file__).parent / "fixtures"
+
+    def test_v4_golden_file_imports_with_its_spec(self):
+        chip = import_flake(self.FIXTURES / "chip_v4.flake")
+
+        assert chip.spec.noise_model == NoiseModelSpec(
+            name="gaussian", seed=7, params={"mean": 0.01, "deviation": 0.002}
+        )
+        assert chip.spec.coupler_mode == "max"
+        assert chip.coupler((0, 0), (1, 1)).noise.p == 0.2
+        assert chip.tag.metadata == {"note": "a human-only annotation"}
+
+    def test_v3_chip_lifts_its_record_out_of_metadata(self):
+        """Pre-v4 exports recorded the noise model and coupler mode in `tag.metadata`;
+        the migration moves both onto `chip.spec` and leaves metadata free text."""
+        chip = import_flake(self.FIXTURES / "chip_v3.flake")
+
+        assert chip.spec.noise_model == NoiseModelSpec(name="uniform homogeneous", params={"p": 0.01})
+        assert chip.spec.coupler_mode == "mean"
+        assert "noise_model" not in chip.tag.metadata
+        assert "coupler_model" not in chip.tag.metadata
 
     def test_v3_golden_file_imports_with_its_couplers(self):
         chip = import_flake(self.FIXTURES / "chip_v3.flake")

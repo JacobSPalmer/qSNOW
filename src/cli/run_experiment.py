@@ -12,7 +12,7 @@ def run_and_serialize_spp_experiment(chip: Chip, *, mean, deviation, distances, 
     if data_directory:
         serialize.set_data_dir(data_directory)
     logger.info(f'Creating chip with {noise_model} noise model using {seed}')
-    if not chip.tag.metadata.get("noise_model", None):
+    if chip.spec.noise_model is None:
         match noise_model:
             case 'gaussian':
                 chip.generate_gaussian_noise(mean, deviation, seed)
@@ -53,7 +53,7 @@ def save_configuration(args: dict, chip: Chip, name: str):
     for k, v in args.items():
         match k:
             case 'seed':
-                config_arr.append(format_str(k, chip.tag.metadata.get('noise_model', {}).get('seed', None)))
+                config_arr.append(format_str(k, chip.spec.noise_model.seed if chip.spec.noise_model else None))
             case _:
                 config_arr.append(format_str(k, v))
 

@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, Optional, Self, Tuple, overload, TypeAlias
+from typing import Any, Dict, Literal, Optional, Self, Tuple, overload, TypeAlias
 
 from functools import total_ordering
 from numbers import Number
@@ -40,6 +40,51 @@ class TileSpec:
     generator: Optional[Callable] = None
     generator_args: Dict[str, Any] = field(default_factory=dict)
     initial_shift_fn: Optional[ShiftFunction] = None
+
+
+CouplerMode: TypeAlias = Literal["mean", "max", "min"]
+
+
+@dataclass
+class NoiseModelSpec:
+    """
+    How a chip's qubit noise landscape was produced: the generator's `name`, the
+    `seed` it resolved (None for deterministic generators), and its remaining `params`.
+
+    Enough to regenerate the landscape bit for bit, and the source every display
+    surface labels a chip from. `as_dict` is the flat `{name, **params, seed}` shape
+    those surfaces and the flake format read.
+    """
+
+    name: str
+    seed: Optional[int] = None
+    params: Dict[str, Any] = field(default_factory=dict)
+
+    def as_dict(self) -> Dict[str, Any]:
+        flat: Dict[str, Any] = {"name": self.name, **self.params}
+        if self.seed is not None:
+            flat["seed"] = self.seed
+        return flat
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "NoiseModelSpec":
+        rest = {k: v for k, v in data.items() if k not in ("name", "seed")}
+        return cls(name=data["name"], seed=data.get("seed"), params=rest)
+
+
+@dataclass
+class ChipSpec:
+    """
+    State a chip's own code reads to rebuild its noise landscape: which generator
+    produced the qubit rates, and how coupler rates derive from their endpoints.
+
+    Typed and separate from `Tag.metadata` for the same reason `TileSpec` is: metadata
+    is free-form text for humans, so anything the tool branches on must not live there
+    where it can be reshaped, shared between copies, or silently dropped.
+    """
+
+    noise_model: Optional[NoiseModelSpec] = None
+    coupler_mode: CouplerMode = "mean"
 
 
 class Status(Enum):
