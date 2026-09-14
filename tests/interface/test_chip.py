@@ -1,10 +1,13 @@
 from statistics import mean
 
+import numpy as np
 import pytest
+from scipy import stats
 
 from qsnow.interface.chip import Chip, LogicalTile
 from qsnow.interface.lattice import CHECKERBOARD, SQUARE
 from qsnow.interface.models import NoiseModelSpec, NoiseProfile, Status
+from qsnow.interface.noise_fields import p_bounds
 
 
 class TestSquareLatticeChip:
@@ -142,6 +145,35 @@ class TestNoiseGeneration:
         chip.generate_gaussian_noise(mean=0.01, deviation=0.005, seed=1)
         assert any(q.noise.p != 0.0 for q in chip.qubits)
 
+    def test_skewed_contour_assigns_every_qubit_within_bounds(self, chip: Chip):
+        chip.generate_skewed_contour_noise(0.01, 0.003, 1.5, seed=3)
+        lo, hi = p_bounds()
+        assert all(lo <= q.noise.p <= hi for q in chip.qubits)
+        assert all(q.noise.p > 0.0 for q in chip.qubits)
+
+    def test_skewed_contour_is_seed_reproducible(self, chip: Chip):
+        chip.generate_skewed_contour_noise(0.01, 0.003, 1.5, seed=3)
+        first = [q.noise.p for q in chip.qubits]
+        chip.generate_skewed_contour_noise(0.01, 0.003, 1.5, seed=3)
+        assert [q.noise.p for q in chip.qubits] == first
+
+    def test_skewed_contour_is_right_skewed(self, lg_chip: Chip):
+        lg_chip.generate_skewed_contour_noise(0.01, 0.003, 1.5, seed=3)
+        assert stats.skew([q.noise.p for q in lg_chip.qubits]) > 0.5
+
+    def test_skewed_contour_shares_the_derived_contour_landscape(self, lg_chip: Chip):
+        # Same seed and slope must give the same peaks and valleys: only the marginal
+        # distribution differs, so the rank order of qubits is identical.
+        lg_chip.generate_derived_contour_noise(0.01, 0.003, seed=3)
+        gaussian = [q.noise.p for q in lg_chip.qubits]
+        lg_chip.generate_skewed_contour_noise(0.01, 0.003, 1.5, seed=3)
+        skewed = [q.noise.p for q in lg_chip.qubits]
+        assert stats.spearmanr(gaussian, skewed).statistic == pytest.approx(1.0)
+
+    def test_skewed_contour_median_center_pins_the_median(self, lg_chip: Chip):
+        lg_chip.generate_skewed_contour_noise(0.01, 0.003, 1.5, seed=3, center="median")
+        assert np.median([q.noise.p for q in lg_chip.qubits]) == pytest.approx(0.01, rel=0.1)
+
 
 class TestTileClassProperties:
     def test_chip_origin_and_bound(self, chip: Chip, logical_tile: LogicalTile):
@@ -275,6 +307,16 @@ class TestChipSpec:
         assert chip.summary()["noise_model"] == {
             "name": "gaussian", "mean": 0.01, "deviation": 0.002, "seed": 7
         }
+
+    def test_skewed_contour_records_its_shape_parameters(self, chip: Chip):
+        chip.generate_skewed_contour_noise(0.01, 0.003, 1.5, seed=3, center="median")
+
+        assert chip.spec.noise_model == NoiseModelSpec(
+            name="skewed contour",
+            seed=3,
+            params={"location": 0.01, "deviation": 0.003, "skew": 1.5, "center": "median", "slope": 5},
+        )
+        assert chip.summary()["noise_model"]["name"] == "skewed contour"
 
     def test_tool_state_stays_out_of_tag_metadata(self, chip: Chip):
         chip.generate_gaussian_noise(mean=0.01, deviation=0.002, seed=7)
