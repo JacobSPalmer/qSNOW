@@ -22,6 +22,7 @@ from qsnow.visualize import (
 
 from .grid import Grid
 from .lattice import CHECKERBOARD, Lattice
+from .noise_fields import Center, p_bounds, quantile_map, skewed_target
 from .models import (
     ChipSpec,
     Coord,
@@ -71,7 +72,10 @@ class Chip(Grid):
     logical tile occupies box(0, 0, 10, 10).
 
     Typical workflow:
-      1. Instantiate Chip(L, H) and assign noise to individual qubits (or using the pre-defined noise samplers).
+      1. Instantiate Chip(L, H) and assign noise to individual qubits, or use a pre-defined
+         sampler: `generate_uniform_noise`, `generate_random_noise`, `generate_gaussian_noise`
+         (i.i.d.), or the spatially correlated `generate_derived_contour_noise` /
+         `generate_skewed_contour_noise`.
       2. Build, place, and shift LogicalTiles within the chip by specifying origin points or movement shifts.
       3. Retrieve and modify noise-injected circuits by accessing `tile.circuit`.
     """
@@ -289,8 +293,9 @@ class Chip(Grid):
             rng_seed = self._generate_rng_seed()
         rng = default_rng(seed=rng_seed)
 
+        floor, _ = p_bounds()
         dist = truncnorm(
-            (0.0000000001 - mean) / deviation,
+            (floor - mean) / deviation,
             (1 - mean) / deviation,
             loc=mean,
             scale=deviation,
@@ -302,10 +307,20 @@ class Chip(Grid):
             "gaussian", mean=mean, deviation=deviation, seed=rng_seed
         )
 
-    # TODO - this works and serves it's purpose just fine for now but needs a revist and cleanup down the line
-    def generate_derived_contour_noise(
-            self, mean: float, deviation: float, seed: int | None = None, *, slope: int = 5, 
-        ):
+    def _correlated_gaussian_field(
+        self, mean: float, deviation: float, rng_seed: int, slope: int
+    ) -> Dict[Coord, float]:
+        """
+        A spatially correlated Gaussian value per qubit position, before any rescaling.
+
+        White Gaussian noise is drawn on a chip padded by `slope + 1` unit cells, then
+        box-averaged over an `SCTile(slope)` footprint at every placement and cropped back
+        to this chip's extent. The moving average is what gives the landscape its
+        correlation length (`slope`); both contour generators share it so their peaks and
+        valleys coincide for the same seed. The box mean is computed through
+        `SquarePackingExp` for now (see the audit's layering note) - the sampling order is
+        part of the seeded contract, so it must not change casually.
+        """
         from qsnow.experiments import SquarePackingExp
         from .codes import SCTile
 
@@ -315,6 +330,21 @@ class Chip(Grid):
                     noise_map.pop(coord)
             return noise_map
 
+        buffer_l, buffer_h = self.unit_dims
+        buffer_chip = Chip(
+            buffer_l + slope + 1, buffer_h + slope + 1, lattice=self.lattice
+        )
+        buffer_chip.generate_gaussian_noise(mean, deviation, rng_seed)
+
+        return adjust_map_dimensions(
+            SquarePackingExp(buffer_chip, SCTile(slope))._average_per_for_candidate_placements(),
+            (self.length, self.height),
+        )
+
+    # TODO - this works and serves it's purpose just fine for now but needs a revist and cleanup down the line
+    def generate_derived_contour_noise(
+            self, mean: float, deviation: float, seed: int | None = None, *, slope: int = 5, 
+        ):
         def scale_gaussian_contour(coord_dict, new_deviation, alpha_ratio=0.1):
             import numpy as np
             coords = list(coord_dict.keys())
@@ -355,19 +385,57 @@ class Chip(Grid):
         else:
             rng_seed = self._generate_rng_seed()
 
-        buffer_l, buffer_h = self.unit_dims
-        buffer_chip = Chip(
-            buffer_l + slope + 1, buffer_h + slope + 1, lattice=self.lattice
-        )
-        buffer_chip.generate_gaussian_noise(mean, deviation, rng_seed)
-
         buffed_map = scale_gaussian_contour(
-            adjust_map_dimensions(SquarePackingExp(buffer_chip, SCTile(slope))._average_per_for_candidate_placements(), (self.length, self.height)),
-            deviation)
+            self._correlated_gaussian_field(mean, deviation, rng_seed, slope), deviation
+        )
 
         self.set_noise_map({c:NoiseProfile(p) for c,p in buffed_map.items()})
         self._finalize_noise_model("derived contour", mean = mean, deviation = deviation, slope = slope, seed = rng_seed)
 
+    def generate_skewed_contour_noise(
+        self,
+        location: float,
+        deviation: float,
+        skew: float,
+        seed: int | None = None,
+        *,
+        center: Center = "mean",
+        slope: int = 5,
+    ):
+        """
+        A spatially correlated landscape whose marginal is a skewed (Pearson III) distribution.
+
+        The peaks and valleys are the same as `generate_derived_contour_noise` for the same
+        `seed` and `slope`; only the distribution of values across them changes. `skew > 0`
+        is right-skewed - a long tail of bad qubits - and `skew == 0` is normal. `location`
+        pins the mean of the distribution, or its median with `center="median"`. Values are
+        confined to the `NoiseProfile.p` range by truncating the target distribution, so the
+        nominal shape parameters describe the untruncated distribution; the realised sample
+        statistics also vary with chip size and correlation length.
+
+        Method: NORTA / Gaussian-copula quantile mapping (see `noise_fields`).
+        """
+        if isinstance(seed, int):
+            rng_seed = seed
+        else:
+            rng_seed = self._generate_rng_seed()
+
+        # The Gaussian field only supplies spatial structure; its own mean and deviation
+        # are standardised away by `quantile_map`.
+        field = self._correlated_gaussian_field(location, deviation, rng_seed, slope)
+        target = skewed_target(location, deviation, skew, center=center)
+        mapped = quantile_map(list(field.values()), target)
+
+        self.set_noise_map({c: NoiseProfile(p) for c, p in zip(field.keys(), mapped)})
+        self._finalize_noise_model(
+            "skewed contour",
+            location=location,
+            deviation=deviation,
+            skew=skew,
+            center=center,
+            slope=slope,
+            seed=rng_seed,
+        )
 
     def generate_uniform_noise(self, p):
         """

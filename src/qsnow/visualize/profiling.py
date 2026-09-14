@@ -3,7 +3,8 @@
 `visualize.py` and `interactive.py` draw *chips* with plotly. This module draws the
 *outcome* of a profiling sweep: it loads the `experiment_*.flake` / `results_*.flake`
 pairs a run left behind (see `qsnow.helpers.serialize`) and renders the distribution of
-logical error rate across every tile placement, one series per code distance.
+logical error rate across every tile placement, one series per code distance. The
+sweep's *input* - the PER landscape on a chip - is drawn by `distributions.py`.
 
 Matplotlib rather than plotly here because these are publication figures: explicit `dpi`
 and `Figure.savefig` matter more than hover/zoom.
@@ -26,6 +27,8 @@ from typing import (
 )
 
 import numpy as np
+
+from ._captions import chip_headline, chip_suptitle
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -326,7 +329,7 @@ def _series_labels(
     """Name the profiled and baseline series, preferring each chip's noise-model name.
 
     `override` wins outright. Otherwise the names come from the flake, the same source
-    `_noise_caption` reads - "derived contour" vs "uniform homogeneous" on the DATE
+    `_captions.noise_caption` reads - "derived contour" vs "uniform homogeneous" on the DATE
     sweeps. A chip with no recorded model falls back to generic names: labelling the
     figure "custom vs custom" would say less than "profiled vs baseline".
     """
@@ -394,27 +397,13 @@ def _add_convention_legends(ax_cdf, ax_box, labels: Tuple[str, str]) -> None:
         )
 
 
-def _noise_caption(chip: "Chip", shots: Optional[int]) -> str:
-    """The `PED(type=..., mean=..., dev=..., shots=...)` line under a figure title."""
-    noise_model = chip.summary().get("noise_model") or {}
-    name = noise_model.get("name", "custom")
-    p = np.array([n.p for n in chip.noise_map.values()], dtype=float)
-    return (
-        f"PED(type={name}, mean={p.mean():.2g}, dev={p.std():.2g}, shots={shots})"
-    )
-
-
 def _suptitle(headline: str, run: ProfileRun, add_title: str = "") -> str:
-    return "\n".join(
-        line
-        for line in (headline, _noise_caption(run.chip, run.shots), add_title)
-        if line
-    )
+    """The shared chip caption (`_captions.chip_suptitle`), fed from a run."""
+    return chip_suptitle(headline, run.chip, run.shots, add_title)
 
 
 def _chip_headline(run: ProfileRun, subject: str) -> str:
-    length, height = run.chip.unit_dims
-    return f"{subject} across {length}x{height} chip"
+    return chip_headline(run.chip, subject)
 
 
 def _print_run_stats(run: ProfileRun) -> None:

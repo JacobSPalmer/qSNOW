@@ -8,7 +8,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def run_and_serialize_spp_experiment(chip: Chip, *, mean, deviation, distances, data_directory, additional_label, seed, shots, max_errors, noise_model, min_errors, shot_ceiling):
+def run_and_serialize_spp_experiment(chip: Chip, *, mean, deviation, distances, data_directory, additional_label, seed, shots, max_errors, noise_model, min_errors, shot_ceiling, skew=0.0, center='mean'):
     if data_directory:
         serialize.set_data_dir(data_directory)
     logger.info(f'Creating chip with {noise_model} noise model using {seed}')
@@ -18,6 +18,8 @@ def run_and_serialize_spp_experiment(chip: Chip, *, mean, deviation, distances, 
                 chip.generate_gaussian_noise(mean, deviation, seed)
             case 'derived-contour':
                 chip.generate_derived_contour_noise(mean, deviation, seed)
+            case 'skewed-contour':
+                chip.generate_skewed_contour_noise(mean, deviation, skew, seed, center=center)
             case 'uniform':
                 chip.generate_uniform_noise(mean)
             case _:
@@ -75,9 +77,11 @@ def main():
     
     parser.add_argument("--name", type=str, required=False, default=None, help="Name of the experiment. This is appended to the beginning of the saved flake filenames.")
     parser.add_argument("--dimensions", nargs=2, type=int, required=False, default=(10,10), help="(Length x Height) of the chip in unit cells.")
-    parser.add_argument("--model", choices=['gaussian', 'derived-contour', 'uniform'], default="The noise distribution of the chip.")
-    parser.add_argument("--mean", type=float, required=True, help="Mean noise to use for noise model. If uniform distribution is selected, then the mean ")
+    parser.add_argument("--model", choices=['gaussian', 'derived-contour', 'skewed-contour', 'uniform'], default='gaussian', help="The noise distribution of the chip.")
+    parser.add_argument("--mean", type=float, required=True, help="Location of the PER noise distribution: its mean, or its median when `--center median` is given with the skewed-contour model. For the uniform model, the single PER value.")
     parser.add_argument("--deviation", type=float, required=False, default=0.0, help="Deviation of PER noise distribution to use for noise model.")
+    parser.add_argument("--skew", type=float, required=False, default=0.0, help="Skewness of the PER distribution (skewed-contour model only). Positive is right-skewed; 0 is normal.")
+    parser.add_argument("--center", choices=['mean', 'median'], required=False, default='mean', help="Which statistic `--mean` pins (skewed-contour model only).")
     parser.add_argument("--distances", nargs="+", type=int, required=True, help="Distance of tiles to sample for.")
     parser.add_argument("--directory", type=str, required=False, default=None,  help="Directory to use for saving the experiments and result.")
     parser.add_argument("--seed", type=int_or_none, required=False, default=None,  help="Seed for random sampling the gaussian noise. If you use the same seed on two experiments with identical mean and dev., the underlying chip will be identical.")
@@ -113,6 +117,8 @@ def main():
                                     shots = args.shots,
                                     seed = args.seed,
                                     noise_model = args.model,
+                                    skew = args.skew,
+                                    center = args.center,
                                     max_errors = args.max_errors,
                                     min_errors = args.min_errors,
                                     shot_ceiling = args.shot_ceiling)
