@@ -3,7 +3,7 @@ import pytest
 from scipy.stats import norm
 
 from qsnow.interface.models import NoiseProfile
-from qsnow.interface.noise_fields import (
+from qsnow.interface.noise.fields import (
     P_FLOOR,
     blend_latents,
     normal_scores,

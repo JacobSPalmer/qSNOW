@@ -1,5 +1,6 @@
 from qsnow.experiments import SquarePackingExp
 from qsnow.interface import Chip, SCTile
+from qsnow.interface.noise import NoiseDistribution, NormalContour, RandomGaussian, SkewContour, Uniform
 from qsnow.helpers import serialize
 from time import perf_counter
 
@@ -8,22 +9,45 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def run_and_serialize_spp_experiment(chip: Chip, *, mean, deviation, distances, data_directory, additional_label, seed, shots, max_errors, noise_model, min_errors, shot_ceiling, skew=0.0, center='mean'):
+# The `--model` / `--coupler_model` vocabulary. One place, used for both the site and
+# the coupler landscape, so the two flag families can never drift apart.
+MODEL_CHOICES = ('gaussian', 'derived-contour', 'skewed-contour', 'uniform')
+DERIVED = 'derived'  # couplers follow their endpoints; the default and the pre-flag behaviour
+
+
+def distribution_from_flags(model, mean, deviation=0.0, skew=0.0, center='mean', seed=None) -> NoiseDistribution:
+    """The distribution a `--model`-style flag set names. `mean` is the location (the
+    median when `center='median'` with the skewed contour, the single rate for uniform)."""
+    match model:
+        case 'gaussian':
+            return RandomGaussian(mean, deviation, seed=seed)
+        case 'derived-contour':
+            return NormalContour(mean, deviation, seed=seed)
+        case 'skewed-contour':
+            return SkewContour(mean, deviation, skew, center, seed=seed)
+        case 'uniform':
+            return Uniform(mean)
+        case _:
+            raise ValueError(f'Noise model {model!r} either not supported or unknown; choose from {MODEL_CHOICES}.')
+
+
+def run_and_serialize_spp_experiment(chip: Chip, *, mean, deviation, distances, data_directory, additional_label, seed, shots, max_errors, noise_model, min_errors, shot_ceiling, skew=0.0, center='mean',
+                                     coupler_model=DERIVED, coupler_mean=None, coupler_deviation=0.0, coupler_skew=0.0, coupler_center='mean', coupler_seed=None, correlation=None):
     if data_directory:
         serialize.set_data_dir(data_directory)
     logger.info(f'Creating chip with {noise_model} noise model using {seed}')
     if chip.spec.noise_model is None:
-        match noise_model:
-            case 'gaussian':
-                chip.generate_gaussian_noise(mean, deviation, seed)
-            case 'derived-contour':
-                chip.generate_derived_contour_noise(mean, deviation, seed)
-            case 'skewed-contour':
-                chip.generate_skewed_contour_noise(mean, deviation, skew, seed, center=center)
-            case 'uniform':
-                chip.generate_uniform_noise(mean)
-            case _:
-                raise ValueError(f'Noise model {noise_model} either not supported or unknown.')
+        chip.generate_noise(distribution_from_flags(noise_model, mean, deviation, skew, center, seed))
+    # Couplers: derived from their endpoints unless a model of their own is asked for. A
+    # chip loaded from a flake that already carries one is used as saved, like the sites.
+    if coupler_model != DERIVED and chip.spec.coupler_model is None:
+        if coupler_mean is None:
+            raise ValueError('coupler_mean is required when coupler_model is not derived.')
+        logger.info(f'Creating coupler landscape with {coupler_model} noise model using {coupler_seed} (correlation={correlation})')
+        chip.generate_coupler_noise(
+            distribution_from_flags(coupler_model, coupler_mean, coupler_deviation, coupler_skew, coupler_center, coupler_seed),
+            correlation=correlation,
+        )
     start = perf_counter()
     for d in distances:
         logger.info(f'Beginning profiling for distance {d}....')
@@ -56,6 +80,8 @@ def save_configuration(args: dict, chip: Chip, name: str):
         match k:
             case 'seed':
                 config_arr.append(format_str(k, chip.spec.noise_model.seed if chip.spec.noise_model else None))
+            case 'coupler_seed':
+                config_arr.append(format_str(k, chip.spec.coupler_model.seed if chip.spec.coupler_model else None))
             case _:
                 config_arr.append(format_str(k, v))
 
@@ -71,32 +97,53 @@ def main():
         if value == "None":
             return None
         return int(value)
+
+    def str_or_none(value):
+        # `--save_config` writes absent optionals as the literal "None"; read them back as None
+        return None if value == "None" else value
+
+    def unit_float_or_none(value):
+        if value == "None":
+            return None
+        rho = float(value)
+        if not 0.0 <= rho <= 1.0:
+            raise argparse.ArgumentTypeError(f"correlation must lie in [0, 1], given {value}")
+        return rho
     
     parser = argparse.ArgumentParser(description="A script that runs Square Packing experiments conveniently.\n The arguments can either be specified individually or passed from a text file using `@<path/to/text_file>.", 
                                      fromfile_prefix_chars='@')
     
     parser.add_argument("--name", type=str, required=False, default=None, help="Name of the experiment. This is appended to the beginning of the saved flake filenames.")
     parser.add_argument("--dimensions", nargs=2, type=int, required=False, default=(10,10), help="(Length x Height) of the chip in unit cells.")
-    parser.add_argument("--model", choices=['gaussian', 'derived-contour', 'skewed-contour', 'uniform'], default='gaussian', help="The noise distribution of the chip.")
+    parser.add_argument("--model", choices=list(MODEL_CHOICES), default='gaussian', help="The noise distribution of the chip's qubits.")
     parser.add_argument("--mean", type=float, required=True, help="Location of the PER noise distribution: its mean, or its median when `--center median` is given with the skewed-contour model. For the uniform model, the single PER value.")
     parser.add_argument("--deviation", type=float, required=False, default=0.0, help="Deviation of PER noise distribution to use for noise model.")
     parser.add_argument("--skew", type=float, required=False, default=0.0, help="Skewness of the PER distribution (skewed-contour model only). Positive is right-skewed; 0 is normal.")
     parser.add_argument("--center", choices=['mean', 'median'], required=False, default='mean', help="Which statistic `--mean` pins (skewed-contour model only).")
     parser.add_argument("--distances", nargs="+", type=int, required=True, help="Distance of tiles to sample for.")
     parser.add_argument("--directory", type=str, required=False, default=None,  help="Directory to use for saving the experiments and result.")
-    parser.add_argument("--seed", type=int_or_none, required=False, default=None,  help="Seed for random sampling the gaussian noise. If you use the same seed on two experiments with identical mean and dev., the underlying chip will be identical.")
+    parser.add_argument("--seed", type=int_or_none, required=False, default=None,  help="Seed for the qubit noise model. The same seed with identical model parameters reproduces the identical chip; None draws a fresh seed, which --save_config records.")
+    parser.add_argument("--coupler_model", choices=[DERIVED, *MODEL_CHOICES], default=DERIVED, help="The noise distribution of the chip's couplers. 'derived' (default) keeps each coupler at a function of its two qubits; any other choice gives the couplers a landscape of their own.")
+    parser.add_argument("--coupler_mean", type=float, required=False, default=None, help="Location of the coupler PER distribution (median with `--coupler_center median`). Required unless --coupler_model is derived.")
+    parser.add_argument("--coupler_deviation", type=float, required=False, default=0.0, help="Deviation of the coupler PER distribution.")
+    parser.add_argument("--coupler_skew", type=float, required=False, default=0.0, help="Skewness of the coupler PER distribution (skewed-contour only).")
+    parser.add_argument("--coupler_center", choices=['mean', 'median'], required=False, default='mean', help="Which statistic `--coupler_mean` pins (skewed-contour only).")
+    parser.add_argument("--coupler_seed", type=int_or_none, required=False, default=None, help="Seed for the coupler noise model; None draws a fresh one, which --save_config records.")
+    parser.add_argument("--correlation", type=unit_float_or_none, required=False, default=None, help="Correlation in [0, 1] between a coupler and the mean of its two qubits, in latent terms: 1 reproduces the endpoint-mean ordering, 0 is independent of the qubits, None applies the coupler model uncorrelated.")
     parser.add_argument("--shots", type=int, required=False, default=50_000, help="Number of shots to sample for each candidate position on a chip.")
     parser.add_argument("--max_errors", type=int_or_none, required=False, default=None, help = "Maximum number of errors encountered before exiting sampling. If the number of errors sampled surpasses this value then the sampling will stop regardless of maximum shot count.")
     parser.add_argument("--min_errors", type=int, required=False, default=30, help="Minimum number of errors that should be encountered at each location. If a sample reaches the provided shot count without sampling at least this many errors, it will continue until a maximum shot ceiling. Default value is 30.")
     parser.add_argument("--shot_ceiling", type=int_or_none, required = False, default=None, help="If minimum errors is not None, then providing shot ceiling here determines the upper bounds of shots in order to sample the minimum errors. This defaults to 20x the provided ideal shot count.")
     parser.add_argument("--logger", type=bool, required=False, default=True,  help="Show additional logging information along progress info.")
     parser.add_argument("--save_config", type=bool, required=False, default=False, help="Exports the command arguements to a reusable <name>_config.txt file that can be used to identically run the experiment.")
-    parser.add_argument("--chip", type=str, required=False, default=None, help="Path to a flake file containing a chip. If specified, the provided dimensions and noise parameters will be ignored")
+    parser.add_argument("--chip", type=str_or_none, required=False, default=None, help="Path to a flake file containing a chip. If specified, the provided dimensions and noise parameters will be ignored")
 
     args = parser.parse_args()
 
     if args.save_config and args.name is None:
         parser.error("--name is required when --save_config is set.")
+    if args.coupler_model != DERIVED and args.coupler_mean is None:
+        parser.error("--coupler_mean is required when --coupler_model is not derived.")
 
     if args.logger:
         logging.basicConfig(level=logging.INFO)
@@ -119,6 +166,13 @@ def main():
                                     noise_model = args.model,
                                     skew = args.skew,
                                     center = args.center,
+                                    coupler_model = args.coupler_model,
+                                    coupler_mean = args.coupler_mean,
+                                    coupler_deviation = args.coupler_deviation,
+                                    coupler_skew = args.coupler_skew,
+                                    coupler_center = args.coupler_center,
+                                    coupler_seed = args.coupler_seed,
+                                    correlation = args.correlation,
                                     max_errors = args.max_errors,
                                     min_errors = args.min_errors,
                                     shot_ceiling = args.shot_ceiling)

@@ -4,7 +4,7 @@ import pytest
 
 matplotlib.use("Agg")  # never open a window from the test suite
 
-from qsnow.interface.models import NoiseModelSpec
+from qsnow.interface.noise import NormalContour, Uniform
 from qsnow.experiments.squarepacking.game import SquarePackingExp  # noqa: E402
 from qsnow.helpers import serialize  # noqa: E402
 from qsnow.interface.chip import Chip  # noqa: E402
@@ -75,15 +75,15 @@ def named_roots(tmp_path):
     """Two roots whose chips record a noise-model name, for label derivation."""
     roots = {}
     for key, model in [
-        ("primary", "derived contour"),
-        ("baseline", "uniform homogeneous"),
+        ("primary", NormalContour(0.01, 0.003, seed=1)),
+        ("baseline", Uniform(0.01)),
     ]:
         root = tmp_path / key
         serialize.set_data_dir(root)
         try:
             for d in DISTANCES:
                 exp = SquarePackingExp(chip=Chip(10, 10), tile=SCTile(d))
-                exp.chip.spec.noise_model = NoiseModelSpec(name=model)
+                exp.chip.spec.noise_model = model
                 exp.config["shots"] = 1_000
                 exp.results = {
                     loc: {"shots": 1_000, "errors": 2, "ler": 0.002}

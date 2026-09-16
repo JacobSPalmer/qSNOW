@@ -69,6 +69,20 @@ class TestPanels:
         ax_sites, ax_couplers = _histo(chip, sharex=False).axes
         assert ax_couplers not in ax_sites.get_shared_x_axes().get_siblings(ax_sites)
 
+    def test_logx_sets_a_log_scale_with_geometric_bins(self, chip):
+        fig = _histo(chip, which="sites", logx=True)
+        ax = fig.axes[0]
+        assert ax.get_xscale() == "log"
+        edges = [patch.get_x() for patch in ax.patches]
+        ratios = [b / a for a, b in zip(edges, edges[1:])]
+        assert max(ratios) == pytest.approx(min(ratios), rel=1e-6)  # equal ratios, not widths
+
+    def test_linear_axis_by_default(self, chip):
+        assert _histo(chip, which="sites").axes[0].get_xscale() == "linear"
+
+    def test_logx_applies_to_both_panels(self, chip):
+        assert all(ax.get_xscale() == "log" for ax in _histo(chip, logx=True).axes)
+
     def test_limits_apply_to_every_panel(self, chip):
         fig = _histo(chip, limits=(0.0, 0.02))
         assert all(ax.get_xlim() == (0.0, 0.02) for ax in fig.axes)

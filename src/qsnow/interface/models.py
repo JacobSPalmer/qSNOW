@@ -1,10 +1,13 @@
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, Literal, Optional, Self, Tuple, overload, TypeAlias
+from typing import TYPE_CHECKING, Any, Dict, Literal, Optional, Self, Tuple, overload, TypeAlias
 
 from functools import total_ordering
 from numbers import Number
+
+if TYPE_CHECKING:
+    from .noise.distribution import NoiseDistribution
 
 Coord: TypeAlias = Tuple[float, float]
 ShiftFunction: TypeAlias = Callable[[*tuple[float, ...]], Coord]
@@ -46,49 +49,24 @@ CouplerMode: TypeAlias = Literal["mean", "max", "min"]
 
 
 @dataclass
-class NoiseModelSpec:
-    """
-    How a chip's qubit noise landscape was produced: the generator's `name`, the
-    `seed` it resolved (None for deterministic generators), and its remaining `params`.
-
-    Enough to regenerate the landscape bit for bit, and the source every display
-    surface labels a chip from. `as_dict` is the flat `{name, **params, seed}` shape
-    those surfaces and the flake format read.
-    """
-
-    name: str
-    seed: Optional[int] = None
-    params: Dict[str, Any] = field(default_factory=dict)
-
-    def as_dict(self) -> Dict[str, Any]:
-        flat: Dict[str, Any] = {"name": self.name, **self.params}
-        if self.seed is not None:
-            flat["seed"] = self.seed
-        return flat
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "NoiseModelSpec":
-        rest = {k: v for k, v in data.items() if k not in ("name", "seed")}
-        return cls(name=data["name"], seed=data.get("seed"), params=rest)
-
-
-@dataclass
 class ChipSpec:
     """
-    State a chip's own code reads to rebuild its noise landscape: which generator
-    produced the qubit rates, which (if any) produced the coupler rates, and how coupler
-    rates derive from their endpoints when no coupler generator is in force.
+    State a chip's own code reads to rebuild its noise landscape: the distribution that
+    produced the site rates, the one (if any) that produced the coupler rates and the
+    cross-correlation it was applied with, and how coupler rates derive from their
+    endpoints when no coupler distribution is in force.
 
     Typed and separate from `Tag.metadata` for the same reason `TileSpec` is: metadata
     is free-form text for humans, so anything the tool branches on must not live there
     where it can be reshaped, shared between copies, or silently dropped.
     """
 
-    noise_model: Optional[NoiseModelSpec] = None
+    noise_model: Optional["NoiseDistribution"] = None
     coupler_mode: CouplerMode = "mean"
-    # The coupler-side twin of `noise_model`. None whenever the couplers are derived
-    # from their endpoints or were assigned by hand.
-    coupler_model: Optional[NoiseModelSpec] = None
+    # The coupler-side twin of `noise_model`, and the correlation it was applied with.
+    # Both None whenever the couplers are derived from their endpoints or hand-set.
+    coupler_model: Optional["NoiseDistribution"] = None
+    coupler_correlation: Optional[float] = None
 
 
 class Status(Enum):

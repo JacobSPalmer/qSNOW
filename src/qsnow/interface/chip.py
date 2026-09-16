@@ -8,9 +8,6 @@ from copy import deepcopy
 from typing import Dict, List, Optional, Tuple, Any, Union
 from warnings import warn
 
-from numpy.random import SeedSequence, default_rng
-from scipy.stats import truncnorm, uniform
-
 from qsnow.visualize import (
     VisualizationStyle,
     default_style,
@@ -22,25 +19,26 @@ from qsnow.visualize import (
 
 from .grid import Grid
 from .lattice import CHECKERBOARD, Lattice
-from .noise_fields import (
-    Center,
-    blend_latents,
-    normal_scores,
-    p_bounds,
-    quantile_map,
-    skewed_target,
-)
 from .models import (
     ChipSpec,
     Coord,
     Coupler,
     CouplerKey,
     CouplerMode,
-    NoiseModelSpec,
     NoiseProfile,
     Qubit,
     Tag,
     coupler_key,
+)
+from .noise import (
+    Center,
+    NoiseDistribution,
+    NormalContour,
+    RandomGaussian,
+    RandomUniform,
+    SkewContour,
+    Uniform,
+    as_profile,
 )
 from .tile import LogicalTile
 
@@ -79,11 +77,11 @@ class Chip(Grid):
     logical tile occupies box(0, 0, 10, 10).
 
     Typical workflow:
-      1. Instantiate Chip(L, H) and assign noise to individual qubits, or use a pre-defined
-         sampler: `generate_uniform_noise`, `generate_random_noise`, `generate_gaussian_noise`
-         (i.i.d.), or the spatially correlated `generate_derived_contour_noise` /
-         `generate_skewed_contour_noise`. Couplers follow their endpoints until
-         `generate_coupler_noise` gives them a landscape of their own.
+      1. Instantiate Chip(L, H) and give it a landscape: `generate_noise(dist)` with a
+         `NoiseDistribution` (`Uniform`, `RandomUniform`, `RandomGaussian`, `NormalContour`,
+         `SkewContour`, `Custom`), or one of the `generate_*_noise` conveniences that wrap
+         them. Couplers follow their endpoints until `generate_coupler_noise(dist, ...)`
+         gives them a landscape of their own.
       2. Build, place, and shift LogicalTiles within the chip by specifying origin points or movement shifts.
       3. Retrieve and modify noise-injected circuits by accessing `tile.circuit`.
     """
@@ -215,6 +213,7 @@ class Chip(Grid):
             "coupler_model": (
                 self.spec.coupler_model.as_dict() if self.spec.coupler_model else None
             ),
+            "coupler_correlation": self.spec.coupler_correlation,
             "coupler_mode": self.spec.coupler_mode,
             "independent_couplers": self.has_independent_couplers,
         }
@@ -222,36 +221,17 @@ class Chip(Grid):
     # ------------------------------------------------------------------
     # Noise manipulation
     # ------------------------------------------------------------------
-    def _generate_rng_seed(self):
-        return SeedSequence().entropy
-
-    def _finalize_noise_model(self, name: str, seed: Optional[int] = None, **params) -> None:
-        """
-        Close out a whole-landscape noise assignment: record it, then re-derive couplers.
-
-        Every generator ends here, so a coupler rate is never left stale behind the qubit
-        rates it was derived from. Couplers are re-derived with the mode the chip already
-        uses, so a chip derived with `max` stays a `max` chip across regenerations.
-        `set_noise_map` deliberately does *not* call this - it is a targeted edit, and
-        re-deriving would silently discard manual coupler overrides. Re-derive those
-        explicitly with `derive_coupler_noise()`.
-        """
-        self.spec.noise_model = NoiseModelSpec(name=name, seed=seed, params=params)
-        self.derive_coupler_noise(self.spec.coupler_mode)
-
     def set_noise_map(self, noise_map: Dict[Coord, NoiseProfile] | Dict[Coord, float]):
+        """Assign site profiles directly. A targeted edit: couplers are *not* re-derived
+        (that would discard manual overrides); call `derive_coupler_noise` if wanted."""
         for c, n in noise_map.items():
-            self.loc(c).noise = (
-                NoiseProfile(n.p) if isinstance(n, NoiseProfile) else NoiseProfile(n)
-            )
+            self.loc(c).noise = as_profile(n)
 
     def _write_coupler_rates(
         self, coupler_map: Dict[CouplerKey, NoiseProfile] | Dict[CouplerKey, float]
     ) -> None:
         for ends, n in coupler_map.items():
-            self.coupler(*ends).noise = (
-                NoiseProfile(n.p) if isinstance(n, NoiseProfile) else NoiseProfile(n)
-            )
+            self.coupler(*ends).noise = as_profile(n)
 
     def set_coupler_noise_map(
         self, coupler_map: Dict[CouplerKey, NoiseProfile] | Dict[CouplerKey, float]
@@ -263,7 +243,11 @@ class Chip(Grid):
         longer follow that recipe.
         """
         self._write_coupler_rates(coupler_map)
+        self._clear_coupler_model()
+
+    def _clear_coupler_model(self) -> None:
         self.spec.coupler_model = None
+        self.spec.coupler_correlation = None
 
     def derive_coupler_noise(self, mode: CouplerMode = "mean") -> None:
         """
@@ -276,7 +260,7 @@ class Chip(Grid):
         of its own, cross-correlated with the sites, use `generate_coupler_noise`.
         """
         self._derive_coupler_rates(mode)
-        self.spec.coupler_model = None  # the derived rates replace any generated ones
+        self._clear_coupler_model()  # the derived rates replace any generated ones
 
     def _derive_coupler_rates(self, mode: CouplerMode) -> None:
         combine = _COUPLER_DERIVATIONS[mode]
@@ -284,155 +268,60 @@ class Chip(Grid):
         for c in self.couplers:
             c.noise.p = combine([self.loc(e).noise.p for e in c.ends])
 
+    def generate_noise(self, dist: NoiseDistribution) -> None:
+        """
+        Give every site the landscape `dist` produces, and record `dist` as the recipe.
+
+        Couplers are then re-derived from their endpoints with the chip's current mode,
+        so a coupler rate is never left stale behind the site rates it was derived from;
+        any earlier coupler landscape is dropped with it. Apply `generate_coupler_noise`
+        afterwards for couplers of their own.
+        """
+        self.set_noise_map(dist.sites(self))
+        self.spec.noise_model = dist
+        self.derive_coupler_noise(self.spec.coupler_mode)
+
+    def generate_coupler_noise(
+        self, dist: NoiseDistribution, *, correlation: Optional[float] = None
+    ) -> None:
+        """
+        Give every coupler the landscape `dist` produces, optionally cross-correlated
+        with the site landscape the chip currently holds.
+
+        `correlation` (ρ in [0, 1]) is the correlation between a coupler and the mean of
+        its two endpoints, in latent terms: 1 reproduces the ordering
+        `derive_coupler_noise("mean")` gives, 0 is a landscape independent of the sites.
+        Only distributions built on a Gaussian field accept it. Call after the site
+        landscape exists; a later site generator re-derives the couplers and drops this
+        record. Method: `writeups/noise_generation_walkthrough.tex`.
+        """
+        self._write_coupler_rates(dist.couplers(self, correlation=correlation))
+        self.spec.coupler_model = dist
+        self.spec.coupler_correlation = correlation
+
+    # -- conveniences: one distribution each, kept for notebooks, tests and the CLI --
+
+    def generate_uniform_noise(self, p: float) -> None:
+        """`generate_noise(Uniform(p))`."""
+        self.generate_noise(Uniform(p))
+
     def generate_random_noise(
         self, range: Tuple[float, float] = (0.01, 0.05), seed: int | None = None
-    ):
-        """
-        Sets the `NoiseProfile.p` value for each qubit to a `BoundedFloat(0, 0.75)` randomly sampled from a uniform
-        distribution with an upper and lower bound of the range provided.
-
-        The `rng` determines if the random value sampling with use a seeded generator. `rng` can be provided as
-        an integer value that will become the seed for an `np.random.Generator` or `None` (default).
-        """
-        if isinstance(seed, int):
-            rng_seed = seed
-        else:
-            rng_seed = self._generate_rng_seed()
-        rng = default_rng(seed=rng_seed)
-
-        dist = uniform(loc=range[0], scale=range[1] - range[0])
-        for q in self.qubits:
-            q.noise.p = round(dist.rvs(1, random_state=rng)[0], 5)
-
-        self._finalize_noise_model("uniform random", range=range, seed=rng_seed)
+    ) -> None:
+        """`generate_noise(RandomUniform(range, seed=seed))`."""
+        self.generate_noise(RandomUniform(tuple(range), seed=seed))
 
     def generate_gaussian_noise(
-        self, mean, deviation, seed: int | None = None
-    ):  # base26 "argonne"
-        """
-        Sets the `NoiseProfile.p` value for each qubit to a `BoundedFloat(0, 0.75)` randomly sampled from a truncated gaussian
-        distribution with the mean and deviation provided.
+        self, mean: float, deviation: float, seed: int | None = None
+    ) -> None:
+        """`generate_noise(RandomGaussian(mean, deviation, seed=seed))`."""
+        self.generate_noise(RandomGaussian(mean, deviation, seed=seed))
 
-        The `rng` determines if the random value sampling with use a seeded generator. `rng` can be provided as a `np.random.Generator`,
-        an integer value that will become the seed for an `np.random.Generator`, or `None` (default).
-        """
-        if isinstance(seed, int):
-            rng_seed = seed
-        else:
-            rng_seed = self._generate_rng_seed()
-        rng = default_rng(seed=rng_seed)
-
-        floor, _ = p_bounds()
-        dist = truncnorm(
-            (floor - mean) / deviation,
-            (1 - mean) / deviation,
-            loc=mean,
-            scale=deviation,
-        )
-        for q in self.qubits:
-            q.noise.p = round(dist.rvs(1, random_state=rng)[0], 5)
-
-        self._finalize_noise_model(
-            "gaussian", mean=mean, deviation=deviation, seed=rng_seed
-        )
-
-    def _correlated_gaussian_field(
-        self, mean: float, deviation: float, rng_seed: int, slope: int
-    ) -> Dict[Coord, float]:
-        """
-        A spatially correlated Gaussian value per qubit position, before any rescaling.
-
-        White Gaussian noise is drawn on a chip padded by `slope + 1` unit cells, then
-        box-averaged over an `SCTile(slope)` footprint at every placement and cropped back
-        to this chip's extent. The moving average is what gives the landscape its
-        correlation length (`slope`); both contour generators share it so their peaks and
-        valleys coincide for the same seed. The box mean is computed through
-        `SquarePackingExp` for now (see the audit's layering note) - the sampling order is
-        part of the seeded contract, so it must not change casually.
-        """
-        from qsnow.experiments import SquarePackingExp
-        from .codes import SCTile
-
-        if slope < 3:
-            raise ValueError(
-                f"slope must be >= 3 (it is the distance of the surface-code tile whose "
-                f"footprint sets the correlation length; smaller tiles have no valid "
-                f"placements), given {slope}."
-            )
-
-        def adjust_map_dimensions(noise_map: Dict[Coord, Any], dims: Tuple[float, float]) -> Dict[Coord, float]:
-            for coord in list(noise_map.keys()):
-                if coord[0] >= dims[0] or coord[1] >= dims[1]:
-                    noise_map.pop(coord)
-            return noise_map
-
-        buffer_l, buffer_h = self.unit_dims
-        buffer_chip = Chip(
-            buffer_l + slope + 1, buffer_h + slope + 1, lattice=self.lattice
-        )
-        buffer_chip.generate_gaussian_noise(mean, deviation, rng_seed)
-
-        field = adjust_map_dimensions(
-            SquarePackingExp(buffer_chip, SCTile(slope))._average_per_for_candidate_placements(),
-            (self.length, self.height),
-        )
-        missing = self._qubits.keys() - field.keys()
-        if missing:  # loud, rather than leaving those sites at the default rate
-            raise RuntimeError(
-                f"Correlated field left {len(missing)} site(s) uncovered (slope={slope})."
-            )
-        return field
-
-    # TODO - this works and serves it's purpose just fine for now but needs a revist and cleanup down the line
     def generate_derived_contour_noise(
-            self, mean: float, deviation: float, seed: int | None = None, *, slope: int = 5, 
-        ):
-        def scale_gaussian_contour(coord_dict, new_deviation, alpha_ratio=0.1):
-            import numpy as np
-            coords = list(coord_dict.keys())
-            orig_values = np.array(list(coord_dict.values()), dtype=float)
-            deviation_factor = new_deviation / np.std(orig_values)
-            
-            target_mean = np.mean(orig_values)
-            scaled_linear = target_mean + deviation_factor * (orig_values - target_mean)
-            
-            # exponential soft-clipping to the lower tail near zero
-            # alpha is our soft lower bound fence (e.g., 10% of the mean)
-            # this means we get close to zero but no qubit ever gets an absolute 0 error rate
-            alpha = target_mean * alpha_ratio 
-            
-            # smooth C1-continuous blending function
-            final_values = np.where(
-                scaled_linear >= alpha,
-                scaled_linear,
-                alpha * np.exp((scaled_linear - alpha) / alpha)
-            )
-            
-            # Step 3: Shift slightly to correct any minor mean drift caused by the tail smoothing
-            mean_drift = np.mean(final_values) - target_mean
-            final_values = final_values - mean_drift
-            
-            # Safety double-check: if the shift pushed anything below alpha, clamp it smoothly
-            final_values = np.where(
-                final_values >= alpha, 
-                final_values, 
-                alpha * np.exp((final_values - alpha) / alpha)
-            )
-            
-            return {coords[i]: final_values[i] for i in range(len(coords))}
-
-
-        if isinstance(seed, int):
-            rng_seed = seed
-        else:
-            rng_seed = self._generate_rng_seed()
-
-        buffed_map = scale_gaussian_contour(
-            self._correlated_gaussian_field(mean, deviation, rng_seed, slope), deviation
-        )
-
-        self.set_noise_map({c:NoiseProfile(p) for c,p in buffed_map.items()})
-        self._finalize_noise_model("derived contour", mean = mean, deviation = deviation, slope = slope, seed = rng_seed)
+        self, mean: float, deviation: float, seed: int | None = None, *, slope: int = 5
+    ) -> None:
+        """`generate_noise(NormalContour(mean, deviation, slope=slope, seed=seed))`."""
+        self.generate_noise(NormalContour(mean, deviation, slope=slope, seed=seed))
 
     def generate_skewed_contour_noise(
         self,
@@ -443,114 +332,11 @@ class Chip(Grid):
         *,
         center: Center = "mean",
         slope: int = 5,
-    ):
-        """
-        A spatially correlated landscape whose marginal is a skewed (Pearson III) distribution.
-
-        The peaks and valleys are the same as `generate_derived_contour_noise` for the same
-        `seed` and `slope`; only the distribution of values across them changes. `skew > 0`
-        is right-skewed - a long tail of bad qubits - and `skew == 0` is normal. `location`
-        pins the mean of the distribution, or its median with `center="median"`. Values are
-        confined to the `NoiseProfile.p` range by truncating the target distribution, so the
-        nominal shape parameters describe the untruncated distribution; the realised sample
-        statistics also vary with chip size and correlation length.
-
-        Method: NORTA / Gaussian-copula quantile mapping (see `noise_fields`).
-        """
-        if isinstance(seed, int):
-            rng_seed = seed
-        else:
-            rng_seed = self._generate_rng_seed()
-
-        # The Gaussian field only supplies spatial structure; its own mean and deviation
-        # are standardised away by `quantile_map`.
-        field = self._correlated_gaussian_field(location, deviation, rng_seed, slope)
-        target = skewed_target(location, deviation, skew, center=center)
-        mapped = quantile_map(list(field.values()), target)
-
-        self.set_noise_map({c: NoiseProfile(p) for c, p in zip(field.keys(), mapped)})
-        self._finalize_noise_model(
-            "skewed contour",
-            location=location,
-            deviation=deviation,
-            skew=skew,
-            center=center,
-            slope=slope,
-            seed=rng_seed,
+    ) -> None:
+        """`generate_noise(SkewContour(location, deviation, skew, center, slope=slope, seed=seed))`."""
+        self.generate_noise(
+            SkewContour(location, deviation, skew, center, slope=slope, seed=seed)
         )
-
-    def generate_coupler_noise(
-        self,
-        location: float,
-        deviation: float,
-        skew: float = 0.0,
-        seed: int | None = None,
-        *,
-        correlation: float = 0.5,
-        center: Center = "mean",
-        slope: int = 5,
-    ):
-        """
-        Give the couplers a spatially correlated landscape of their own, cross-correlated
-        with the site landscape the chip currently holds.
-
-        Two standard-normal latents per coupler are blended by the linear model of
-        coregionalization, `Z = ρ·A + √(1−ρ²)·B`: `A` is the normal score of the
-        endpoint-mean site rate (rank-based, so any site landscape works - generated or
-        imported), and `B` is the endpoint mean of a fresh correlated field with this
-        call's `seed` and `slope`. `correlation` (ρ) is exactly the correlation between a
-        coupler's latent and its endpoint-mean latent: 1 reproduces the ordering
-        `derive_coupler_noise("mean")` would give, 0 is a landscape independent of the
-        sites. `Z` is then quantile-mapped
-        onto a Pearson III marginal with the given `location`, `deviation`, `skew` and
-        `center`, exactly as `generate_skewed_contour_noise` does for sites.
-
-        Call after the site landscape exists (a chip with no site variance raises). Any
-        later site generator re-derives the couplers from their endpoints and drops the
-        record this call leaves in `spec.coupler_model`.
-
-        Method: see `writeups/noise_generation_walkthrough.tex`.
-        """
-        if isinstance(seed, int):
-            rng_seed = seed
-        else:
-            rng_seed = self._generate_rng_seed()
-
-        couplers = self.couplers
-        site_latent = normal_scores(
-            [mean(self.loc(e).noise.p for e in c.ends) for c in couplers]
-        )
-        field = self._correlated_gaussian_field(location, deviation, rng_seed, slope)
-        own_latent = [mean(field[e] for e in c.ends) for c in couplers]
-
-        latent = blend_latents(site_latent, own_latent, correlation)
-        target = skewed_target(location, deviation, skew, center=center)
-        mapped = quantile_map(latent, target)
-
-        self.set_coupler_noise_map({c.ends: NoiseProfile(p) for c, p in zip(couplers, mapped)})
-        self.spec.coupler_model = NoiseModelSpec(
-            name="correlated contour",
-            seed=rng_seed,
-            params={
-                "location": location,
-                "deviation": deviation,
-                "skew": skew,
-                "correlation": correlation,
-                "center": center,
-                "slope": slope,
-            },
-        )
-
-    def generate_uniform_noise(self, p):
-        """
-        Sets the `NoiseProfile.p` value for each qubit to a `BoundedFloat(0, 0.75)` with a physical error rate
-        of the `p` provided.
-        """
-
-        for q in self.qubits:
-            q.noise.p = p
-
-        self._finalize_noise_model("uniform homogeneous", p=p)
 
     # ------------------------------------------------------------------
     # Tile operations

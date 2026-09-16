@@ -16,7 +16,7 @@ from qsnow.helpers.serialize import (
 from qsnow.interface.chip import Chip, LogicalTile
 from qsnow.interface.codes.rsc import SCTile
 from qsnow.interface.lattice import CHECKERBOARD, SQUARE
-from qsnow.interface.models import NoiseModelSpec
+from qsnow.interface.noise import RandomGaussian, RandomUniform, SkewContour, Uniform
 
 
 @pytest.fixture
@@ -617,19 +617,18 @@ class TestChipSpecRoundTrip:
 
         restored = from_dict(to_dict(chip))
 
-        assert restored.spec.noise_model == NoiseModelSpec(
-            name="gaussian", seed=7, params={"mean": 0.01, "deviation": 0.002}
-        )
+        assert restored.spec.noise_model == RandomGaussian(0.01, 0.002, seed=7)
         assert restored.spec.coupler_mode == "max"
         assert restored.has_independent_couplers is False
 
     def test_coupler_model_round_trips_with_its_rates(self, chip):
-        chip.generate_skewed_contour_noise(0.01, 0.003, 1.5, seed=3)
-        chip.generate_coupler_noise(0.05, 0.01, 1.0, seed=4, correlation=0.6)
+        chip.generate_noise(SkewContour(0.01, 0.003, 1.5, seed=3))
+        chip.generate_coupler_noise(SkewContour(0.05, 0.01, 1.0, seed=4), correlation=0.6)
 
         restored = from_dict(to_dict(chip))
 
-        assert restored.spec.coupler_model == chip.spec.coupler_model
+        assert restored.spec.coupler_model == SkewContour(0.05, 0.01, 1.0, seed=4)
+        assert restored.spec.coupler_correlation == 0.6
         assert {e: n.p for e, n in restored.coupler_map.items()} == {
             e: n.p for e, n in chip.coupler_map.items()
         }
@@ -666,9 +665,7 @@ class TestCouplerFormatVersioning:
     def test_v4_golden_file_imports_with_its_spec(self):
         chip = import_flake(self.FIXTURES / "chip_v4.flake")
 
-        assert chip.spec.noise_model == NoiseModelSpec(
-            name="gaussian", seed=7, params={"mean": 0.01, "deviation": 0.002}
-        )
+        assert chip.spec.noise_model == RandomGaussian(0.01, 0.002, seed=7)
         assert chip.spec.coupler_mode == "max"
         assert chip.coupler((0, 0), (1, 1)).noise.p == 0.2
         assert chip.tag.metadata == {"note": "a human-only annotation"}
@@ -679,15 +676,35 @@ class TestCouplerFormatVersioning:
 
         assert chip.spec.coupler_model is None
 
-    def test_v5_golden_file_imports_with_its_coupler_model(self):
+    def test_v5_correlated_contour_migrates_to_a_skew_contour_with_a_correlation(self):
+        """v5 recorded the coupler generator as "correlated contour" with the
+        correlation inside its params; v6 is `SkewContour` plus `coupler_correlation`."""
         chip = import_flake(self.FIXTURES / "chip_v5.flake")
 
-        assert chip.spec.noise_model.name == "skewed contour"
-        assert chip.spec.coupler_model == NoiseModelSpec(
-            name="correlated contour",
-            seed=4,
-            params={"location": 0.05, "deviation": 0.01, "skew": 1.0, "correlation": 0.6, "center": "mean", "slope": 5},
-        )
+        assert chip.spec.noise_model == SkewContour(0.01, 0.003, 1.5, seed=3)
+        assert chip.spec.coupler_model == SkewContour(0.05, 0.01, 1.0, seed=4)
+        assert chip.spec.coupler_correlation == 0.6
+        assert chip.has_independent_couplers
+
+    def test_v5_uniform_random_record_renames_range_to_bounds(self, chip):
+        chip.generate_uniform_noise(0.01)
+        data = to_dict(chip)
+        data["format_version"] = 5
+        data["spec"]["noise_model"] = {"name": "uniform random", "range": [0.01, 0.05], "seed": 1}
+        del data["spec"]["coupler_correlation"]
+
+        restored = from_dict(data)
+
+        assert restored.spec.noise_model == RandomUniform((0.01, 0.05), seed=1)
+        assert restored.spec.coupler_correlation is None
+
+    def test_v6_golden_file_imports_with_its_distributions(self):
+        chip = import_flake(self.FIXTURES / "chip_v6.flake")
+
+        assert chip.spec.noise_model == SkewContour(0.01, 0.003, 1.5, seed=3)
+        assert chip.spec.coupler_model == SkewContour(0.05, 0.01, 1.0, seed=4)
+        assert chip.spec.coupler_correlation == 0.6
+        assert chip.tag.metadata == {"note": "a human-only annotation"}
         assert chip.has_independent_couplers
 
     def test_v3_chip_lifts_its_record_out_of_metadata(self):
@@ -695,7 +712,7 @@ class TestCouplerFormatVersioning:
         the migration moves both onto `chip.spec` and leaves metadata free text."""
         chip = import_flake(self.FIXTURES / "chip_v3.flake")
 
-        assert chip.spec.noise_model == NoiseModelSpec(name="uniform homogeneous", params={"p": 0.01})
+        assert chip.spec.noise_model == Uniform(0.01)
         assert chip.spec.coupler_mode == "mean"
         assert "noise_model" not in chip.tag.metadata
         assert "coupler_model" not in chip.tag.metadata

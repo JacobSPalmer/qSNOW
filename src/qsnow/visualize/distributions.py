@@ -84,6 +84,23 @@ def _draw_markers(ax: "Axes", values: np.ndarray, markers: Sequence[Marker]) -> 
         ax.legend(frameon=False)
 
 
+def _bin_edges(values: np.ndarray, bins: int, logx: bool):
+    """Histogram bins: a count for a linear axis, geometric edges for a log axis.
+
+    Equal-width bins on a log axis render as bars that widen to the right, so a log
+    histogram is binned in equal ratios instead. Rates are strictly positive by
+    construction (`p_bounds`), so a zero here is a genuine error, not a case to skip.
+    """
+    if not logx:
+        return bins
+    lo, hi = float(values.min()), float(values.max())
+    if lo <= 0:
+        raise ValueError("A log x-axis needs strictly positive rates; found a value <= 0.")
+    if lo == hi:
+        return bins
+    return np.geomspace(lo, hi, bins + 1)
+
+
 def per_histogram(
     chip: "Chip",
     *,
@@ -91,6 +108,7 @@ def per_histogram(
     markers: Sequence[Marker] = _MARKERS,
     limits: Tuple[Optional[float], Optional[float]] = (None, None),
     sharex: bool = True,
+    logx: bool = False,
     add_title: str = "",
     bins: int = 25,
     dpi: Optional[int] = None,
@@ -103,7 +121,9 @@ def per_histogram(
     directly; pass `sharex=False` when the coupler rates sit on a very different scale
     and each panel should fill its own range. `markers` adds a vertical line per named
     statistic (`"mean"`, `"median"`; pass `()` for none) with its value in the legend.
-    `limits` is an `(low, high)` x-range applied to every panel.
+    `limits` is an `(low, high)` x-range applied to every panel. `logx` puts the x-axis
+    on a log scale and bins the rates geometrically, which suits the right-skewed,
+    order-of-magnitude spreads of measured devices.
 
     A coupler panel is labelled `derived: <mode>` while the coupler rates are still the
     endpoint combination `derive_coupler_noise` produced, since they then carry no
@@ -128,7 +148,9 @@ def per_histogram(
     )
     for ax, panel in zip(axes.flatten(), panels):
         values = _rates_for(chip, panel)
-        ax.hist(values, bins=bins, color=_HIST_COLOR, edgecolor=_HIST_EDGE)
+        ax.hist(values, bins=_bin_edges(values, bins, logx), color=_HIST_COLOR, edgecolor=_HIST_EDGE)
+        if logx:
+            ax.set_xscale("log")
         _draw_markers(ax, values, markers)
         ax.set_ylabel("freq")
         ax.set_xlabel("PER")
