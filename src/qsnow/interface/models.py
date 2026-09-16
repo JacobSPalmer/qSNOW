@@ -76,7 +76,8 @@ class NoiseModelSpec:
 class ChipSpec:
     """
     State a chip's own code reads to rebuild its noise landscape: which generator
-    produced the qubit rates, and how coupler rates derive from their endpoints.
+    produced the qubit rates, which (if any) produced the coupler rates, and how coupler
+    rates derive from their endpoints when no coupler generator is in force.
 
     Typed and separate from `Tag.metadata` for the same reason `TileSpec` is: metadata
     is free-form text for humans, so anything the tool branches on must not live there
@@ -85,6 +86,9 @@ class ChipSpec:
 
     noise_model: Optional[NoiseModelSpec] = None
     coupler_mode: CouplerMode = "mean"
+    # The coupler-side twin of `noise_model`. None whenever the couplers are derived
+    # from their endpoints or were assigned by hand.
+    coupler_model: Optional[NoiseModelSpec] = None
 
 
 class Status(Enum):

@@ -3,7 +3,15 @@ import pytest
 from scipy.stats import norm
 
 from qsnow.interface.models import NoiseProfile
-from qsnow.interface.noise_fields import P_FLOOR, p_bounds, quantile_map, skewed_target
+from qsnow.interface.noise_fields import (
+    P_FLOOR,
+    blend_latents,
+    normal_scores,
+    p_bounds,
+    quantile_map,
+    skewed_target,
+    standardize,
+)
 
 
 class TestPBounds:
@@ -64,3 +72,51 @@ class TestQuantileMap:
     def test_rejects_a_constant_field(self):
         with pytest.raises(ValueError, match="variance"):
             quantile_map(np.full(10, 0.01), skewed_target(0.01, 0.003, 1.5))
+
+
+class TestNormalScores:
+    @pytest.fixture
+    def field(self):
+        return np.random.default_rng(1).gamma(2.0, size=500)
+
+    def test_preserves_the_ordering(self, field):
+        assert np.array_equal(np.argsort(normal_scores(field)), np.argsort(field))
+
+    def test_is_standard_normal_shaped(self, field):
+        z = normal_scores(field)
+        assert z.mean() == pytest.approx(0.0, abs=1e-12)
+        assert z.std() == pytest.approx(1.0, rel=0.02)
+
+    def test_ties_share_a_score(self):
+        z = normal_scores([1.0, 2.0, 2.0, 3.0])
+        assert z[1] == z[2]
+
+    def test_rejects_a_constant_field(self):
+        with pytest.raises(ValueError, match="variance"):
+            normal_scores(np.full(5, 0.3))
+
+
+class TestBlendLatents:
+    @pytest.fixture
+    def latents(self):
+        rng = np.random.default_rng(2)
+        return rng.normal(size=5000), rng.normal(size=5000)
+
+    def test_rho_one_is_the_standardised_first_latent(self, latents):
+        a, b = latents
+        assert blend_latents(a, b, 1.0) == pytest.approx(standardize(a))
+
+    def test_rho_zero_is_the_standardised_second_latent(self, latents):
+        a, b = latents
+        assert blend_latents(a, b, 0.0) == pytest.approx(standardize(b))
+
+    def test_correlation_with_the_first_latent_is_rho(self, latents):
+        a, b = latents
+        z = blend_latents(a, b, 0.6)
+        assert np.corrcoef(z, a)[0, 1] == pytest.approx(0.6, abs=0.05)
+        assert z.std() == pytest.approx(1.0, rel=0.05)
+
+    @pytest.mark.parametrize("rho", [-0.1, 1.1])
+    def test_rejects_rho_outside_unit_interval(self, latents, rho):
+        with pytest.raises(ValueError, match="correlation"):
+            blend_latents(*latents, rho)

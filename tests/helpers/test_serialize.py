@@ -623,6 +623,18 @@ class TestChipSpecRoundTrip:
         assert restored.spec.coupler_mode == "max"
         assert restored.has_independent_couplers is False
 
+    def test_coupler_model_round_trips_with_its_rates(self, chip):
+        chip.generate_skewed_contour_noise(0.01, 0.003, 1.5, seed=3)
+        chip.generate_coupler_noise(0.05, 0.01, 1.0, seed=4, correlation=0.6)
+
+        restored = from_dict(to_dict(chip))
+
+        assert restored.spec.coupler_model == chip.spec.coupler_model
+        assert {e: n.p for e, n in restored.coupler_map.items()} == {
+            e: n.p for e, n in chip.coupler_map.items()
+        }
+        assert restored.has_independent_couplers
+
     def test_spec_is_not_written_into_tag_metadata(self, chip):
         chip.generate_uniform_noise(0.01)
 
@@ -660,6 +672,23 @@ class TestCouplerFormatVersioning:
         assert chip.spec.coupler_mode == "max"
         assert chip.coupler((0, 0), (1, 1)).noise.p == 0.2
         assert chip.tag.metadata == {"note": "a human-only annotation"}
+
+    def test_v4_chip_has_no_coupler_model(self):
+        """v4 predates the coupler generator; its couplers were derived or hand-set."""
+        chip = import_flake(self.FIXTURES / "chip_v4.flake")
+
+        assert chip.spec.coupler_model is None
+
+    def test_v5_golden_file_imports_with_its_coupler_model(self):
+        chip = import_flake(self.FIXTURES / "chip_v5.flake")
+
+        assert chip.spec.noise_model.name == "skewed contour"
+        assert chip.spec.coupler_model == NoiseModelSpec(
+            name="correlated contour",
+            seed=4,
+            params={"location": 0.05, "deviation": 0.01, "skew": 1.0, "correlation": 0.6, "center": "mean", "slope": 5},
+        )
+        assert chip.has_independent_couplers
 
     def test_v3_chip_lifts_its_record_out_of_metadata(self):
         """Pre-v4 exports recorded the noise model and coupler mode in `tag.metadata`;

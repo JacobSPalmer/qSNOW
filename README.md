@@ -23,6 +23,8 @@ d5Tile = SCTile(distance=5)
 chip.generate_gaussian_noise(mean=0.001,deviation=0.0006)
 # or a spatially correlated, right-skewed landscape:
 # chip.generate_skewed_contour_noise(location=0.001, deviation=0.0006, skew=1.5)
+# and, optionally, a coupler landscape cross-correlated with the sites:
+# chip.generate_coupler_noise(location=0.005, deviation=0.002, skew=1.0, correlation=0.5)
 
 ## Place logical tiles on the chip
 chip.add_tile(d3Tile,       loc=(0,0))

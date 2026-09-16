@@ -90,6 +90,7 @@ def per_histogram(
     which: Which = "both",
     markers: Sequence[Marker] = _MARKERS,
     limits: Tuple[Optional[float], Optional[float]] = (None, None),
+    sharex: bool = True,
     add_title: str = "",
     bins: int = 25,
     dpi: Optional[int] = None,
@@ -97,10 +98,12 @@ def per_histogram(
 ) -> Optional["Figure"]:
     """Histogram(s) of a chip's physical error rates, per site and/or per coupler.
 
-    `which` picks the panels: `"sites"`, `"couplers"`, or `"both"` side by side on a
-    shared x-axis so the two marginals compare directly. `markers` adds a vertical line
-    per named statistic (`"mean"`, `"median"`; pass `()` for none) with its value in the
-    legend. `limits` is an `(low, high)` x-range applied to every panel.
+    `which` picks the panels: `"sites"`, `"couplers"`, or `"both"` side by side. With
+    `sharex` (default) the panels share one x-axis so the two marginals compare
+    directly; pass `sharex=False` when the coupler rates sit on a very different scale
+    and each panel should fill its own range. `markers` adds a vertical line per named
+    statistic (`"mean"`, `"median"`; pass `()` for none) with its value in the legend.
+    `limits` is an `(low, high)` x-range applied to every panel.
 
     A coupler panel is labelled `derived: <mode>` while the coupler rates are still the
     endpoint combination `derive_coupler_noise` produced, since they then carry no
@@ -120,7 +123,7 @@ def per_histogram(
         len(panels),
         figsize=(max(4.5 * len(panels), _MIN_FIG_WIDTH), 5),
         dpi=dpi,
-        sharex=True,
+        sharex=sharex,
         squeeze=False,
     )
     for ax, panel in zip(axes.flatten(), panels):
@@ -131,7 +134,10 @@ def per_histogram(
         ax.set_xlabel("PER")
         ax.tick_params(axis="x", rotation=45)
         ax.set_title(_panel_title(chip, panel, values.size))
-        ax.set_xlim(limits[0], limits[1])
+        if limits != (None, None):
+            # set only on request: `set_xlim` switches autoscaling off, and on a shared
+            # axis that would freeze the range at the first panel's data
+            ax.set_xlim(limits[0], limits[1])
 
     fig.suptitle(chip_suptitle(chip_headline(chip, "PER by count"), chip, None, add_title))
 
