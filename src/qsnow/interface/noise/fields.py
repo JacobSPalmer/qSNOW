@@ -1,25 +1,33 @@
 """
-Marginal transforms for spatially correlated noise landscapes.
+The numerics behind the noise distributions: Gaussian fields and marginal transforms.
 
-A contour generator on `Chip` produces a *Gaussian* field whose spatial structure comes
-from box-averaging white noise. The functions here give that field a different marginal
-distribution without disturbing its structure, using the NORTA / Gaussian-copula
-construction (Cario & Nelson, 1997; the "normal score transform" of geostatistics):
-standardise the field, push it through the standard normal CDF to uniforms, then pull
-those uniforms through the target distribution's quantile function.
+A `GaussianFieldDistribution` builds a landscape in two steps - a Gaussian field that
+carries only spatial structure, then a reshaping of its values into the requested
+marginal. The field builders here (`iid_gaussian_field`, `correlated_gaussian_field`)
+produce the first; the marginal transforms (`quantile_map`, `scale_gaussian_contour`)
+produce the second, using the NORTA / Gaussian-copula construction (Cario & Nelson,
+1997; the "normal score transform" of geostatistics): standardise the field, push it
+through the standard normal CDF to uniforms, then pull those uniforms through the
+target distribution's quantile function. `normal_scores` and `blend_latents` are the
+pieces of the cross-correlated coupler path. Method walkthrough:
+`writeups/noise_generation_walkthrough.tex`.
 
-Everything in this module is a pure function of arrays and frozen scipy distributions,
-so it can be unit-tested without building a chip.
+Everything except the two field builders is a pure function of arrays and frozen scipy
+distributions, testable without a chip.
 """
 
 from __future__ import annotations
 
-from typing import Literal, Tuple
+from statistics import mean
+from typing import TYPE_CHECKING, Dict, Literal, Tuple
 
 import numpy as np
 from scipy.stats import norm, pearson3, rankdata
 
-from .models import NoiseProfile
+from ..models import Coord, NoiseProfile
+
+if TYPE_CHECKING:
+    from ..chip import Chip
 
 __all__ = [
     "P_FLOOR",
@@ -30,6 +38,9 @@ __all__ = [
     "normal_scores",
     "blend_latents",
     "quantile_map",
+    "scale_gaussian_contour",
+    "iid_gaussian_field",
+    "correlated_gaussian_field",
 ]
 
 Center = Literal["mean", "median"]
@@ -125,3 +136,98 @@ def quantile_map(
     u = norm.cdf(standardize(values))
     f_lo, f_hi = target.cdf(lo), target.cdf(hi)
     return target.ppf(f_lo + u * (f_hi - f_lo))
+
+
+def scale_gaussian_contour(
+    values, deviation: float, alpha_ratio: float = 0.1
+) -> np.ndarray:
+    """
+    The legacy contour reshape: rescale a Gaussian field to `deviation` about its own
+    mean, with an exponential soft clip that keeps the lower tail above a fence of
+    `alpha_ratio * mean` so no site reaches an absolute zero rate.
+
+    Kept verbatim from the original `generate_derived_contour_noise`, arithmetic and
+    order included, because its seeded output is part of the DATE record.
+    """
+    orig_values = np.array(values, dtype=float)
+    deviation_factor = deviation / np.std(orig_values)
+
+    target_mean = np.mean(orig_values)
+    scaled_linear = target_mean + deviation_factor * (orig_values - target_mean)
+
+    # exponential soft-clipping to the lower tail near zero
+    alpha = target_mean * alpha_ratio
+
+    # smooth C1-continuous blending function
+    final_values = np.where(
+        scaled_linear >= alpha,
+        scaled_linear,
+        alpha * np.exp((scaled_linear - alpha) / alpha),
+    )
+
+    # shift slightly to correct any minor mean drift caused by the tail smoothing
+    mean_drift = np.mean(final_values) - target_mean
+    final_values = final_values - mean_drift
+
+    # if the shift pushed anything below alpha, clamp it smoothly
+    final_values = np.where(
+        final_values >= alpha,
+        final_values,
+        alpha * np.exp((final_values - alpha) / alpha),
+    )
+    return final_values
+
+
+def iid_gaussian_field(chip: "Chip", seed: int) -> Dict[Coord, float]:
+    """One independent standard-normal value per site: a field with no spatial structure."""
+    from numpy.random import default_rng
+
+    coords = list(chip.noise_map.keys())
+    return dict(zip(coords, default_rng(seed).standard_normal(len(coords))))
+
+
+def correlated_gaussian_field(
+    chip: "Chip", mean_: float, deviation: float, seed: int, slope: int
+) -> Dict[Coord, float]:
+    """
+    A spatially correlated Gaussian value per site, before any reshaping.
+
+    White Gaussian noise (`RandomGaussian(mean_, deviation, seed)`) is drawn on a chip
+    padded by `slope + 1` unit cells, then box-averaged over an `SCTile(slope)` footprint
+    at every valid placement and cropped back to `chip`'s extent. The moving average is
+    what gives the landscape its correlation length (`slope`); every contour
+    distribution shares it, so their peaks and valleys coincide for the same seed. The
+    sampling order and the box arithmetic are part of the seeded contract and must not
+    change casually (`tests/interface/noise/baselines/`).
+    """
+    from ..chip import Chip
+    from ..codes import SCTile
+    from .distribution import RandomGaussian
+
+    if slope < 3:
+        raise ValueError(
+            f"slope must be >= 3 (it is the distance of the surface-code tile whose "
+            f"footprint sets the correlation length; smaller tiles have no valid "
+            f"placements), given {slope}."
+        )
+
+    buffer_l, buffer_h = chip.unit_dims
+    buffer_chip = Chip(buffer_l + slope + 1, buffer_h + slope + 1, lattice=chip.lattice)
+    buffer_chip.set_noise_map(RandomGaussian(mean_, deviation, seed=seed).sites(buffer_chip))
+
+    tile = SCTile(slope)
+    field: Dict[Coord, float] = {}
+    for origin in buffer_chip.candidate_placements(tile):
+        if origin[0] >= chip.length or origin[1] >= chip.height:
+            continue
+        _, bound = buffer_chip.footprint_for(origin, tile.length, tile.height)
+        field[origin] = mean(
+            q.noise.p for q in buffer_chip.select_rect(*origin, *bound).values()
+        )
+
+    missing = chip.noise_map.keys() - field.keys()
+    if missing:  # loud, rather than leaving those sites at the default rate
+        raise RuntimeError(
+            f"Correlated field left {len(missing)} site(s) uncovered (slope={slope})."
+        )
+    return field

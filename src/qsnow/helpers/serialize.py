@@ -28,10 +28,12 @@ Notes:
     carry a `TileSpec` which contains tile-specific information. Specifically,
     the arguements to the generator/generation function that produced the underlying
     tile are passed here and used to regenerate the flake upon import.
-  - Chips carry a `ChipSpec`: the noise generator record (name, seed, parameters),
-    the coupler derivation mode, and (v5) the coupler generator record, None while the
-    couplers are derived or hand-set. Before v4 the first two lived in `tag.metadata`;
-    the v3->v4 migration lifts them out, so metadata is free text again.
+  - Chips carry a `ChipSpec`: the `NoiseDistribution` that produced the site rates
+    (stored as its `as_dict()` record: name, parameters, seed), the coupler derivation
+    mode, and (v5/v6) the coupler distribution plus the correlation it was applied
+    with, None while the couplers are derived or hand-set. Before v4 the first two
+    lived in `tag.metadata`; the v3->v4 migration lifts them out. v6 replaced the
+    name-and-dict record with distribution objects (same flat shape on disk).
   - Ruleset injection rules are fully serialized. Custom triggers/filters
     (beyond the built-in defaults) hold arbitrary callables and cannot be
     serialized; a warning is raised if any are present at export (the handling of
@@ -68,7 +70,8 @@ from qsnow.experiments.squarepacking.game import SquarePackingExp
 from qsnow.interface.chip import Chip, LogicalTile
 from qsnow.interface.codes.rsc import SCTile
 from qsnow.interface.lattice import CHECKERBOARD, lattice_by_name
-from qsnow.interface.models import ChipSpec, Coord, CouplerKey, NoiseModelSpec, Tag, TileSpec
+from qsnow.interface.models import ChipSpec, Coord, CouplerKey, Tag, TileSpec
+from qsnow.interface.noise import NoiseDistribution
 from qsnow.interface.rules import (
     _DEFAULT_FILTERS,
     _DEFAULT_TRIGGERS,
@@ -80,7 +83,7 @@ from qsnow.interface.rules import (
 import logging
 logger = logging.getLogger(__name__)
 
-FORMAT_VERSION = 5
+FORMAT_VERSION = 6
 
 # ------------------------------------------------------------------
 # Format versioning / migrations
@@ -173,6 +176,25 @@ def _v4_to_v5(data: Dict) -> Dict:
     one, so the field is absent, which `ChipSpec` reads as "derived from endpoints"."""
     if data.get("__qsnow__") == "Chip":
         data.setdefault("spec", {}).setdefault("coupler_model", None)
+    return data
+
+
+@_migration(5)
+def _v5_to_v6(data: Dict) -> Dict:
+    """v6 records noise as `NoiseDistribution` objects. Two v5 records need renaming
+    to match their classes: the coupler record "correlated contour" is `SkewContour`
+    applied with a correlation, which now lives in `spec.coupler_correlation`; and
+    "uniform random" spelled its bounds `range`, now `bounds`."""
+    if data.get("__qsnow__") == "Chip":
+        spec = data.setdefault("spec", {})
+        spec.setdefault("coupler_correlation", None)
+        coupler_model = spec.get("coupler_model")
+        if coupler_model and coupler_model.get("name") == "correlated contour":
+            coupler_model["name"] = "skewed contour"
+            spec["coupler_correlation"] = coupler_model.pop("correlation", None)
+        noise_model = spec.get("noise_model")
+        if noise_model and noise_model.get("name") == "uniform random" and "range" in noise_model:
+            noise_model["bounds"] = noise_model.pop("range")
     return data
 
 
@@ -406,6 +428,7 @@ def chip_spec_to_dict(spec: ChipSpec) -> Dict:
     return {
         "noise_model": spec.noise_model.as_dict() if spec.noise_model else None,
         "coupler_model": spec.coupler_model.as_dict() if spec.coupler_model else None,
+        "coupler_correlation": spec.coupler_correlation,
         "coupler_mode": spec.coupler_mode,
     }
 
@@ -414,9 +437,10 @@ def chip_spec_from_dict(data: Dict) -> ChipSpec:
     noise_model = data.get("noise_model")
     coupler_model = data.get("coupler_model")
     return ChipSpec(
-        noise_model=NoiseModelSpec.from_dict(noise_model) if noise_model else None,
+        noise_model=NoiseDistribution.from_dict(noise_model) if noise_model else None,
         coupler_mode=data.get("coupler_mode", "mean"),
-        coupler_model=NoiseModelSpec.from_dict(coupler_model) if coupler_model else None,
+        coupler_model=NoiseDistribution.from_dict(coupler_model) if coupler_model else None,
+        coupler_correlation=data.get("coupler_correlation"),
     )
 
 
