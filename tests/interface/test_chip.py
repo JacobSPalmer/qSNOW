@@ -175,6 +175,93 @@ class TestNoiseGeneration:
         assert np.median([q.noise.p for q in lg_chip.qubits]) == pytest.approx(0.01, rel=0.1)
 
 
+class TestCouplerNoiseGeneration:
+    @pytest.fixture
+    def landscape(self) -> Chip:
+        c = Chip(16, 16)
+        c.generate_skewed_contour_noise(0.01, 0.003, 1.5, seed=3)
+        return c
+
+    @staticmethod
+    def _endpoint_mean_correlation(chip: Chip) -> float:
+        couplers = chip.couplers
+        own = [c.noise.p for c in couplers]
+        ends = [mean(chip.loc(e).noise.p for e in c.ends) for c in couplers]
+        return stats.spearmanr(own, ends).statistic
+
+    def test_assigns_every_coupler_within_bounds(self, landscape: Chip):
+        landscape.generate_coupler_noise(0.05, 0.01, 1.0, seed=4)
+        lo, hi = p_bounds()
+        assert all(lo <= c.noise.p <= hi for c in landscape.couplers)
+        assert landscape.has_independent_couplers
+
+    def test_is_seed_reproducible(self, landscape: Chip):
+        landscape.generate_coupler_noise(0.05, 0.01, 1.0, seed=4)
+        first = [c.noise.p for c in landscape.couplers]
+        landscape.generate_coupler_noise(0.05, 0.01, 1.0, seed=4)
+        assert [c.noise.p for c in landscape.couplers] == first
+
+    def test_full_correlation_reproduces_the_endpoint_mean_ordering(self, landscape: Chip):
+        landscape.generate_coupler_noise(0.05, 0.01, 1.0, seed=4, correlation=1.0)
+        assert self._endpoint_mean_correlation(landscape) == pytest.approx(1.0)
+
+    def test_zero_correlation_ignores_the_site_landscape(self, landscape: Chip):
+        # At rho=0 the coupler latent is the independent field alone, so the coupler
+        # map must come out identical whatever site landscape the chip holds.
+        landscape.generate_coupler_noise(0.05, 0.01, 1.0, seed=4, correlation=0.0)
+        first = [c.noise.p for c in landscape.couplers]
+        landscape.generate_skewed_contour_noise(0.02, 0.005, 0.5, seed=99)
+        landscape.generate_coupler_noise(0.05, 0.01, 1.0, seed=4, correlation=0.0)
+        assert [c.noise.p for c in landscape.couplers] == pytest.approx(first)
+
+    def test_slope_below_three_is_rejected(self, landscape: Chip):
+        with pytest.raises(ValueError, match="slope"):
+            landscape.generate_coupler_noise(0.05, 0.01, seed=4, slope=2)
+
+    def test_correlation_orders_the_coupling_strength(self, landscape: Chip):
+        observed = []
+        for rho in (0.0, 0.5, 1.0):
+            landscape.generate_coupler_noise(0.05, 0.01, 1.0, seed=4, correlation=rho)
+            observed.append(self._endpoint_mean_correlation(landscape))
+        assert observed[0] < observed[1] < observed[2]
+        assert 0.3 < observed[1] < 0.8
+
+    def test_couplers_take_their_own_marginal(self, landscape: Chip):
+        landscape.generate_coupler_noise(0.05, 0.01, 1.0, seed=4)
+        p = [c.noise.p for c in landscape.couplers]
+        assert np.mean(p) == pytest.approx(0.05, rel=0.1)
+        assert stats.skew(p) > 0.3
+
+    def test_records_a_coupler_model(self, landscape: Chip):
+        landscape.generate_coupler_noise(0.05, 0.01, 1.0, seed=4, correlation=0.6)
+        assert landscape.spec.coupler_model == NoiseModelSpec(
+            name="correlated contour",
+            seed=4,
+            params={"location": 0.05, "deviation": 0.01, "skew": 1.0, "correlation": 0.6, "center": "mean", "slope": 5},
+        )
+        assert landscape.summary()["coupler_model"]["name"] == "correlated contour"
+
+    def test_a_site_generator_afterwards_re_derives_and_drops_the_record(self, landscape: Chip):
+        landscape.generate_coupler_noise(0.05, 0.01, 1.0, seed=4)
+        landscape.generate_gaussian_noise(0.01, 0.002, seed=1)
+        assert landscape.spec.coupler_model is None
+        assert not landscape.has_independent_couplers
+
+    def test_a_hand_override_drops_the_record(self, landscape: Chip):
+        landscape.generate_coupler_noise(0.05, 0.01, 1.0, seed=4)
+        landscape.set_coupler_noise_map({landscape.couplers[0].ends: 0.2})
+        assert landscape.spec.coupler_model is None
+
+    def test_copy_keeps_the_record(self, landscape: Chip):
+        landscape.generate_coupler_noise(0.05, 0.01, 1.0, seed=4)
+        assert landscape.copy().spec.coupler_model == landscape.spec.coupler_model
+
+    def test_requires_a_site_landscape_with_variance(self, chip: Chip):
+        chip.generate_uniform_noise(0.01)
+        with pytest.raises(ValueError, match="variance"):
+            chip.generate_coupler_noise(0.05, 0.01)
+
+
 class TestTileClassProperties:
     def test_chip_origin_and_bound(self, chip: Chip, logical_tile: LogicalTile):
         chip.add_tile(logical_tile, (2, 2))

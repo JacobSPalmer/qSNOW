@@ -28,9 +28,10 @@ Notes:
     carry a `TileSpec` which contains tile-specific information. Specifically,
     the arguements to the generator/generation function that produced the underlying
     tile are passed here and used to regenerate the flake upon import.
-  - Chips carry a `ChipSpec`: the noise generator record (name, seed, parameters)
-    and the coupler derivation mode. Before v4 both lived in `tag.metadata`; the
-    v3->v4 migration lifts them out, so metadata is free text again.
+  - Chips carry a `ChipSpec`: the noise generator record (name, seed, parameters),
+    the coupler derivation mode, and (v5) the coupler generator record, None while the
+    couplers are derived or hand-set. Before v4 the first two lived in `tag.metadata`;
+    the v3->v4 migration lifts them out, so metadata is free text again.
   - Ruleset injection rules are fully serialized. Custom triggers/filters
     (beyond the built-in defaults) hold arbitrary callables and cannot be
     serialized; a warning is raised if any are present at export (the handling of
@@ -79,7 +80,7 @@ from qsnow.interface.rules import (
 import logging
 logger = logging.getLogger(__name__)
 
-FORMAT_VERSION = 4
+FORMAT_VERSION = 5
 
 # ------------------------------------------------------------------
 # Format versioning / migrations
@@ -163,6 +164,15 @@ def _v3_to_v4(data: Dict) -> Dict:
                 "coupler_mode": coupler_model.get("mode", "mean"),
             },
         )
+    return data
+
+
+@_migration(4)
+def _v4_to_v5(data: Dict) -> Dict:
+    """v5 adds `spec.coupler_model`, the coupler generator record. A v4 chip never had
+    one, so the field is absent, which `ChipSpec` reads as "derived from endpoints"."""
+    if data.get("__qsnow__") == "Chip":
+        data.setdefault("spec", {}).setdefault("coupler_model", None)
     return data
 
 
@@ -395,15 +405,18 @@ def tag_from_dict(data: Dict) -> Tag:
 def chip_spec_to_dict(spec: ChipSpec) -> Dict:
     return {
         "noise_model": spec.noise_model.as_dict() if spec.noise_model else None,
+        "coupler_model": spec.coupler_model.as_dict() if spec.coupler_model else None,
         "coupler_mode": spec.coupler_mode,
     }
 
 
 def chip_spec_from_dict(data: Dict) -> ChipSpec:
     noise_model = data.get("noise_model")
+    coupler_model = data.get("coupler_model")
     return ChipSpec(
         noise_model=NoiseModelSpec.from_dict(noise_model) if noise_model else None,
         coupler_mode=data.get("coupler_mode", "mean"),
+        coupler_model=NoiseModelSpec.from_dict(coupler_model) if coupler_model else None,
     )
 
 

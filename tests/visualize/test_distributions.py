@@ -57,6 +57,18 @@ class TestPanels:
         ax_sites, ax_couplers = _histo(chip).axes
         assert ax_couplers in ax_sites.get_shared_x_axes().get_siblings(ax_sites)
 
+    def test_shared_axis_spans_both_marginals(self, chip):
+        # regression: setting (None, None) limits froze the shared axis at the site
+        # range, so couplers on a higher scale fell outside it and drew nothing
+        chip.set_coupler_noise_map({c.ends: 0.2 for c in chip.couplers})
+        ax_sites, ax_couplers = _histo(chip).axes
+        lo, hi = ax_couplers.get_xlim()
+        assert lo < 0.01 and hi > 0.2
+
+    def test_sharex_false_gives_each_panel_its_own_axis(self, chip):
+        ax_sites, ax_couplers = _histo(chip, sharex=False).axes
+        assert ax_couplers not in ax_sites.get_shared_x_axes().get_siblings(ax_sites)
+
     def test_limits_apply_to_every_panel(self, chip):
         fig = _histo(chip, limits=(0.0, 0.02))
         assert all(ax.get_xlim() == (0.0, 0.02) for ax in fig.axes)

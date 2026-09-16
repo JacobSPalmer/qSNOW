@@ -56,7 +56,6 @@ class QubitStyle:
     linewidths: float = 0.75
     custom_hovertext: Optional[str] = None
 
-
 @dataclass
 class ColorbarSpec:
     # A plotly colorscale name, or an explicit [[frac, color], ...] list (see
@@ -963,8 +962,8 @@ def _build_style_layer(
                     yanchor="middle",
                     font=dict(
                         color=_label_color(qubit_fill.get(coord, "")),
-                        size=7,
-                        family="Andale Mono, monospace",
+                        size=12,
+                        family="Andale Mono, monospace, bold",
                     ),
                 )
             )
