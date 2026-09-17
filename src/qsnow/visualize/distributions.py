@@ -11,7 +11,7 @@ Matplotlib for the same reason as `profiling.py`: these are publication figures.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict, Literal, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Dict, Literal, Optional, Tuple
 
 import numpy as np
 
@@ -27,19 +27,21 @@ __all__ = ["per_histogram"]
 
 Panel = Literal["sites", "couplers"]
 Which = Literal["sites", "couplers", "both"]
-Marker = Literal["mean", "median"]
+# What the stats box shows, mirroring the calibration histogram tool's `--stats` modes:
+# sample moments of the plotted rates (`"raw"`) or log-domain moments on a log axis
+# (`"log"`).
+StatsMode = Literal["raw", "log"]
 
 _PANEL_ORDER: Tuple[Panel, ...] = ("sites", "couplers")
-_MARKERS: Tuple[Marker, ...] = ("mean", "median")
+_STATS_MODES: Tuple[StatsMode, ...] = ("raw", "log")
 
-# Same fill as `ler_histogram`, so the input and outcome figures read as one family.
-_HIST_COLOR = "skyblue"
-_HIST_EDGE = "black"
-# Markers are drawn in one neutral ink and told apart by linestyle: the histogram is a
-# single series per panel, so a second hue would suggest a second series.
-_MARKER_COLOR = "0.25"
-_MARKER_LINESTYLES: Dict[Marker, str] = {"mean": "-", "median": "--"}
-_MARKER_STATS = {"mean": np.mean, "median": np.median}
+# Calibration-tool styling: a translucent fill under a solid outline in the same colour,
+# so a single series reads as one shape rather than as fill-plus-edge. The colour is the
+# first of the active prop cycle so it follows the user's matplotlib style.
+_FILL_ALPHA = 0.35
+_OUTLINE_WIDTH = 1.2
+_GRID_ALPHA = 0.3
+_STATS_FONTSIZE = 7.5
 
 # Wide enough for the `PED(...)` caption line on a single-panel figure.
 _MIN_FIG_WIDTH = 7.0
@@ -68,20 +70,88 @@ def _panel_title(chip: "Chip", panel: Panel, n: int) -> str:
     return title + ")"
 
 
-def _draw_markers(ax: "Axes", values: np.ndarray, markers: Sequence[Marker]) -> None:
-    for marker in markers:
-        if marker not in _MARKERS:
-            raise ValueError(f"markers may contain 'mean' or 'median', given {marker!r}.")
-        stat = float(_MARKER_STATS[marker](values))
-        ax.axvline(
-            stat,
-            color=_MARKER_COLOR,
-            linestyle=_MARKER_LINESTYLES[marker],
-            linewidth=1.5,
-            label=f"{marker}={stat:.3g}",
-        )
-    if markers:
-        ax.legend(frameon=False)
+def _log_ticks(ax: "Axes") -> None:
+    """Log x-axis with labels on the decades only.
+
+    Matplotlib labels only the decades while the axis spans more than one, then switches
+    to labelling every minor tick in `2x10^-3` notation once it spans less, and those
+    labels collide. The decade labels (`10^-3`, `10^-2`) are kept on every span and the
+    minor ticks stay as unlabelled marks.
+    """
+    from matplotlib.ticker import LogFormatterSciNotation, LogLocator, NullFormatter
+
+    ax.set_xscale("log")
+    ax.xaxis.set_major_locator(LogLocator(base=10, numticks=12))
+    ax.xaxis.set_major_formatter(LogFormatterSciNotation(base=10, labelOnlyBase=True))
+    ax.xaxis.set_minor_locator(LogLocator(base=10, subs=np.arange(2, 10), numticks=12))
+    ax.xaxis.set_minor_formatter(NullFormatter())
+
+
+def _series_color() -> str:
+    import matplotlib.pyplot as plt
+
+    return plt.rcParams["axes.prop_cycle"].by_key()["color"][0]
+
+
+def _draw_histogram(ax: "Axes", values: np.ndarray, edges, color: str) -> None:
+    ax.hist(values, bins=edges, histtype="stepfilled", alpha=_FILL_ALPHA, color=color)
+    ax.hist(values, bins=edges, histtype="step", color=color, linewidth=_OUTLINE_WIDTH)
+
+
+def _sample_skew(values: np.ndarray) -> float:
+    """Pearson III sample skew (`G1`, the `bias=False` estimator); `nan` when the values
+    are all equal (a uniform landscape), where scipy would warn and return `nan` anyway."""
+    from scipy.stats import skew
+
+    if values.size < 3 or np.ptp(values) == 0:
+        return float("nan")
+    return float(skew(values, bias=False))
+
+
+def _sample_stats(values: np.ndarray) -> Dict[str, float]:
+    """Raw moments: mean, median, sample sd and Pearson III sample skew."""
+    return {
+        "mean": float(values.mean()),
+        "med": float(np.median(values)),
+        "sd": float(values.std(ddof=1)),
+        "skew": _sample_skew(values),
+    }
+
+
+def _log_sample_stats(values: np.ndarray) -> Dict[str, float]:
+    """Location in rate units, spread and skew of `log10(rate)` (spread in decades)."""
+    lx = np.log10(values)
+    return {
+        "mean": float(values.mean()),
+        "med": float(np.median(values)),
+        "log sd": float(lx.std(ddof=1)),
+        "log skew": _sample_skew(lx),
+    }
+
+
+def _stats_text(values: np.ndarray, logx: bool, mode: StatsMode) -> str:
+    """One monospace line, `mean 0.0122  med 0.00748  log sd 0.301  log skew 1.3`."""
+    if mode not in _STATS_MODES:
+        raise ValueError(f"stats must be 'raw', 'log' or None, given {mode!r}.")
+    stats = _log_sample_stats(values) if mode == "log" and logx else _sample_stats(values)
+    return "  ".join(f"{name} {value:.3g}" for name, value in stats.items())
+
+
+def _draw_stats_box(ax: "Axes", values: np.ndarray, logx: bool, mode: Optional[StatsMode], color: str) -> None:
+    if mode is None:
+        return
+    ax.text(
+        0.98,
+        0.97,
+        _stats_text(values, logx, mode),
+        transform=ax.transAxes,
+        ha="right",
+        va="top",
+        fontsize=_STATS_FONTSIZE,
+        family="monospace",
+        color=color,
+        bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.7),
+    )
 
 
 def _bin_edges(values: np.ndarray, bins: int, logx: bool):
@@ -105,7 +175,7 @@ def per_histogram(
     chip: "Chip",
     *,
     which: Which = "both",
-    markers: Sequence[Marker] = _MARKERS,
+    stats: Optional[StatsMode] = "log",
     limits: Tuple[Optional[float], Optional[float]] = (None, None),
     sharex: bool = True,
     logx: bool = False,
@@ -119,9 +189,12 @@ def per_histogram(
     `which` picks the panels: `"sites"`, `"couplers"`, or `"both"` side by side. With
     `sharex` (default) the panels share one x-axis so the two marginals compare
     directly; pass `sharex=False` when the coupler rates sit on a very different scale
-    and each panel should fill its own range. `markers` adds a vertical line per named
-    statistic (`"mean"`, `"median"`; pass `()` for none) with its value in the legend.
-    `limits` is an `(low, high)` x-range applied to every panel. `logx` puts the x-axis
+    and each panel should fill its own range. `stats` picks what the box at the top
+    right of each panel reports, following the calibration histogram tool's modes:
+    `"log"` (default) prints the mean and median of the rates with the sd and skew of
+    `log10(rate)` on a log axis, and the raw mean/median/sd/skew on a linear one;
+    `"raw"` prints the raw moments on either axis; `None` draws no box. On a generated
+    chip the `"log"` line reads back the `LogSkewContour` arguments. `limits` is an `(low, high)` x-range applied to every panel. `logx` puts the x-axis
     on a log scale and bins the rates geometrically, which suits the right-skewed,
     order-of-magnitude spreads of measured devices.
 
@@ -135,7 +208,7 @@ def per_histogram(
     import matplotlib.pyplot as plt
 
     panels = _panels_for(which)
-    markers = tuple(markers)
+    color = _series_color()
 
     # One panel is narrower than the caption line, so it gets a floor width.
     fig, axes = plt.subplots(
@@ -148,13 +221,13 @@ def per_histogram(
     )
     for ax, panel in zip(axes.flatten(), panels):
         values = _rates_for(chip, panel)
-        ax.hist(values, bins=_bin_edges(values, bins, logx), color=_HIST_COLOR, edgecolor=_HIST_EDGE)
+        _draw_histogram(ax, values, _bin_edges(values, bins, logx), color)
         if logx:
-            ax.set_xscale("log")
-        _draw_markers(ax, values, markers)
+            _log_ticks(ax)
+        _draw_stats_box(ax, values, logx, stats, color)
         ax.set_ylabel("freq")
         ax.set_xlabel("PER")
-        ax.tick_params(axis="x", rotation=45)
+        ax.grid(True, alpha=_GRID_ALPHA)
         ax.set_title(_panel_title(chip, panel, values.size))
         if limits != (None, None):
             # set only on request: `set_xlim` switches autoscaling off, and on a shared

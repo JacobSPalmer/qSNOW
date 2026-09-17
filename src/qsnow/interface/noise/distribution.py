@@ -17,7 +17,8 @@ Hierarchy:
         ├── RandomGaussian                iid draws, truncated-normal marginal
         └── ContourDistribution           adds `slope`; field = box-averaged white noise
             ├── NormalContour             legacy soft-clip reshape
-            └── SkewContour               Pearson III reshape
+            ├── SkewContour               Pearson III reshape (raw moments)
+            └── LogSkewContour            Pearson III on log10 (calibration-like)
 
 The four sampled distributions share one pipeline, described stage by stage in
 `writeups/noise_generation_walkthrough.tex`. Subclasses register under the record name
@@ -39,9 +40,11 @@ from scipy.stats import truncnorm, uniform
 from ..models import Coord, CouplerKey, NoiseProfile
 from .fields import (
     Center,
+    LogCenter,
     blend_latents,
     correlated_gaussian_field,
     iid_gaussian_field,
+    log_skewed_target,
     normal_scores,
     p_bounds,
     quantile_map,
@@ -62,6 +65,7 @@ __all__ = [
     "RandomGaussian",
     "NormalContour",
     "SkewContour",
+    "LogSkewContour",
     "register_distribution",
     "distribution_from_dict",
     "as_profile",
@@ -192,7 +196,13 @@ class NoiseDistribution(ABC):
 @register_distribution
 @dataclass(repr=False)
 class Uniform(NoiseDistribution):
-    """Every site (or coupler) at the same rate `p`."""
+    """Every site (or coupler) at the same rate `p`.
+
+    Parameters
+    ----------
+    p : float
+        The physical error rate every entry receives.
+    """
 
     name: ClassVar[str] = "uniform homogeneous"
     randomized: ClassVar[bool] = False
@@ -219,6 +229,13 @@ class Custom(NoiseDistribution):
     The maps are not part of the record - a flake stores the rates themselves - so
     `as_dict()` is the name alone and a restored `Custom` carries no maps. Equality is
     therefore by name only.
+
+    Parameters
+    ----------
+    noise_map : dict, optional
+        Site coordinate -> rate or `NoiseProfile`.
+    coupler_map : dict, optional
+        Coupler key (two endpoints) -> rate or `NoiseProfile`.
     """
 
     name: ClassVar[str] = "custom"
@@ -339,7 +356,15 @@ class _IIDDistribution(GaussianFieldDistribution):
 @register_distribution
 @dataclass(repr=False)
 class RandomUniform(_IIDDistribution):
-    """Independent draws from a uniform distribution over `bounds = (low, high)`."""
+    """Independent draws from a uniform distribution over `bounds = (low, high)`.
+
+    Parameters
+    ----------
+    bounds : (float, float)
+        Lower and upper rate of the interval.
+    seed : int, optional (keyword-only)
+        RNG seed; a fresh one is drawn and recorded when omitted.
+    """
 
     name: ClassVar[str] = "uniform random"
     bounds: Tuple[float, float]
@@ -358,7 +383,15 @@ class RandomUniform(_IIDDistribution):
 @register_distribution
 @dataclass(repr=False)
 class RandomGaussian(_IIDDistribution):
-    """Independent draws from a normal distribution truncated to the admissible range."""
+    """Independent draws from a normal distribution truncated to the admissible range.
+
+    Parameters
+    ----------
+    mean, deviation : float
+        Mean and standard deviation of the (untruncated) normal, in rate units.
+    seed : int, optional (keyword-only)
+        RNG seed; a fresh one is drawn and recorded when omitted.
+    """
 
     name: ClassVar[str] = "gaussian"
     mean: float
@@ -396,7 +429,17 @@ class ContourDistribution(GaussianFieldDistribution):
 @register_distribution
 @dataclass(repr=False)
 class NormalContour(ContourDistribution):
-    """The original derived contour: a Gaussian-shaped correlated landscape."""
+    """The original derived contour: a Gaussian-shaped correlated landscape.
+
+    Parameters
+    ----------
+    mean, deviation : float
+        Mean and standard deviation of the landscape, in rate units.
+    seed : int, optional (keyword-only)
+        RNG seed; a fresh one is drawn and recorded when omitted.
+    slope : int, keyword-only, default 5
+        Correlation length in unit cells (the tile distance of the box filter); >= 3.
+    """
 
     name: ClassVar[str] = "derived contour"
     mean: float
@@ -418,6 +461,27 @@ class SkewContour(ContourDistribution):
     `skew > 0` is right-skewed (a long tail of bad qubits), `skew == 0` is normal.
     `location` pins the mean, or the median with `center="median"`. Same seed and slope
     as `NormalContour` give the same peaks and valleys; only the values differ.
+
+    The three parameters are *raw-value* statistics, for synthetic sweeps in rate
+    units. Measured calibration data is a bell on a *log* axis; use `LogSkewContour` for
+    it. A Pearson III has a floor `2·deviation/skew` below its mean and its mode only
+    `(4/skew² − 1)·deviation·skew/2` above that floor, so above `skew ≈ 1.5` the
+    landscape is a one-sided decline from the floor rather than a bell.
+
+    Parameters
+    ----------
+    location : float
+        The mean of the landscape (or its median with `center="median"`), in rate units.
+    deviation : float
+        Standard deviation, in rate units.
+    skew : float, default 0.0
+        Skewness of the rates; 0 is the normal distribution.
+    center : {"mean", "median"}, default "mean"
+        Which statistic `location` pins.
+    seed : int, optional (keyword-only)
+        RNG seed; a fresh one is drawn and recorded when omitted.
+    slope : int, keyword-only, default 5
+        Correlation length in unit cells; >= 3.
     """
 
     name: ClassVar[str] = "skewed contour"
@@ -432,4 +496,64 @@ class SkewContour(ContourDistribution):
     def _to_rates(self, values: np.ndarray) -> np.ndarray:
         return quantile_map(
             values, skewed_target(self.location, self.deviation, self.skew, center=self.center)
+        )
+
+
+@register_distribution
+@dataclass(repr=False)
+class LogSkewContour(ContourDistribution):
+    """
+    A correlated landscape whose *logarithm* has a skewed (Pearson III) marginal.
+
+    This is the log-Pearson III ("LP3") distribution, the shape of the working-component
+    bulk of calibration data: error rates form a slightly right-skewed bell on a log
+    axis. `skew == 0` gives a log-normal landscape. Same seed and slope as the other
+    contours give the same peaks and valleys.
+
+    The three parameters are plain sample statistics of that bulk. Calibration data is
+    two populations on a log axis - the bell, and a bump of failed components one to
+    two decades to the right. Take the values inside Tukey's fences on log10(rate)
+    (Q1 − 1.5·IQR to Q3 + 1.5·IQR, the box-plot outlier rule; the calibration histogram
+    tool's `--stats log` prints these as its `bulk` line) and pass their median rate,
+    the sd of log10(rate) and the skewness of log10(rate). Typical bulk values are
+    0.2-0.25 decades and skew 0.2-1. The all-data statistics are not a substitute: the
+    failed bump pushes the log skew to 1.5-2, and a Pearson III has its mode only
+    `(4/skew² − 1)·deviation·skew/2` decades above its floor, which at those skews is a
+    one-sided decline from the floor, not a bell. The landscape then has no failed
+    components; a generated chip models the working population only.
+
+    Parameters
+    ----------
+    location : float
+        A rate: the median of the landscape (`center="median"`), or its geometric mean
+        `10 ** mean(log10 rate)` (`center="geometric"`).
+    deviation : float
+        Spread of log10(rate), in decades (its standard deviation); ~0.2-0.25 for the
+        bulk of readout and two-qubit errors on recent devices.
+    skew : float, default 0.0
+        Skewness of log10(rate); 0 is log-normal, ~0.2-1 for the bulk of calibration
+        data.
+    center : {"median", "geometric"}, default "median"
+        Which statistic `location` pins.
+    seed : int, optional (keyword-only)
+        RNG seed; a fresh one is drawn and recorded when omitted.
+    slope : int, keyword-only, default 5
+        Correlation length in unit cells; >= 3.
+    """
+
+    name: ClassVar[str] = "log skewed contour"
+    location: float
+    deviation: float
+    skew: float = 0.0
+    center: LogCenter = "median"
+
+    def _white_noise(self) -> Tuple[float, float]:
+        # only the field's structure is used; a plausible scale keeps the buffer's
+        # truncated normal well inside its bounds
+        return self.location, self.location * self.deviation
+
+    def _to_rates(self, values: np.ndarray) -> np.ndarray:
+        return quantile_map(
+            values,
+            log_skewed_target(self.location, self.deviation, self.skew, center=self.center),
         )
