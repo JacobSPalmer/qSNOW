@@ -17,7 +17,7 @@ dependencies = [
     "shapely",
     "scipy",
     "pymatching",
-    "tqdm"
+    "tqdm",
 ]
 
 [project.optional-dependencies]

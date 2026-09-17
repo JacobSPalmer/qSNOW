@@ -1,6 +1,6 @@
 from qsnow.experiments import SquarePackingExp
 from qsnow.interface import Chip, SCTile
-from qsnow.interface.noise import NoiseDistribution, NormalContour, RandomGaussian, SkewContour, Uniform
+from qsnow.interface.noise import LogSkewContour, NoiseDistribution, NormalContour, RandomGaussian, SkewContour, Uniform
 from qsnow.helpers import serialize
 from time import perf_counter
 
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 # The `--model` / `--coupler_model` vocabulary. One place, used for both the site and
 # the coupler landscape, so the two flag families can never drift apart.
-MODEL_CHOICES = ('gaussian', 'derived-contour', 'skewed-contour', 'uniform')
+MODEL_CHOICES = ('gaussian', 'derived-contour', 'skewed-contour', 'log-skewed-contour', 'uniform')
 DERIVED = 'derived'  # couplers follow their endpoints; the default and the pre-flag behaviour
 
 
@@ -25,6 +25,9 @@ def distribution_from_flags(model, mean, deviation=0.0, skew=0.0, center='mean',
             return NormalContour(mean, deviation, seed=seed)
         case 'skewed-contour':
             return SkewContour(mean, deviation, skew, center, seed=seed)
+        case 'log-skewed-contour':
+            # `mean` is a rate (median or geometric mean); `deviation`/`skew` describe log10(rate)
+            return LogSkewContour(mean, deviation, skew, center, seed=seed)
         case 'uniform':
             return Uniform(mean)
         case _:
@@ -119,7 +122,7 @@ def main():
     parser.add_argument("--mean", type=float, required=True, help="Location of the PER noise distribution: its mean, or its median when `--center median` is given with the skewed-contour model. For the uniform model, the single PER value.")
     parser.add_argument("--deviation", type=float, required=False, default=0.0, help="Deviation of PER noise distribution to use for noise model.")
     parser.add_argument("--skew", type=float, required=False, default=0.0, help="Skewness of the PER distribution (skewed-contour model only). Positive is right-skewed; 0 is normal.")
-    parser.add_argument("--center", choices=['mean', 'median'], required=False, default='mean', help="Which statistic `--mean` pins (skewed-contour model only).")
+    parser.add_argument("--center", choices=['mean', 'median', 'geometric'], required=False, default='mean', help="Which statistic `--mean` pins: mean/median for skewed-contour; median/geometric for log-skewed-contour, where --deviation and --skew describe log10(rate).")
     parser.add_argument("--distances", nargs="+", type=int, required=True, help="Distance of tiles to sample for.")
     parser.add_argument("--directory", type=str, required=False, default=None,  help="Directory to use for saving the experiments and result.")
     parser.add_argument("--seed", type=int_or_none, required=False, default=None,  help="Seed for the qubit noise model. The same seed with identical model parameters reproduces the identical chip; None draws a fresh seed, which --save_config records.")
@@ -127,7 +130,7 @@ def main():
     parser.add_argument("--coupler_mean", type=float, required=False, default=None, help="Location of the coupler PER distribution (median with `--coupler_center median`). Required unless --coupler_model is derived.")
     parser.add_argument("--coupler_deviation", type=float, required=False, default=0.0, help="Deviation of the coupler PER distribution.")
     parser.add_argument("--coupler_skew", type=float, required=False, default=0.0, help="Skewness of the coupler PER distribution (skewed-contour only).")
-    parser.add_argument("--coupler_center", choices=['mean', 'median'], required=False, default='mean', help="Which statistic `--coupler_mean` pins (skewed-contour only).")
+    parser.add_argument("--coupler_center", choices=['mean', 'median', 'geometric'], required=False, default='mean', help="Which statistic `--coupler_mean` pins (skewed-contour: mean/median; log-skewed-contour: median/geometric).")
     parser.add_argument("--coupler_seed", type=int_or_none, required=False, default=None, help="Seed for the coupler noise model; None draws a fresh one, which --save_config records.")
     parser.add_argument("--correlation", type=unit_float_or_none, required=False, default=None, help="Correlation in [0, 1] between a coupler and the mean of its two qubits, in latent terms: 1 reproduces the endpoint-mean ordering, 0 is independent of the qubits, None applies the coupler model uncorrelated.")
     parser.add_argument("--shots", type=int, required=False, default=50_000, help="Number of shots to sample for each candidate position on a chip.")

@@ -11,12 +11,14 @@ from qsnow.interface.noise import (
     ContourDistribution,
     Custom,
     GaussianFieldDistribution,
+    LogSkewContour,
     NoiseDistribution,
     NormalContour,
     RandomGaussian,
     RandomUniform,
     SkewContour,
     Uniform,
+    log_skewed_target,
     p_bounds,
     register_distribution,
 )
@@ -28,6 +30,7 @@ SAMPLED = [
     RandomGaussian(0.01, 0.002, seed=7),
     NormalContour(0.01, 0.003, seed=3),
     SkewContour(0.01, 0.003, 1.5, seed=3),
+    LogSkewContour(0.02, 0.3, 1.2, seed=3),
 ]
 
 
@@ -45,6 +48,7 @@ class TestRecipe:
         assert NormalContour(0.01, 0.003).as_dict()["name"] == "derived contour"
         assert SkewContour(0.01, 0.003, 1.0).as_dict()["name"] == "skewed contour"
         assert RandomUniform((0.01, 0.05)).as_dict()["name"] == "uniform random"
+        assert LogSkewContour(0.02, 0.3, 1.2).as_dict()["name"] == "log skewed contour"
         assert Uniform(0.01).as_dict() == {"name": "uniform homogeneous", "p": 0.01}
         assert Custom().as_dict() == {"name": "custom"}
 
@@ -162,6 +166,20 @@ class TestSeededBaselines:
         chip.generate_coupler_noise(SkewContour(0.05, 0.01, 1.0, seed=4), correlation=0.6)
         expected = np.load(BASELINES / "skew_contour_couplers_6x6_seed4_rho0p6.npy")
         assert np.array_equal(np.array([c.noise.p for c in chip.couplers]), expected)
+
+
+class TestRankMapping:
+    """The marginal a contour carries is exact: the target's quantiles at the ranks."""
+
+    def test_sorted_rates_are_the_target_quantiles_at_the_rank_percentiles(self):
+        chip = Chip(10, 12)
+        chip.generate_noise(LogSkewContour(0.0075, 0.30, 1.30, seed=5))
+        rates = np.sort([q.noise.p for q in chip.qubits])
+        target = log_skewed_target(0.0075, 0.30, 1.30)
+        lo, hi = p_bounds()
+        f_lo, f_hi = target.cdf(lo), target.cdf(hi)
+        u = (np.arange(1, rates.size + 1) - 0.5) / rates.size
+        assert rates == pytest.approx(target.ppf(f_lo + u * (f_hi - f_lo)), rel=1e-2)
 
 
 class TestCrossCorrelation:

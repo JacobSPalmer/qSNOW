@@ -2,10 +2,13 @@ import matplotlib
 
 matplotlib.use("Agg")
 
+import warnings
+
 import matplotlib.pyplot as plt
+import numpy as np
 import pytest
+from scipy.stats import skew
 from matplotlib.figure import Figure
-from matplotlib.legend import Legend
 
 from qsnow.interface.chip import Chip
 from qsnow.visualize.distributions import per_histogram
@@ -28,8 +31,17 @@ def _histo(chip, **kwargs):
     return per_histogram(chip, show=False, **kwargs)
 
 
-def _legends(ax):
-    return [c for c in ax.get_children() if isinstance(c, Legend)]
+def _stats_boxes(ax):
+    return list(ax.texts)  # free text only; titles and axis labels live elsewhere
+
+
+def _site_rates(chip):
+    return np.array([n.p for n in chip.noise_map.values()])
+
+
+def _bin_edges(ax):
+    # both histogram passes draw one polygon; its distinct x vertices are the bin edges
+    return np.unique(ax.patches[0].get_xy()[:, 0])
 
 
 class TestPanels:
@@ -45,9 +57,6 @@ class TestPanels:
         ax_sites, ax_couplers = _histo(chip).axes
         assert f"n={len(chip.qubits)}" in ax_sites.get_title()
         assert f"n={len(chip.couplers)}" in ax_couplers.get_title()
-
-    def test_couplers_only_has_no_site_panel(self, chip):
-        assert "sites" not in _histo(chip, which="couplers").axes[0].get_title()
 
     def test_invalid_which_raises(self, chip):
         with pytest.raises(ValueError, match="which"):
@@ -70,18 +79,27 @@ class TestPanels:
         assert ax_couplers not in ax_sites.get_shared_x_axes().get_siblings(ax_sites)
 
     def test_logx_sets_a_log_scale_with_geometric_bins(self, chip):
+        fig = _histo(chip, logx=True)
+        ax = fig.axes[0]
+        assert all(a.get_xscale() == "log" for a in fig.axes)
+        edges = _bin_edges(ax)
+        ratios = edges[1:] / edges[:-1]
+        assert max(ratios) == pytest.approx(min(ratios), rel=1e-6)  # equal ratios, not widths
+
+    def test_log_ticks_label_the_decades_only(self, chip):
+        # regression: a panel spanning under a decade got every minor tick labelled in
+        # `2x10^-3` notation and the labels collided
+        chip.generate_gaussian_noise(0.01, 0.0015, seed=7)  # spans well under a decade
         fig = _histo(chip, which="sites", logx=True)
         ax = fig.axes[0]
-        assert ax.get_xscale() == "log"
-        edges = [patch.get_x() for patch in ax.patches]
-        ratios = [b / a for a, b in zip(edges, edges[1:])]
-        assert max(ratios) == pytest.approx(min(ratios), rel=1e-6)  # equal ratios, not widths
+        fig.canvas.draw()
+        majors = [t.get_text() for t in ax.get_xticklabels() if t.get_text()]
+        assert majors and all(m.startswith("$\\mathdefault{10^{") for m in majors)
+        assert all(t.get_text() == "" for t in ax.get_xticklabels(minor=True))
+        assert len(ax.get_xticks(minor=True)) > 0  # the marks stay, only labels go
 
     def test_linear_axis_by_default(self, chip):
         assert _histo(chip, which="sites").axes[0].get_xscale() == "linear"
-
-    def test_logx_applies_to_both_panels(self, chip):
-        assert all(ax.get_xscale() == "log" for ax in _histo(chip, logx=True).axes)
 
     def test_limits_apply_to_every_panel(self, chip):
         fig = _histo(chip, limits=(0.0, 0.02))
@@ -107,30 +125,55 @@ class TestDerivedCouplerLabel:
         assert "derived" not in _histo(chip, which="couplers").axes[0].get_title()
 
 
-class TestMarkers:
-    @pytest.mark.parametrize(
-        "markers, n", [(("mean", "median"), 2), (("mean",), 1), ((), 0)]
-    )
-    def test_one_line_per_marker(self, chip, markers, n):
-        ax = _histo(chip, which="sites", markers=markers).axes[0]
-        assert len(ax.lines) == n
-
-    def test_legend_labels_carry_the_values(self, chip):
+class TestStyle:
+    def test_fill_and_outline_share_the_series_colour(self, chip):
         ax = _histo(chip, which="sites").axes[0]
-        labels = [t.get_text() for t in _legends(ax)[0].get_texts()]
-        assert labels[0].startswith("mean=") and labels[1].startswith("median=")
+        fill, outline = ax.patches
+        assert fill.get_facecolor()[:3] == outline.get_edgecolor()[:3]
+        assert fill.get_alpha() == pytest.approx(0.35)
+        assert outline.get_fill() is False
 
-    def test_mean_and_median_differ_by_linestyle_not_color(self, chip):
-        mean_line, median_line = _histo(chip, which="sites").axes[0].lines
-        assert mean_line.get_color() == median_line.get_color()
-        assert mean_line.get_linestyle() != median_line.get_linestyle()
 
-    def test_no_legend_without_markers(self, chip):
-        assert _legends(_histo(chip, which="sites", markers=()).axes[0]) == []
+class TestStatsBox:
+    def _box(self, chip, **kwargs):
+        (box,) = _stats_boxes(_histo(chip, which="sites", **kwargs).axes[0])
+        return box
 
-    def test_invalid_marker_raises(self, chip):
-        with pytest.raises(ValueError, match="markers"):
-            _histo(chip, markers=("mode",))
+    def test_default_on_a_linear_axis_is_the_raw_moments(self, chip):
+        rates = _site_rates(chip)
+        assert self._box(chip).get_text().split("  ") == [
+            f"mean {rates.mean():.3g}",
+            f"med {np.median(rates):.3g}",
+            f"sd {rates.std(ddof=1):.3g}",
+            f"skew {skew(rates, bias=False):.3g}",
+        ]
+
+    def test_default_on_a_log_axis_takes_spread_and_skew_in_log_space(self, chip):
+        rates, lx = _site_rates(chip), np.log10(_site_rates(chip))
+        assert self._box(chip, logx=True).get_text().split("  ") == [
+            f"mean {rates.mean():.3g}",
+            f"med {np.median(rates):.3g}",
+            f"log sd {lx.std(ddof=1):.3g}",
+            f"log skew {skew(lx, bias=False):.3g}",
+        ]
+
+    def test_raw_mode_keeps_the_raw_moments_on_a_log_axis(self, chip):
+        assert self._box(chip, logx=True, stats="raw").get_text() == self._box(chip, stats="raw").get_text()
+
+    @pytest.mark.parametrize("stats", ["raw", "log"])
+    def test_uniform_landscape_prints_nan_skew_without_warning(self, chip, stats):
+        chip.generate_uniform_noise(0.01)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            text = self._box(chip, logx=True, stats=stats).get_text()
+        assert text.endswith("nan") and "mean 0.01" in text
+
+    def test_no_box_without_stats(self, chip):
+        assert _stats_boxes(_histo(chip, which="sites", stats=None).axes[0]) == []
+
+    def test_invalid_mode_raises(self, chip):
+        with pytest.raises(ValueError, match="stats"):
+            _histo(chip, stats="mode")
 
 
 class TestShow:

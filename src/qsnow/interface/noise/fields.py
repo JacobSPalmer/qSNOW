@@ -5,11 +5,10 @@ A `GaussianFieldDistribution` builds a landscape in two steps - a Gaussian field
 carries only spatial structure, then a reshaping of its values into the requested
 marginal. The field builders here (`iid_gaussian_field`, `correlated_gaussian_field`)
 produce the first; the marginal transforms (`quantile_map`, `scale_gaussian_contour`)
-produce the second, using the NORTA / Gaussian-copula construction (Cario & Nelson,
-1997; the "normal score transform" of geostatistics): standardise the field, push it
-through the standard normal CDF to uniforms, then pull those uniforms through the
-target distribution's quantile function. `normal_scores` and `blend_latents` are the
-pieces of the cross-correlated coupler path. Method walkthrough:
+produce the second by quantile mapping (the "normal score transform" of geostatistics,
+NORTA's rank-based form): replace each value by its rank percentile, then pull those
+percentiles through the target distribution's quantile function. `normal_scores` and
+`blend_latents` are the pieces of the cross-correlated coupler path. Method walkthrough:
 `writeups/noise_generation_walkthrough.tex`.
 
 Everything except the two field builders is a pure function of arrays and frozen scipy
@@ -34,7 +33,10 @@ __all__ = [
     "Center",
     "p_bounds",
     "skewed_target",
+    "log_skewed_target",
+    "LogCenter",
     "standardize",
+    "rank_percentiles",
     "normal_scores",
     "blend_latents",
     "quantile_map",
@@ -44,6 +46,7 @@ __all__ = [
 ]
 
 Center = Literal["mean", "median"]
+LogCenter = Literal["median", "geometric"]
 
 #: Smallest physical error rate a generator will assign. `NoiseProfile.p` admits 0.0, but
 #: a qubit with *no* noise is never what a landscape generator means; the truncated
@@ -90,20 +93,32 @@ def standardize(values) -> np.ndarray:
     return (v - v.mean()) / v.std()
 
 
-def normal_scores(values) -> np.ndarray:
+def rank_percentiles(values) -> np.ndarray:
     """
-    The rank-based Gaussian latent behind `values` (Gaussian anamorphosis).
+    Each entry's percentile by rank, `(rank − ½) / n`, with average ranks for ties.
 
-    `Φ⁻¹((rank − ½) / n)` with average ranks for ties. Depends on `values` only through
-    their order, so it recovers a standard-normal latent from *any* landscape - a
-    generated one, or measured rates imported onto the chip - which is what lets a
-    coupler map be correlated with whatever site map the chip currently holds.
+    Depends on `values` only through their order, so any monotone transform of the
+    field gives the same result. The `−½` keeps the extremes off 0 and 1, where a
+    quantile function is infinite. This is the one place the package turns a field into
+    percentiles: `quantile_map` pulls them through a target, `normal_scores` through
+    `Φ⁻¹`. Raises on a constant field, which has no order to use.
     """
     v = np.asarray(values, dtype=float)
-    if np.ptp(v) == 0:
-        raise ValueError("Cannot take normal scores of a field with no variance.")
-    ranks = rankdata(v, method="average")
-    return norm.ppf((ranks - 0.5) / v.size)
+    if np.ptp(v) == 0:  # exact, unlike `std()`, which carries rounding residue
+        raise ValueError("Cannot rank a field with no variance.")
+    return (rankdata(v, method="average") - 0.5) / v.size
+
+
+def normal_scores(values) -> np.ndarray:
+    """
+    The rank-based Gaussian latent behind `values` (Gaussian anamorphosis):
+    `Φ⁻¹` of `rank_percentiles`.
+
+    Recovers a standard-normal latent from *any* landscape - a generated one, or
+    measured rates imported onto the chip - which is what lets a coupler map be
+    correlated with whatever site map the chip currently holds.
+    """
+    return norm.ppf(rank_percentiles(values))
 
 
 def blend_latents(a, b, correlation: float) -> np.ndarray:
@@ -119,21 +134,71 @@ def blend_latents(a, b, correlation: float) -> np.ndarray:
     return correlation * standardize(a) + np.sqrt(1.0 - correlation**2) * standardize(b)
 
 
+class _LogSpace:
+    """A distribution on log10(rate), exposed in rate space.
+
+    Only `cdf` and `ppf` are needed by `quantile_map`, so the wrapper is deliberately
+    minimal: `cdf(p) = base.cdf(log10 p)` and `ppf(u) = 10 ** base.ppf(u)`.
+    """
+
+    def __init__(self, base):
+        self.base = base
+
+    def cdf(self, p):
+        return self.base.cdf(np.log10(p))
+
+    def ppf(self, u):
+        return 10.0 ** self.base.ppf(u)
+
+
+def log_skewed_target(
+    location: float, deviation: float, skew: float, *, center: LogCenter = "median"
+) -> _LogSpace:
+    """
+    A log-Pearson III target: Pearson III on log10(rate), returned in rate space.
+
+    This is the "LP3" distribution of flood-frequency analysis (USGS Bulletin 17B/17C),
+    and it is the shape of the working-component bulk of calibration data: measured
+    error rates form a slightly right-skewed bell on a *log* axis. `deviation` is the
+    spread of log10(rate) in decades, `skew` the skewness of log10(rate) (0 gives a
+    log-normal), and `location` is a rate: the median (`center="median"`) or the
+    geometric mean `10 ** mean(log10 rate)` (`center="geometric"`). See `LogSkewContour`
+    for which sample statistics to feed it.
+    """
+    if location <= 0:
+        raise ValueError(f"location must be a positive rate, given {location}.")
+    if deviation <= 0:
+        raise ValueError(f"deviation must be positive (decades of log10 rate), given {deviation}.")
+    if center == "median":
+        loc = np.log10(location) - pearson3(skew, loc=0.0, scale=deviation).median()
+    elif center == "geometric":
+        loc = np.log10(location)
+    else:
+        raise ValueError(f"center must be 'median' or 'geometric', given {center!r}.")
+    return _LogSpace(pearson3(skew, loc=loc, scale=deviation))
+
+
 def quantile_map(
     values, target, bounds: Tuple[float, float] | None = None
 ) -> np.ndarray:
     """
-    Map a Gaussian field onto `target`'s marginal, preserving the field's ordering.
+    Map a field onto `target`'s marginal, preserving the field's ordering.
 
-    `values` are standardised with their own sample mean and deviation, converted to
-    uniforms through the standard normal CDF, and pulled through `target.ppf` restricted
-    to `bounds` (default `p_bounds()`). Restricting the *uniforms* to `[F(lo), F(hi)]`
-    rather than clipping the output is the same truncation `truncnorm` applies, so no
-    mass piles up at either bound. The map is monotone, so ranks - and hence the field's
-    spatial contours - are unchanged.
+    Each value's rank percentile (`rank_percentiles`) is pulled through `target.ppf`
+    restricted to `bounds` (default `p_bounds()`). Restricting the *percentiles* to
+    `[F(lo), F(hi)]` rather than clipping the output is the same truncation `truncnorm`
+    applies, so no mass piles up at either bound. The map is monotone, so ranks - and
+    hence the field's spatial contours - are unchanged.
+
+    Because the percentiles come from ranks, the sorted output is exactly the target's
+    quantiles at `(i − ½) / n` for every input of size `n`: the field decides only where
+    each value sits, so a fit of a generated landscape returns the parameters it was
+    given. (Standardising the field by its sample moments and applying `Φ` instead let
+    the field's own finite-sample shape through; on a small correlated chip that moved
+    the fitted skew by tens of percent between seeds.)
     """
     lo, hi = bounds if bounds is not None else p_bounds()
-    u = norm.cdf(standardize(values))
+    u = rank_percentiles(values)
     f_lo, f_hi = target.cdf(lo), target.cdf(hi)
     return target.ppf(f_lo + u * (f_hi - f_lo))
 

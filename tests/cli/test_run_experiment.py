@@ -18,7 +18,7 @@ run_and_serialize_spp_experiment = run_experiment.run_and_serialize_spp_experime
 save_configuration = run_experiment.save_configuration
 from qsnow.helpers import serialize
 from qsnow.interface.chip import Chip
-from qsnow.interface.noise import NormalContour, RandomGaussian, SkewContour, Uniform
+from qsnow.interface.noise import LogSkewContour, NormalContour, RandomGaussian, SkewContour, Uniform
 
 SMALL = dict(distances=[3], shots=50, max_errors=None, min_errors=1, shot_ceiling=None, additional_label="t")
 
@@ -43,6 +43,7 @@ class TestDistributionFromFlags:
             ("derived-contour", NormalContour(0.01, 0.003, seed=3)),
             ("skewed-contour", SkewContour(0.01, 0.003, 1.5, "median", seed=3)),
             ("uniform", Uniform(0.01)),
+            ("log-skewed-contour", LogSkewContour(0.01, 0.003, 1.5, "median", seed=3)),
         ],
     )
     def test_maps_each_model_name_to_its_class(self, model, expected):
