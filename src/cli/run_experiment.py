@@ -15,47 +15,50 @@ MODEL_CHOICES = ('gaussian', 'derived-contour', 'skewed-contour', 'log-skewed-co
 DERIVED = 'derived'  # couplers follow their endpoints; the default and the pre-flag behaviour
 
 
-def distribution_from_flags(model, mean, deviation=0.0, skew=0.0, center='mean', seed=None) -> NoiseDistribution:
-    """The distribution a `--model`-style flag set names. `mean` is the location (the
-    median when `center='median'` with the skewed contour, the single rate for uniform)."""
+def distribution_from_flags(model, location, deviation=0.0, skew=0.0, center=None, seed=None) -> NoiseDistribution:
+    """The distribution a `--model`-style flag set names. `location` is what `center`
+    pins (mean or median; a median rate for the log-skewed contour; the single rate for
+    uniform).
+    `center=None` takes the class's own default (mean for the skewed contour, median for
+    the log-skewed contour), so a model can be named without spelling its centre."""
     match model:
         case 'gaussian':
-            return RandomGaussian(mean, deviation, seed=seed)
+            return RandomGaussian(location, deviation, seed=seed)
         case 'derived-contour':
-            return NormalContour(mean, deviation, seed=seed)
+            return NormalContour(location, deviation, seed=seed)
         case 'skewed-contour':
-            return SkewContour(mean, deviation, skew, center, seed=seed)
+            return SkewContour(location, deviation, skew, center or SkewContour.center, seed=seed)
         case 'log-skewed-contour':
-            # `mean` is a rate (median or geometric mean); `deviation`/`skew` describe log10(rate)
-            return LogSkewContour(mean, deviation, skew, center, seed=seed)
+            # `location` is a rate (median or geometric mean); `deviation`/`skew` describe log10(rate)
+            return LogSkewContour(location, deviation, skew, center or LogSkewContour.center, seed=seed)
         case 'uniform':
-            return Uniform(mean)
+            return Uniform(location)
         case _:
             raise ValueError(f'Noise model {model!r} either not supported or unknown; choose from {MODEL_CHOICES}.')
 
 
-def run_and_serialize_spp_experiment(chip: Chip, *, mean, deviation, distances, data_directory, additional_label, seed, shots, max_errors, noise_model, min_errors, shot_ceiling, skew=0.0, center='mean',
-                                     coupler_model=DERIVED, coupler_mean=None, coupler_deviation=0.0, coupler_skew=0.0, coupler_center='mean', coupler_seed=None, correlation=None):
+def run_and_serialize_spp_experiment(chip: Chip, *, location, deviation, distances, data_directory, additional_label, seed, shots, max_errors, noise_model, min_errors, shot_ceiling, skew=0.0, center=None,
+                                     coupler_model=DERIVED, coupler_location=None, coupler_deviation=0.0, coupler_skew=0.0, coupler_center=None, coupler_seed=None, correlation=None):
     if data_directory:
         serialize.set_data_dir(data_directory)
     logger.info(f'Creating chip with {noise_model} noise model using {seed}')
     if chip.spec.noise_model is None:
-        chip.generate_noise(distribution_from_flags(noise_model, mean, deviation, skew, center, seed))
+        chip.generate_noise(distribution_from_flags(noise_model, location, deviation, skew, center, seed))
     # Couplers: derived from their endpoints unless a model of their own is asked for. A
     # chip loaded from a flake that already carries one is used as saved, like the sites.
     if coupler_model != DERIVED and chip.spec.coupler_model is None:
-        if coupler_mean is None:
-            raise ValueError('coupler_mean is required when coupler_model is not derived.')
+        if coupler_location is None:
+            raise ValueError('coupler_location is required when coupler_model is not derived.')
         logger.info(f'Creating coupler landscape with {coupler_model} noise model using {coupler_seed} (correlation={correlation})')
         chip.generate_coupler_noise(
-            distribution_from_flags(coupler_model, coupler_mean, coupler_deviation, coupler_skew, coupler_center, coupler_seed),
+            distribution_from_flags(coupler_model, coupler_location, coupler_deviation, coupler_skew, coupler_center, coupler_seed),
             correlation=correlation,
         )
     start = perf_counter()
     for d in distances:
         logger.info(f'Beginning profiling for distance {d}....')
         new_chip = chip.copy()
-        label = (f'{additional_label}_' if additional_label else '') + f'd{d}_{new_chip.unit_dims[0]}x{new_chip.unit_dims[1]}_mean_{str(mean).replace('.','_')}'
+        label = (f'{additional_label}_' if additional_label else '') + f'd{d}_{new_chip.unit_dims[0]}x{new_chip.unit_dims[1]}_loc_{str(location).replace('.','_')}'
 
         exp = SquarePackingExp(new_chip, SCTile(d))
         exp.tag.name = additional_label + f'_d{d}'
@@ -76,17 +79,22 @@ def save_configuration(args: dict, chip: Chip, name: str):
             return f'--{name}\n{"\n".join([str(v) for v in values])}\n'
         else:
             return f'--{name}\n{values}\n'
+    # Flags left at None are omitted rather than written as "None": every such flag
+    # defaults to None, so a replay resolves them the same way this run did. Seeds and
+    # centres are written as the chip resolved them, so the replay is identical.
+    resolved = {
+        'seed': getattr(chip.spec.noise_model, 'seed', None),
+        'center': getattr(chip.spec.noise_model, 'center', None),
+        'coupler_seed': getattr(chip.spec.coupler_model, 'seed', None),
+        'coupler_center': getattr(chip.spec.coupler_model, 'center', None),
+    }
     config_arr = []
     filename = args.pop('name')
     config_arr.append(format_str('name', filename))
     for k, v in args.items():
-        match k:
-            case 'seed':
-                config_arr.append(format_str(k, chip.spec.noise_model.seed if chip.spec.noise_model else None))
-            case 'coupler_seed':
-                config_arr.append(format_str(k, chip.spec.coupler_model.seed if chip.spec.coupler_model else None))
-            case _:
-                config_arr.append(format_str(k, v))
+        v = resolved.get(k, v)
+        if v is not None:
+            config_arr.append(format_str(k, v))
 
     filepath = serialize.get_data_dir().joinpath(f'{filename}.txt')
     with open(filepath, 'w') as file:
@@ -102,7 +110,7 @@ def main():
         return int(value)
 
     def str_or_none(value):
-        # `--save_config` writes absent optionals as the literal "None"; read them back as None
+        # a hand-written config may spell an absent optional as the literal "None"
         return None if value == "None" else value
 
     def unit_float_or_none(value):
@@ -119,18 +127,18 @@ def main():
     parser.add_argument("--name", type=str, required=False, default=None, help="Name of the experiment. This is appended to the beginning of the saved flake filenames.")
     parser.add_argument("--dimensions", nargs=2, type=int, required=False, default=(10,10), help="(Length x Height) of the chip in unit cells.")
     parser.add_argument("--model", choices=list(MODEL_CHOICES), default='gaussian', help="The noise distribution of the chip's qubits.")
-    parser.add_argument("--mean", type=float, required=True, help="Location of the PER noise distribution: its mean, or its median when `--center median` is given with the skewed-contour model. For the uniform model, the single PER value.")
-    parser.add_argument("--deviation", type=float, required=False, default=0.0, help="Deviation of PER noise distribution to use for noise model.")
-    parser.add_argument("--skew", type=float, required=False, default=0.0, help="Skewness of the PER distribution (skewed-contour model only). Positive is right-skewed; 0 is normal.")
-    parser.add_argument("--center", choices=['mean', 'median', 'geometric'], required=False, default='mean', help="Which statistic `--mean` pins: mean/median for skewed-contour; median/geometric for log-skewed-contour, where --deviation and --skew describe log10(rate).")
+    parser.add_argument("--location", "--mean", dest="location", type=float, required=True, help="Location of the PER distribution: the mean (or median, see --center) for gaussian/contour models; for log-skewed-contour the median rate; for uniform the single PER value. --mean is accepted as an alias for saved configs.")
+    parser.add_argument("--deviation", type=float, required=False, default=0.0, help="Spread of the PER distribution: a standard deviation in rate units, or for log-skewed-contour the standard deviation of log10(rate) in decades.")
+    parser.add_argument("--skew", type=float, required=False, default=0.0, help="Skewness of the PER distribution (skewed-contour), or of log10(rate) (log-skewed-contour). Positive is right-skewed; 0 is normal / log-normal.")
+    parser.add_argument("--center", choices=['mean', 'median', 'geometric'], required=False, default=None, help="Which statistic --location pins: mean (default) or median for skewed-contour; median (default) or geometric for log-skewed-contour.")
     parser.add_argument("--distances", nargs="+", type=int, required=True, help="Distance of tiles to sample for.")
     parser.add_argument("--directory", type=str, required=False, default=None,  help="Directory to use for saving the experiments and result.")
     parser.add_argument("--seed", type=int_or_none, required=False, default=None,  help="Seed for the qubit noise model. The same seed with identical model parameters reproduces the identical chip; None draws a fresh seed, which --save_config records.")
     parser.add_argument("--coupler_model", choices=[DERIVED, *MODEL_CHOICES], default=DERIVED, help="The noise distribution of the chip's couplers. 'derived' (default) keeps each coupler at a function of its two qubits; any other choice gives the couplers a landscape of their own.")
-    parser.add_argument("--coupler_mean", type=float, required=False, default=None, help="Location of the coupler PER distribution (median with `--coupler_center median`). Required unless --coupler_model is derived.")
-    parser.add_argument("--coupler_deviation", type=float, required=False, default=0.0, help="Deviation of the coupler PER distribution.")
-    parser.add_argument("--coupler_skew", type=float, required=False, default=0.0, help="Skewness of the coupler PER distribution (skewed-contour only).")
-    parser.add_argument("--coupler_center", choices=['mean', 'median', 'geometric'], required=False, default='mean', help="Which statistic `--coupler_mean` pins (skewed-contour: mean/median; log-skewed-contour: median/geometric).")
+    parser.add_argument("--coupler_location", "--coupler_mean", dest="coupler_location", type=float, required=False, default=None, help="Location of the coupler PER distribution, as --location is for the qubits. Required unless --coupler_model is derived.")
+    parser.add_argument("--coupler_deviation", type=float, required=False, default=0.0, help="Spread of the coupler PER distribution, as --deviation is for the qubits.")
+    parser.add_argument("--coupler_skew", type=float, required=False, default=0.0, help="Skewness of the coupler PER distribution, as --skew is for the qubits.")
+    parser.add_argument("--coupler_center", choices=['mean', 'median', 'geometric'], required=False, default=None, help="Which statistic --coupler_location pins, as --center is for the qubits.")
     parser.add_argument("--coupler_seed", type=int_or_none, required=False, default=None, help="Seed for the coupler noise model; None draws a fresh one, which --save_config records.")
     parser.add_argument("--correlation", type=unit_float_or_none, required=False, default=None, help="Correlation in [0, 1] between a coupler and the mean of its two qubits, in latent terms: 1 reproduces the endpoint-mean ordering, 0 is independent of the qubits, None applies the coupler model uncorrelated.")
     parser.add_argument("--shots", type=int, required=False, default=50_000, help="Number of shots to sample for each candidate position on a chip.")
@@ -145,8 +153,8 @@ def main():
 
     if args.save_config and args.name is None:
         parser.error("--name is required when --save_config is set.")
-    if args.coupler_model != DERIVED and args.coupler_mean is None:
-        parser.error("--coupler_mean is required when --coupler_model is not derived.")
+    if args.coupler_model != DERIVED and args.coupler_location is None:
+        parser.error("--coupler_location is required when --coupler_model is not derived.")
 
     if args.logger:
         logging.basicConfig(level=logging.INFO)
@@ -159,7 +167,7 @@ def main():
         chip = Chip(args.dimensions[0], args.dimensions[1])
 
     chip = run_and_serialize_spp_experiment(chip = chip, 
-                                    mean = args.mean,
+                                    location = args.location,
                                     deviation = args.deviation,
                                     distances = args.distances,
                                     data_directory = args.directory,
@@ -170,7 +178,7 @@ def main():
                                     skew = args.skew,
                                     center = args.center,
                                     coupler_model = args.coupler_model,
-                                    coupler_mean = args.coupler_mean,
+                                    coupler_location = args.coupler_location,
                                     coupler_deviation = args.coupler_deviation,
                                     coupler_skew = args.coupler_skew,
                                     coupler_center = args.coupler_center,
