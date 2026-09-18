@@ -10,6 +10,7 @@ from qsnow.visualize.visualize import (
     area_selection_style,
     custom_heatmap_style,
     default_style,
+    _labelled_mantissas,
     _log_ticks,
     _COLORBAR_PX,
     _COLORBAR_TITLE_PX,
@@ -314,26 +315,32 @@ def measured(chip, qubit_p=0.004, coupler_p=0.02):
 
 
 class TestLogTicks:
-    def test_narrow_range_gets_sub_decade_ticks(self):
-        import math
-
-        _, text = _log_ticks(math.log10(2e-3), math.log10(1e-2))
-
-        assert text == ["0.002", "0.003", "0.004", "0.006", "0.01"]
-
-    def test_wide_range_falls_back_to_decades(self):
-        import math
-
-        _, text = _log_ticks(math.log10(1e-4), math.log10(2e-2))
-
-        assert text == ["0.0001", "0.0003", "0.001", "0.003", "0.01"]
-
-    def test_tick_positions_are_log10_of_their_labels(self):
+    def test_decades_are_labelled_as_powers_of_ten_and_the_rest_are_bare_marks(self):
         import math
 
         vals, text = _log_ticks(math.log10(2e-3), math.log10(1e-2))
 
-        assert vals == [pytest.approx(math.log10(float(t))) for t in text]
+        assert text[-1] == "10<sup>-2</sup>"
+        assert [t for t in text if t] == ["10<sup>-2</sup>"]
+        assert len(vals) == 9  # 2e-3 .. 9e-3 and 1e-2: every mantissa in range has a mark
+
+    def test_labelled_mantissas_add_2_and_5_when_asked(self):
+        import math
+
+        _, text = _log_ticks(math.log10(1e-3), math.log10(1e-2), labelled=(1, 2, 5))
+
+        assert [t for t in text if t] == ["10<sup>-3</sup>", "2×10<sup>-3</sup>", "5×10<sup>-3</sup>", "10<sup>-2</sup>"]
+
+    def test_tick_positions_are_log10_of_their_values(self):
+        import math
+
+        vals, _ = _log_ticks(math.log10(1e-3), math.log10(1e-2))
+
+        assert vals == [pytest.approx(math.log10(m * 1e-3)) for m in range(1, 10)] + [pytest.approx(-2)]
+
+    def test_rule_labels_decades_only_once_two_fit(self):
+        assert _labelled_mantissas(1.5) == (1,)
+        assert _labelled_mantissas(1.2) == (1, 2, 5)
 
 
 class TestDeviceHeatmapStyle:
@@ -376,6 +383,27 @@ class TestDeviceHeatmapStyle:
 
         assert style.colorbar.cmin < 0  # log10(0.004) is negative
         assert style.colorbar.ticktext is not None
+
+    def test_both_bars_share_one_tick_rule_whatever_their_spans(self, chip):
+        """Qubits over 1.2 decades, couplers over 2: the narrower bar's rule wins for both,
+        so the two bars carry the same labelled mantissas."""
+        measured(chip)
+        qs = iter([0.001, 0.016] * len(chip.qubits))
+        for q in chip.qubits:
+            q.noise.p = next(qs)
+        cs = iter([0.001, 0.1] * len(chip.couplers))
+        for c in chip.couplers:
+            c.noise.p = next(cs)
+        style = device_heatmap_style(chip, log=True)
+
+        labels = lambda bar: {t.split("×")[0] for t in bar.ticktext if t and "×" in t}
+        assert labels(style.colorbar) == labels(style.coupler_colorbar) == {"2", "5"}
+
+    def test_limits_set_the_ticks_not_just_the_bounds(self, chip):
+        style = device_heatmap_style(measured(chip), log=True, limits=(1e-4, 1e-1))
+
+        assert style.colorbar.tickvals[0] == pytest.approx(-4)
+        assert style.colorbar.tickvals[-1] == pytest.approx(-1)
 
     def test_linear_scale_keeps_raw_units(self, chip):
         style = device_heatmap_style(measured(chip, qubit_p=0.004), log=False)
@@ -434,11 +462,12 @@ class TestDeviceHeatmapPresets:
 
         assert device.edgecolor == house.edgecolor == "blue"
 
-    def test_default_preset_mounts_bar_titles_at_the_side(self, chip):
-        style = device_heatmap_style(measured(chip))
-
-        assert style.colorbar.title_side == "right"
-        assert style.coupler_colorbar.title_side == "right"
+    def test_bar_titles_sit_beneath_the_bars_in_both_presets(self, chip):
+        for preset in ("qsnow", "device"):
+            style = device_heatmap_style(measured(chip), preset=preset)
+            assert style.colorbar.title_side == style.coupler_colorbar.title_side == "bottom"
+            assert style.colorbar.label == "<b>Qubit (p<sub>q</sub>)</b>"
+            assert style.coupler_colorbar.label == "<b>Coupler (p<sub>c</sub>)</b>"
 
     def test_device_preset_flips_the_whole_set_together(self, chip):
         style = device_heatmap_style(measured(chip), preset="device")
@@ -446,7 +475,6 @@ class TestDeviceHeatmapPresets:
 
         assert marker.marker == "o"
         assert style.colorbar.colorscale == "Viridis_r"
-        assert style.colorbar.title_side == "top"
         assert style.colorbar.ticktext is not None  # device preset is log
         assert style.logical_style(chip.tag).edgecolor == "red"
 

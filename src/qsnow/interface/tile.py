@@ -206,6 +206,10 @@ class LogicalTile(Grid):
     def ruleset(self) -> Ruleset:
         return self._ruleset
 
+    @ruleset.setter
+    def ruleset(self, rs: Ruleset):
+        self._ruleset = rs
+
     def summary(self) -> Dict[str, object]:
         return {
             "type": "Generic",
@@ -347,12 +351,13 @@ class LogicalTile(Grid):
         self._init_tile_qubit_types()
 
     def copy(self) -> LogicalTile:
-        """Return a fresh uninitialized copy of the circuit."""
-        # deepcopy so the copy never shares mutable tag/spec state (dicts included)
+        """Return a fresh uninitialized copy: same circuit, ruleset, and annotations."""
+        # deepcopy so the copy never shares mutable tag/spec/ruleset state (dicts included)
         return LogicalTile(
             self.base_circuit,
             x_buffer=self._x_buffer,
             y_buffer=self._y_buffer,
+            ruleset=deepcopy(self._ruleset),
             tag=deepcopy(self.tag),
             spec=deepcopy(self.spec),
             lattice=self.lattice,

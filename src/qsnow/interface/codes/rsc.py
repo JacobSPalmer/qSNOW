@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Dict, List, Literal, Optional
 
 from stim import Circuit
@@ -17,7 +18,12 @@ class SCTile(LogicalTile):
         rounds: Optional[int] = None,
         task: Literal["memory_x", "memory_z"] = "memory_z",
         origin: Coord = (0, 0),
+        *,
+        ruleset: Optional[Ruleset] = None,
+        tag: Optional[Tag] = None,
     ):
+        # `ruleset`/`tag` are the per-instance state the generator args cannot rebuild,
+        # so `copy()` and the serialize importer hand them back in through here.
         if rounds is None:
             rounds = distance
         generator = lambda t, d, r: Circuit.generated(
@@ -31,7 +37,8 @@ class SCTile(LogicalTile):
             origin=origin,
             # stim's rotated surface-code generators emit checkerboard coordinates
             lattice=CHECKERBOARD,
-            tag=Tag(name=f"rsc_{task}_d{distance}"),
+            tag=tag if tag is not None else Tag(name=f"rsc_{task}_d{distance}"),
+            ruleset=ruleset,
             spec=TileSpec(
                 tile_type=type(self).__name__,
                 distance=distance,
@@ -160,8 +167,12 @@ class SCTile(LogicalTile):
         return s
 
     def copy(self) -> SCTile:
+        """Return a fresh uninitialized copy: same code, ruleset, and annotations."""
+        # deepcopy so the copy never shares mutable ruleset/tag state with the original
         return SCTile(
             distance=self.spec.generator_args["distance"],
             rounds=self.spec.generator_args["rounds"],
             task=self.spec.generator_args["task"],
+            ruleset=deepcopy(self._ruleset),
+            tag=deepcopy(self.tag),
         )

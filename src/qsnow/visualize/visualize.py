@@ -311,40 +311,54 @@ def noise_heatmap_style(
     )
 
 
-def _log_ticks(lo: float, hi: float) -> Tuple[List[float], List[str]]:
-    """Colorbar ticks for a log10-scaled range, at the 1/2/3/4/6 x 10^k positions.
+def _labelled_mantissas(span: float) -> Tuple[int, ...]:
+    """Which mantissas get a label on a log colorbar spanning `span` decades.
 
-    Returns positions in log10 space (what the colors are keyed on) paired with labels in
-    the original units, so a reader sees error rates rather than their logarithms.
+    Decades only once the bar holds two of them; a narrower bar also labels 2 and 5 so it
+    is not left with a single readable tick. One rule for a whole figure: a two-bar style
+    passes the *smaller* span so both bars are labelled alike.
     """
-    # Sub-decade ticks only while the range is narrow enough to need them; over a wide
-    # span they collapse into an unreadable stack, so step back to decades.
-    span = hi - lo
-    mantissas = (1, 2, 3, 4, 6) if span <= 1.5 else (1, 3) if span <= 3 else (1,)
-    ticks: List[float] = []
-    k = floor(lo)
-    while k <= ceil(hi):
-        for m in mantissas:
-            v = m * 10.0**k
-            if lo <= log10(v) <= hi:
-                ticks.append(v)
-        k += 1
-    if not ticks:
-        ticks = [10.0**lo, 10.0**hi]
-    return [log10(v) for v in ticks], [f"{v:.3g}" for v in ticks]
+    return (1,) if span >= 1.5 else (1, 2, 5)
 
 
-def _log_colorbar(values: List[float], colorscale: str, label: str) -> Tuple[ColorbarSpec, Callable[[float], float]]:
-    """A log10 colorbar over `values`, plus the transform to apply to each raw value.
+def _log_tick_label(mantissa: int, exponent: int) -> str:
+    """`10<sup>-3</sup>`, or `2×10<sup>-3</sup>`: plotly's HTML for a power of ten."""
+    return ("" if mantissa == 1 else f"{mantissa}×") + f"10<sup>{exponent}</sup>"
+
+
+def _log_ticks(lo: float, hi: float, *, labelled: Tuple[int, ...] = (1,)) -> Tuple[List[float], List[str]]:
+    """Colorbar ticks for a log10-scaled range, one at every mantissa 1..9 per decade.
+
+    Returns positions in log10 space (what the colors are keyed on) paired with labels:
+    powers of ten in scientific notation for the mantissas in `labelled`, empty text for
+    the rest, which plotly then draws as an unlabelled mark - the same look as a log axis.
+    """
+    vals: List[float] = []
+    text: List[str] = []
+    for k in range(floor(lo), ceil(hi) + 1):
+        for m in range(1, 10):
+            v = log10(m) + k
+            if lo <= v <= hi:
+                vals.append(v)
+                text.append(_log_tick_label(m, k) if m in labelled else "")
+    if not any(text):  # a range too narrow to hold a labelled mantissa: label its ends
+        vals, text = [lo, hi], [f"{10.0**lo:.2g}", f"{10.0**hi:.2g}"]
+    return vals, text
+
+
+def _log_colorbar(
+    lo: float, hi: float, colorscale: Any, label: str, *, labelled: Optional[Tuple[int, ...]] = None
+) -> Tuple[ColorbarSpec, Callable[[float], float]]:
+    """A log10 colorbar over `[lo, hi]` (already in log10), plus the transform to apply to
+    each raw value.
 
     The colour machinery stays linear; only the numbers handed to it are logarithms, which
-    keeps `resolve_fill` and the colorbar code free of any scale special-casing.
+    keeps `resolve_fill` and the colorbar code free of any scale special-casing. `labelled`
+    defaults to the rule for this bar's own span; a multi-bar style passes one shared value.
     """
-    positive = [v for v in values if v > 0]
-    lo, hi = (log10(min(positive)), log10(max(positive))) if positive else (-3.0, -2.0)
     if lo == hi:
         lo, hi = lo - 0.5, hi + 0.5
-    tickvals, ticktext = _log_ticks(lo, hi)
+    tickvals, ticktext = _log_ticks(lo, hi, labelled=labelled or _labelled_mantissas(hi - lo))
     spec = ColorbarSpec(
         colorscale=colorscale,
         cmin=lo,
@@ -357,9 +371,14 @@ def _log_colorbar(values: List[float], colorscale: str, label: str) -> Tuple[Col
     return spec, (lambda v: log10(v) if v > 0 else lo)
 
 
-# Two coherent looks for the dual-scale view. A preset flips marker, palette, titles,
-# widths and scale *together*, so neither look can be half-applied into something that
-# belongs to neither.
+def _log_range(values: List[float], limits: Optional[Tuple[float, float]]) -> Tuple[float, float]:
+    """`(log10 lo, log10 hi)` of `limits`, else of the positive `values`."""
+    if limits:
+        return log10(limits[0]), log10(limits[1])
+    positive = [v for v in values if v > 0]
+    return (log10(min(positive)), log10(max(positive))) if positive else (-3.0, -2.0)
+
+
 _DEVICE_PRESETS: Dict[str, Dict[str, Any]] = {
     # The package's own language - identical to `noise_heatmap_style` in every respect a
     # single-layer heatmap has an opinion about. The coupler scale is the one deviation,
@@ -372,9 +391,9 @@ _DEVICE_PRESETS: Dict[str, Dict[str, Any]] = {
         qubit_colorscale="hot_r",
         coupler_colorscale=_floored_colorscale("Blues"),
         coupler_width=7.0,
-        title_side="right",
-        qubit_label="Qubit (p)",
-        coupler_label="Coupler (p)",
+        title_side="bottom",
+        qubit_label="<b>Qubit (p<sub>q</sub>)</b>",
+        coupler_label="<b>Coupler (p<sub>c</sub>)</b>",
         logical_edgecolor="blue",
         log=False,
     ),
@@ -387,9 +406,9 @@ _DEVICE_PRESETS: Dict[str, Dict[str, Any]] = {
         qubit_colorscale="Viridis_r",
         coupler_colorscale=_floored_colorscale("Magma_r", floor=0.15),
         coupler_width=7.0,
-        title_side="top",
-        qubit_label="p<sub>qubit</sub>",
-        coupler_label="p<sub>coupler</sub>",
+        title_side="bottom",
+        qubit_label="<b>Qubit (p<sub>q</sub>)</b>",
+        coupler_label="<b>Coupler (p<sub>c</sub>)</b>",
         logical_edgecolor="red",
         log=True,
     ),
@@ -443,17 +462,12 @@ def device_heatmap_style(
     coupler_p = [c.noise.p for c in chip.couplers] or [0.0]
 
     if log:
-        qubit_bar, qubit_tx = _log_colorbar(qubit_p, qubit_colorscale, qubit_label)
-        coupler_bar, coupler_tx = _log_colorbar(
-            coupler_p, coupler_colorscale, coupler_label
-        )
-        if limits:
-            qubit_bar.cmin, qubit_bar.cmax = log10(limits[0]), log10(limits[1])
-        if coupler_limits:
-            coupler_bar.cmin, coupler_bar.cmax = (
-                log10(coupler_limits[0]),
-                log10(coupler_limits[1]),
-            )
+        q_range = _log_range(qubit_p, limits)
+        c_range = _log_range(coupler_p, coupler_limits)
+        # one tick rule for both bars, set by the narrower one, so their labels agree
+        labelled = _labelled_mantissas(min(q_range[1] - q_range[0], c_range[1] - c_range[0]))
+        qubit_bar, qubit_tx = _log_colorbar(*q_range, qubit_colorscale, qubit_label, labelled=labelled)
+        coupler_bar, coupler_tx = _log_colorbar(*c_range, coupler_colorscale, coupler_label, labelled=labelled)
     else:
         qubit_tx = coupler_tx = lambda v: v
         qubit_bar = ColorbarSpec(
@@ -895,7 +909,9 @@ def _build_style_layer(
             len=geometry.colorbar_len,
         )
         if bar.tickvals is not None:
-            colorbar.update(tickmode="array", tickvals=bar.tickvals, ticktext=bar.ticktext)
+            # `ticks="outside"`: plotly's colorbar default draws no tick marks, and the
+            # unlabelled sub-decade positions would then be invisible
+            colorbar.update(tickmode="array", tickvals=bar.tickvals, ticktext=bar.ticktext, ticks="outside")
         marker.update(
             color=values,
             colorscale=bar.colorscale,
