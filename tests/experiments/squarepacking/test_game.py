@@ -7,6 +7,7 @@ from qsnow.experiments.experiment import ExperimentResults
 from qsnow.experiments.squarepacking.game import SquarePackingExp
 from qsnow.interface.chip import Chip
 from qsnow.interface.codes.rsc import SCTile
+from qsnow.interface.rules import InjectionRule, Ruleset
 
 
 class TestProfileCharacterization:
@@ -29,6 +30,17 @@ class TestProfileCharacterization:
         exp = SquarePackingExp(chip=Chip(10, 10), tile=SCTile(distance))
 
         assert len(exp.profile) == expected
+
+    def test_custom_ruleset_survives_experiment_construction(self):
+        # regression: __post_init__ copies the tile, which rebuilt the default ruleset
+        tile = SCTile(3)
+        tile.ruleset = Ruleset(
+            [InjectionRule("H", "any", before=[], after=[], name="custom")]
+        )
+        exp = SquarePackingExp(chip=Chip(5, 5), tile=tile)
+
+        assert exp.tile is not tile
+        assert [r.name for r in exp.tile.ruleset.rules] == ["custom"]
 
     def test_profile_origins_are_all_valid_placements(self):
         exp = SquarePackingExp(chip=Chip(10, 10), tile=SCTile(3))

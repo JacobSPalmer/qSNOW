@@ -15,6 +15,7 @@ from qsnow.helpers.serialize import (
 )
 from qsnow.interface.chip import Chip, LogicalTile
 from qsnow.interface.codes.rsc import SCTile
+from qsnow.interface.rules import InjectionRule, Ruleset, Source
 from qsnow.interface.lattice import CHECKERBOARD, SQUARE
 from qsnow.interface.noise import RandomGaussian, RandomUniform, SkewContour, Uniform
 
@@ -50,6 +51,26 @@ class TestTileRoundTrip:
         restored = from_dict(to_dict(tile))
 
         assert repr(restored._ruleset) == repr(tile._ruleset)
+
+    def test_custom_ruleset_survives_subclass_import(self):
+        # regression: the SCTile importer rebuilt from generator args and ignored
+        # the exported ruleset, so any non-default ruleset came back as SI1000
+        tile = SCTile(distance=3)
+        tile.ruleset = Ruleset(
+            [InjectionRule("H", "any", before=[], after=[], name="custom")]
+        )
+        restored = from_dict(to_dict(tile))
+
+        assert isinstance(restored, SCTile)
+        assert [r.name for r in restored.ruleset.rules] == ["custom"]
+        assert repr(restored.ruleset) == repr(tile.ruleset)
+
+    def test_custom_source_warns_on_export(self):
+        tile = SCTile(distance=3)
+        tile.ruleset.add_source(Source("always_half", lambda t, q, c: 0.5))
+
+        with pytest.warns(UserWarning, match="always_half"):
+            to_dict(tile)
 
     def test_sc_tile_restores_subclass(self):
         tile = SCTile(distance=3, rounds=2, task="memory_x")

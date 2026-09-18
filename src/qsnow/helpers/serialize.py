@@ -34,13 +34,15 @@ Notes:
     with, None while the couplers are derived or hand-set. Before v4 the first two
     lived in `tag.metadata`; the v3->v4 migration lifts them out. v6 replaced the
     name-and-dict record with distribution objects (same flat shape on disk).
-  - Ruleset injection rules are fully serialized. Custom triggers/filters
-    (beyond the built-in defaults) hold arbitrary callables and cannot be
-    serialized; a warning is raised if any are present at export (the handling of
-    serializing arbitrary callables is a TODO feature down the line)
+  - Ruleset injection rules are fully serialized and restored on every tile type,
+    code subclasses included. Custom triggers/filters/sources (beyond the built-in
+    defaults) hold arbitrary callables and cannot be serialized; a warning is
+    raised if any are present at export (the handling of serializing arbitrary
+    callables is a TODO feature down the line)
   - Code subclasses (e.g. `SCTile`) are rebuilt through their own constructor
-    using the spec's `generator_args`. Additional subclasses are registered with
-    `register_tile_type()`.
+    using the spec's `generator_args`; `tile_from_dict` then restores the stored
+    tag and ruleset on top. Additional subclasses are registered with
+    `register_tile_type()` and get the same treatment.
   - Exports are stamped with `format_version`; older flakes are upgraded in
     memory on import if the exist within the default data configuration file.
 
@@ -74,6 +76,7 @@ from qsnow.interface.models import ChipSpec, Coord, CouplerKey, Tag, TileSpec
 from qsnow.interface.noise import NoiseDistribution
 from qsnow.interface.rules import (
     _DEFAULT_FILTERS,
+    _DEFAULT_SOURCES,
     _DEFAULT_TRIGGERS,
     ChannelRule,
     InjectionRule,
@@ -353,12 +356,15 @@ def _key_to_coupler(key: str) -> CouplerKey:
 def ruleset_to_dict(ruleset: Ruleset) -> Dict:
     default_triggers = {t.name for t in _DEFAULT_TRIGGERS}
     default_filters = {f.name for f in _DEFAULT_FILTERS}
-    custom = (set(ruleset._triggers) - default_triggers) | (
-        set(ruleset._filters) - default_filters
+    default_sources = {s.name for s in _DEFAULT_SOURCES}
+    custom = (
+        (set(ruleset._triggers) - default_triggers)
+        | (set(ruleset._filters) - default_filters)
+        | (set(ruleset._sources) - default_sources)
     )
     if custom:
         warn(
-            f"Ruleset contains custom triggers/filters {sorted(custom)} which hold callables "
+            f"Ruleset contains custom triggers/filters/sources {sorted(custom)} which hold callables "
             f"and cannot be serialized. They must be re-registered manually after import.",
             stacklevel=2,
         )
@@ -498,8 +504,6 @@ def _logical_tile_from_dict(data: Dict) -> LogicalTile:
         origin=tuple(data["construct_origin"]),
         x_buffer=data["x_buffer"],
         y_buffer=data["y_buffer"],
-        ruleset=ruleset_from_dict(data["ruleset"]),
-        tag=tag_from_dict(data["tag"]),
         spec=spec_from_dict(data["spec"]),
         lattice=lattice_by_name(data["lattice"]),
     )
@@ -539,10 +543,12 @@ def tile_from_dict(data: Dict) -> LogicalTile:
         )
         importer = _logical_tile_from_dict
     tile = importer(data)
-    # subclass importers rebuild through their constructor, which regenerates the
-    # tag; restore the stored annotations so they survive the round trip (the spec
-    # is owned by the constructor and matches the stored one by construction)
+    # Importers (built-in and `register_tile_type`d alike) rebuild through their
+    # constructor, which regenerates the tag and defaults the ruleset. Restore both
+    # here, once for every tile type, so they survive the round trip (the spec is
+    # owned by the constructor and matches the stored one by construction).
     tile.tag = tag_from_dict(data["tag"])
+    tile.ruleset = ruleset_from_dict(data["ruleset"])
     return tile
 
 
