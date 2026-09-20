@@ -342,6 +342,9 @@ class TestCombinedView:
         fig = visualize_interactive(self.measured(chip))
         plain = visualize_interactive(Chip(5, 5))
 
-        from qsnow.visualize.visualize import _COLORBAR_PX, _COLORBAR_TITLE_PX
+        from qsnow.visualize.visualize import _colorbar_strip_px, _font_px, device_heatmap_style
 
-        assert fig.layout.width - plain.layout.width == _COLORBAR_PX + _COLORBAR_TITLE_PX
+        # the plain view already carries the qubit bar's strip; the measured chip adds
+        # the coupler bar's
+        device = device_heatmap_style(self.measured(Chip(5, 5)))
+        assert fig.layout.width - plain.layout.width == _colorbar_strip_px(device.coupler_colorbar, _font_px())

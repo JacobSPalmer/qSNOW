@@ -13,6 +13,8 @@ from qsnow.visualize.visualize import (
     _apply_frame,
     _build_style_layer,
     _compute_geometry,
+    _font_px,
+    _style_strips,
     coupler_heatmap_style,
     css_style,
     device_heatmap_style,
@@ -178,13 +180,13 @@ def visualize_interactive(
 
     # Constant geometry across views (colorbar strip reserved if any style needs
     # it) so switching styles never resizes the plot.
+    # widest view wins per colorbar slot, so switching styles never resizes the plot
+    font_px = _font_px()
+    per_style = [_style_strips(s, font_px) for s in styles.values()]
+    strips = [max(w[i] for w in per_style if len(w) > i) for i in range(max(map(len, per_style)))]
     geometry = _compute_geometry(
         chip,
-        # widest view wins, so switching styles never resizes the plot
-        n_colorbars=max(
-            (s.colorbar is not None) + (s.coupler_colorbar is not None)
-            for s in styles.values()
-        ),
+        strips,
         extra_top_margin=_DROPDOWN_MARGIN_PX
         + (_TITLE_MARGIN_PX if title else 0)
         + (_DESC_MARGIN_PX if has_desc else 0),

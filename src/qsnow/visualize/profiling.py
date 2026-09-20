@@ -17,7 +17,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
+    Any,
     Dict,
+    List,
     Iterator,
     Literal,
     Optional,
@@ -44,6 +46,7 @@ __all__ = [
     "load_profile_runs",
     "ler_cdf",
     "ler_histogram",
+    "ler_table",
 ]
 
 PathLike = Union[str, Path]
@@ -82,6 +85,8 @@ _BOX_DODGE = (_PRIMARY_BOX_WIDTH + _BASELINE_BOX_WIDTH) / 4 + 0.045
 _LEGEND_SWATCH_COLOR = "0.25"
 # Used when a chip carries no usable noise-model name to label its series with.
 _FALLBACK_LABELS = ("profiled", "baseline")
+# Gap, in axes fractions, between two legends stacked in the same corner.
+_LEGEND_STACK_PAD = 0.015
 
 
 # ------------------------------------------------------------------
@@ -344,12 +349,97 @@ def _series_labels(
     return name(primary, _FALLBACK_LABELS[0]), name(baseline, _FALLBACK_LABELS[1])
 
 
-def _add_convention_legends(ax_cdf, ax_box, labels: Tuple[str, str]) -> None:
+def _keep_legend(ax, legend) -> None:
+    """Keep `legend` on `ax` across the next `ax.legend()` call.
+
+    `Axes.legend` *replaces* the axes' legend rather than adding alongside it; re-adding
+    the old one as a plain artist is what lets two legends share a panel.
+    """
+    if legend is not None:
+        ax.add_artist(legend)
+
+
+def _axes_frac(ax, artist):
+    """`artist`'s drawn bounding box in the axes' own 0-1 coordinates.
+
+    Axes fractions rather than pixels so a measurement taken once survives a later
+    resize or dpi change - `savefig(dpi=...)` rescales every pixel extent on the figure.
+    """
+    return artist.get_window_extent().transformed(ax.transAxes.inverted())
+
+
+def _pin_legend(ax, legend, x: float, y: float, loc: str) -> None:
+    """Pin `legend`'s `loc` corner to `(x, y)` in axes fractions.
+
+    `borderaxespad` is the gap matplotlib keeps between a legend and whatever it is
+    anchored to. Here the anchor is already the exact point we want the corner on, so the
+    pad would push the box off it - and there is no public setter for it.
+    """
+    legend.set_loc(loc)
+    legend.set_bbox_to_anchor((x, y), transform=ax.transAxes)
+    legend.borderaxespad = 0.0
+
+
+def _stack_legend(ax, anchor, handles, labels: Sequence[str], **kwargs):
+    """Add a second legend to `ax`, stacked beneath `anchor` rather than in a fixed corner.
+
+    `loc="best"` scores the candidate corners against the axes' lines and patches only -
+    another legend is invisible to it - so an auto-placed legend and a corner-pinned key
+    will happily land on top of each other. Measuring `anchor` once the layout is final
+    and hanging the new legend off its edge sidesteps the question entirely: wherever
+    `anchor` went, the key follows.
+
+    The key always ends up *under* `anchor`, reading as a footnote to it. When `anchor`
+    is already on the axes floor - the common case, since "best" likes the corner a CDF
+    leaves free - there is nowhere below to put it, so `anchor` is lifted by the key's
+    height instead and the pair keeps its order.
+
+    Call this *after* `tight_layout`, or the measurement is of the pre-layout axes.
+    """
+    # "best" is resolved at draw time, so `anchor` has no meaningful extent until one
+    ax.figure.canvas.draw()
+    bb = _axes_frac(ax, anchor)
+
+    right = bb.x1 > 0.5
+    x = bb.x1 if right else bb.x0
+    side = "right" if right else "left"
+
+    _keep_legend(ax, anchor)
+    key = ax.legend(handles, list(labels), **kwargs)
+    _pin_legend(ax, key, x, bb.y0 - _LEGEND_STACK_PAD, f"upper {side}")
+    ax.figure.canvas.draw()
+
+    floor = _axes_frac(ax, key).y0 < 0  # the key overhangs the bottom of the panel
+    if floor:
+        # slide the pair up as a unit: the key keeps the corner `anchor` had chosen and
+        # `anchor` sits on top of it, so the reading order is unchanged either way
+        _pin_legend(ax, key, x, bb.y0, f"lower {side}")
+        lift = _axes_frac(ax, key).height + _LEGEND_STACK_PAD
+    else:
+        lift = 0.0
+
+    # freeze `anchor` - "best" re-resolves on every draw, and would otherwise slide out
+    # from under the key on the next one
+    _pin_legend(ax, anchor, x, bb.y0 + lift, f"lower {side}")
+    return key
+
+
+def _add_convention_legends(
+    ax_cdf,
+    ax_box,
+    labels: Tuple[str, str],
+    *,
+    anchor=None,
+    key_loc: Optional[str] = None,
+) -> None:
     """Add the profiled-vs-baseline key to whichever panels were drawn.
 
     Each panel gets the key in its own artist type - lines for the CDF, patches for the
-    boxes - so the swatch matches what the reader is looking at, and in the corner that
-    panel's data leaves free.
+    boxes - so the swatch matches what the reader is looking at.
+
+    On the CDF panel the key stacks against `anchor` (the distance legend) so the two
+    cannot collide wherever `anchor` auto-placed itself. Pass `key_loc` to pin the key to
+    a corner of its own instead, leaving `anchor` free to sit elsewhere.
     """
     from matplotlib.colors import to_rgba
     from matplotlib.lines import Line2D
@@ -357,28 +447,27 @@ def _add_convention_legends(ax_cdf, ax_box, labels: Tuple[str, str]) -> None:
 
     grey = _LEGEND_SWATCH_COLOR
     if ax_cdf is not None:
-        # re-adding the existing legend as a plain artist keeps it: a second `legend()`
-        # call replaces the axes' legend rather than adding alongside it
-        existing = ax_cdf.get_legend()
-        if existing is not None:
-            ax_cdf.add_artist(existing)
-        ax_cdf.legend(
-            [
-                Line2D([], [], color=grey, lw=2.5, alpha=_PRIMARY_ALPHA),
-                Line2D(
-                    [],
-                    [],
-                    color=grey,
-                    lw=2.5,
-                    alpha=_BASELINE_STEP_ALPHA,
-                    linestyle=_BASELINE_LINESTYLE,
-                ),
-            ],
-            list(labels),
-            loc="lower right",
-            fontsize=10,
-            framealpha=0.95,
-        )
+        handles = [
+            Line2D([], [], color=grey, lw=2.5, alpha=_PRIMARY_ALPHA),
+            Line2D(
+                [],
+                [],
+                color=grey,
+                lw=2.5,
+                alpha=_BASELINE_STEP_ALPHA,
+                linestyle=_BASELINE_LINESTYLE,
+            ),
+        ]
+        if key_loc is None and anchor is not None:
+            _stack_legend(ax_cdf, anchor, handles, labels, framealpha=0.95)
+        else:
+            _keep_legend(ax_cdf, anchor if anchor is not None else ax_cdf.get_legend())
+            ax_cdf.legend(
+                handles,
+                list(labels),
+                loc=key_loc or "lower right",
+                framealpha=0.95,
+            )
 
     if ax_box is not None:
         ax_box.legend(
@@ -392,7 +481,6 @@ def _add_convention_legends(ax_cdf, ax_box, labels: Tuple[str, str]) -> None:
             ],
             list(labels),
             loc="upper right",
-            fontsize=9,
             framealpha=0.95,
         )
 
@@ -435,10 +523,13 @@ def ler_cdf(
     whisker: bool = True,
     baseline_dir: Optional[PathLike] = None,
     labels: Optional[Tuple[str, str]] = None,
+    legend_loc: str = "best",
+    key_loc: Optional[str] = None,
     add_title: str = "",
     dpi: Optional[int] = None,
     verbose: bool = True,
     show: bool = True,
+    **kwargs
 ) -> Optional["Figure"]:
     """Cumulative distribution of LER across every tile placement, one step per distance.
 
@@ -446,9 +537,16 @@ def ler_cdf(
     `baseline_dir` overlays a second sweep (typically the uniform-noise baseline) in
     each distance's color, for a like-for-like comparison: a faded dashed step in the
     CDF, and a fainter, narrower, hatched box paired beneath the profiled one in the box
-    panel. Both series are then named in a secondary legend, taking their names from
+    panel. Both series are then named in a secondary key, taking their names from
     each chip's recorded noise model; pass `labels=(profiled, baseline)` to override.
     `verbose` prints the per-distance spread and the chip's noise summary.
+
+    `legend_loc` places the distance legend (default `"best"`, matplotlib's auto
+    placement). By default the profiled/baseline key then stacks directly against it,
+    wherever it landed, so the two cannot overlap. Pass `key_loc` to pin the key to a
+    corner of its own instead - `legend_loc="upper left", key_loc="lower right"` puts
+    them in opposite corners. Aiming `key_loc` at the corner `"best"` picks is the one
+    combination that can still collide.
 
     Shows the figure. Pass `show=False` to get the `Figure` back instead, to
     `savefig` it or tweak it further.
@@ -486,7 +584,7 @@ def ler_cdf(
                 bx,
                 by,
                 color=color,
-                alpha=_BASELINE_STEP_ALPHA,
+                alpha=kwargs.get('baseline_alpha', _BASELINE_STEP_ALPHA),
                 linestyle=_BASELINE_LINESTYLE,
             )
 
@@ -523,19 +621,20 @@ def ler_cdf(
     if verbose:
         _print_chip_stats(first.chip)
 
-    ax_cdf.set_title(
-        _suptitle(
-            _chip_headline(first, "Distribution of LER per distance=d tile profiling"),
-            first,
-            add_title,
+    if(kwargs.get('title', '')):
+        ax_cdf.set_title(
+            _suptitle(
+                _chip_headline(first, "Distribution of LER per distance=d tile profiling"),
+                first,
+                add_title,
+            )
         )
-    )
     ax_cdf.set_ylabel("Cumulative Distribution Probability")
     ax_cdf.set_yticks([0.0, 0.5, 1.0])
     ax_cdf.set_yticks([0.25, 0.75], minor=True)
     ax_cdf.set_xscale("log")
     ax_cdf.set_ylim(0.0, 1.0)
-    ax_cdf.legend()
+    distance_legend = ax_cdf.legend(loc=legend_loc, framealpha=0.5)
     ax_cdf.grid(which="both", axis="y")
     ax_cdf.grid(which="major", axis="x")
 
@@ -552,12 +651,19 @@ def ler_cdf(
     else:
         ax_cdf.set_xlabel("Logical Error Rate")
 
+    fig.tight_layout()
+
+    # after `tight_layout`: stacking the key measures the distance legend, and a
+    # measurement taken against the pre-layout axes would leave the pair misaligned
     if baseline is not None:
         _add_convention_legends(
-            ax_cdf, ax_box, _series_labels(first, baseline[distances[0]], labels)
+            ax_cdf,
+            ax_box,
+            _series_labels(first, baseline[distances[0]], labels),
+            anchor=distance_legend,
+            key_loc=key_loc,
         )
 
-    fig.tight_layout()
     if show:
         plt.show()
         # returning the figure too would draw it a second time: the notebook renders
@@ -627,3 +733,127 @@ def ler_histogram(
         # a returned Figure on top of what plt.show() already drew
         return None
     return fig
+
+
+# ------------------------------------------------------------------
+# Comparison table
+# ------------------------------------------------------------------
+
+# Row order of `ler_table` and the one-line reading of each stat that `explain=True`
+# prints; one dict so the table and its explanation cannot disagree. "ratio" is the
+# profiled value over the baseline's unless the entry says otherwise.
+_STAT_MEANINGS: Dict[str, str] = {
+    "n": "placements swept on each chip.",
+    "best": "lowest LER over placements (the best spot on the chip); ratio < 1 means the "
+            "profiled chip offers better placements than the baseline ever does.",
+    "p5": "5th percentile of LER: the good end of the chip without its single luckiest placement.",
+    "median": "median LER: the typical placement.",
+    "p95": "95th percentile of LER: the bad end without the single unluckiest placement.",
+    "worst": "highest LER over placements (the worst spot); ratio > 1 is 'up to x times worse'.",
+    "spread p95/p5": "within-chip variation, robust to one outlier; on a uniform chip this is "
+                     "only Monte-Carlo noise, so read the profiled value against it.",
+    "spread worst/best": "full within-chip range, best placement to worst; same reading.",
+    "CV": "std / mean of LER over placements; on a uniform chip this is the sampling noise "
+          "of the LER estimates themselves.",
+    "yield": "fraction of placements at or under the BAD threshold; 'ratio' holds the "
+             "difference in percentage points (profiled minus baseline).",
+}
+# The ratio rows that the across-distances block summarises with its min and max.
+_SUMMARISED = ("best", "median", "worst", "spread p95/p5", "spread worst/best")
+
+
+def _placement_stats(lers: np.ndarray, bad: float) -> Dict[str, float]:
+    """The `_STAT_MEANINGS` numbers for one sweep's per-placement LERs."""
+    lo, hi = float(lers.min()), float(lers.max())
+    p5, p95 = (float(q) for q in np.quantile(lers, [0.05, 0.95]))
+    mean = float(lers.mean())
+    return {
+        "n": float(lers.size),
+        "best": lo,
+        "p5": p5,
+        "median": float(np.median(lers)),
+        "p95": p95,
+        "worst": hi,
+        "spread p95/p5": p95 / p5 if p5 else float("inf"),
+        "spread worst/best": hi / lo if lo else float("inf"),
+        "CV": float(lers.std(ddof=1)) / mean if lers.size > 1 and mean else 0.0,
+        "yield": float(np.mean(lers <= bad)),
+    }
+
+
+def _compare(stat: str, profiled: float, baseline: float) -> float:
+    """The comparison column: percentage-point difference for yield, else the ratio."""
+    if stat == "yield":
+        return 100.0 * (profiled - baseline)
+    return profiled / baseline if baseline else float("inf")
+
+
+def ler_table(
+    distances: Sequence[int] = _DEFAULT_DISTANCES,
+    directory: Optional[PathLike] = None,
+    *,
+    baseline_dir: PathLike,
+    bad: float = 0.005,
+    labels: Optional[Tuple[str, str]] = None,
+    verbose: bool = True,
+    explain: bool = False,
+) -> List[Dict[str, Any]]:
+    """How LER varies across placements on the profiled chip versus its baseline.
+
+    The tabular companion to `ler_cdf`, aimed at one kind of statement: "across
+    distances, LER differs by up to x times in the worst placements and y times in the
+    best between the uniform and the contoured device". Per distance it reports, for
+    both sweeps, the extremes and quantiles of LER over placements, two within-chip
+    spread ratios, the coefficient of variation and the yield at the `bad` threshold
+    (see `_STAT_MEANINGS`), with a comparison column: profiled / baseline, or for yield
+    the difference in percentage points. A final block (`distance = "all"`) gives the
+    min and max over distances of the ratio for the best, median and worst placements
+    and the two spreads.
+
+    Returns tidy rows `{"distance", "stat", <profiled label>, <baseline label>,
+    "ratio"}` (`"min ratio"` / `"max ratio"` in the summary block), so
+    `pandas.DataFrame(rows)` is the notebook table. `verbose` prints the same as text;
+    `explain=True` adds one line per stat saying what it means.
+    """
+    runs = load_profile_runs(distances, directory)
+    baseline = load_profile_runs(distances, baseline_dir)
+    first = distances[0]
+    p_label, b_label = _series_labels(runs[first], baseline[first], labels)
+
+    rows: List[Dict[str, Any]] = []
+    ratios: Dict[str, List[float]] = {stat: [] for stat in _SUMMARISED}
+    for d in distances:
+        p_stats = _placement_stats(runs[d].lers, bad)
+        b_stats = _placement_stats(baseline[d].lers, bad)
+        for stat in _STAT_MEANINGS:
+            ratio = _compare(stat, p_stats[stat], b_stats[stat])
+            rows.append({"distance": d, "stat": stat, p_label: p_stats[stat], b_label: b_stats[stat], "ratio": ratio})
+            if stat in ratios:
+                ratios[stat].append(ratio)
+    for stat in _SUMMARISED:
+        rows.append({"distance": "all", "stat": stat, "min ratio": min(ratios[stat]), "max ratio": max(ratios[stat])})
+
+    if verbose:
+        _print_ler_table(rows, p_label, b_label, distances)
+    if explain:
+        print("\nStats (ratio = profiled / baseline unless stated):")
+        for stat, meaning in _STAT_MEANINGS.items():
+            print(f"  {stat:<18} {meaning}")
+        print(f"  {'all':<18} min and max over distances of each ratio: the 'up to x times' and "
+              f"'at least y times' across the sweep.")
+    return rows
+
+
+def _print_ler_table(rows: List[Dict[str, Any]], p_label: str, b_label: str, distances: Sequence[int]) -> None:
+    w = max(len(p_label), len(b_label), 10)
+    for d in distances:
+        print(f"\nDistance {d}")
+        print(f"  {'stat':<18} {p_label:>{w}} {b_label:>{w}} {'ratio':>10}")
+        for r in rows:
+            if r["distance"] == d:
+                print(f"  {r['stat']:<18} {r[p_label]:>{w}.4g} {r[b_label]:>{w}.4g} {r['ratio']:>10.4g}")
+    print("\nAcross distances")
+    print(f"  {'stat':<18} {'min ratio':>10} {'max ratio':>10}")
+    for r in rows:
+        if r["distance"] == "all":
+            print(f"  {r['stat']:<18} {r['min ratio']:>10.4g} {r['max ratio']:>10.4g}")

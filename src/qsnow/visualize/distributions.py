@@ -183,6 +183,7 @@ def per_histogram(
     bins: int = 25,
     dpi: Optional[int] = None,
     show: bool = True,
+    **kwargs,
 ) -> Optional["Figure"]:
     """Histogram(s) of a chip's physical error rates, per site and/or per coupler.
 
@@ -214,7 +215,7 @@ def per_histogram(
     fig, axes = plt.subplots(
         1,
         len(panels),
-        figsize=(max(4.5 * len(panels), _MIN_FIG_WIDTH), 5),
+        figsize=kwargs.get('figsize',(max(6 * len(panels), _MIN_FIG_WIDTH), 5)),
         dpi=dpi,
         sharex=sharex,
         squeeze=False,
