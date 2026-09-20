@@ -12,8 +12,8 @@ from qsnow.visualize.visualize import (
     default_style,
     _labelled_mantissas,
     _log_ticks,
-    _COLORBAR_PX,
-    _COLORBAR_TITLE_PX,
+    _colorbar_strip_px,
+    _font_px,
     _floored_colorscale,
     _label_color,
     coupler_heatmap_style,
@@ -371,12 +371,35 @@ class TestDeviceHeatmapStyle:
         assert xs[0] < xs[1]
 
     def test_reserves_a_strip_per_colorbar(self, chip):
-        """The second bar buys its own strip plus a gap for the first bar's side title,
-        which would otherwise be drawn straight over it."""
+        """Each bar buys a strip sized to its own labels and title at the current font."""
         one = visualize(chip, style=noise_heatmap_style(measured(chip)))
-        two = visualize(chip, style=device_heatmap_style(chip))
+        device = device_heatmap_style(chip)
+        two = visualize(chip, style=device)
 
-        assert two.layout.width - one.layout.width == _COLORBAR_PX + _COLORBAR_TITLE_PX
+        font = _font_px()
+        expected = sum(_colorbar_strip_px(b, font) for b in (device.colorbar, device.coupler_colorbar))
+        expected -= _colorbar_strip_px(noise_heatmap_style(chip).colorbar, font)
+        assert two.layout.width - one.layout.width == expected
+
+    def test_a_larger_font_widens_the_strip_not_the_plot(self, chip):
+        """Regression: at 14 pt the bold bottom titles overflowed a fixed strip, plotly's
+        margin autoexpand narrowed the plot, and the scale-anchored y axis padded its
+        range to -1..60. The strip must grow with the font instead."""
+        import plotly.io as pio
+
+        template = pio.templates[pio.templates.default]
+        before = template.layout.font.size
+        try:
+            template.layout.font.size = 12
+            small = visualize(chip, style=device_heatmap_style(measured(chip)))
+            template.layout.font.size = 20
+            large = visualize(chip, style=device_heatmap_style(measured(chip)))
+        finally:
+            template.layout.font.size = before
+
+        plot_px = lambda fig: fig.layout.xaxis.domain[1] * (fig.layout.width - fig.layout.margin.l - fig.layout.margin.r)
+        assert large.layout.width > small.layout.width
+        assert plot_px(large) == pytest.approx(plot_px(small))
 
     def test_log_scale_feeds_log10_values_against_log10_bounds(self, chip):
         style = device_heatmap_style(measured(chip, qubit_p=0.004), log=True)

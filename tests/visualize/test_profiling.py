@@ -21,6 +21,7 @@ from qsnow.visualize.profiling import (  # noqa: E402
     _ecdf,
     ler_cdf,
     ler_histogram,
+    ler_table,
     load_profile_runs,
 )
 
@@ -320,6 +321,18 @@ def _labels_of(legend):
     return [t.get_text() for t in legend.get_texts()]
 
 
+def _cdf_legends(fig):
+    """`(distance legend, profiled/baseline key)` from the CDF panel, after a draw.
+
+    Placement is only resolved at draw time - `loc="best"` especially - so nothing can
+    be measured until the figure has been rendered once.
+    """
+    fig.canvas.draw()
+    ax = fig.axes[0]
+    by_kind = {_labels_of(lg)[0].startswith("d="): lg for lg in _legends(ax)}
+    return by_kind[True], by_kind[False]
+
+
 def _box_extent(patch):
     """`(centre, height)` of one boxplot patch, from its path vertices."""
     ys = patch.get_path().vertices[:, 1]
@@ -523,6 +536,70 @@ class TestBaselineLegend:
         assert len(fig.axes) == 1
         assert len(_legends(fig.axes[0])) == 2
 
+    def test_cdf_legends_do_not_overlap(self, data_root):
+        # "best" cannot see another legend, so the distance legend used to land on top
+        # of the key in the lower-right corner the CDF steps leave free
+        fig = _cdf(data_root, baseline_dir=data_root)
+        distances, key = _cdf_legends(fig)
+
+        assert not distances.get_window_extent().overlaps(key.get_window_extent())
+
+    def test_stacked_key_stays_inside_the_axes(self, data_root):
+        fig = _cdf(data_root, baseline_dir=data_root)
+        ax = fig.axes[0]
+        _, key = _cdf_legends(fig)
+
+        panel, box = ax.get_window_extent(), key.get_window_extent()
+        assert panel.contains(*box.p0) and panel.contains(*box.p1)
+
+    def test_key_stacks_beneath_the_distance_legend(self, data_root):
+        # the corner the key used to be pinned to, forced: the distance legend is on the
+        # axes floor, so making room underneath means lifting it rather than flipping
+        fig = _cdf(data_root, baseline_dir=data_root, legend_loc="lower right")
+        ax = fig.axes[0]
+        distances, key = _cdf_legends(fig)
+        d_box, k_box = profiling._axes_frac(ax, distances), profiling._axes_frac(ax, key)
+
+        assert d_box.x1 > 0.5 and d_box.y0 < 0.5
+        assert k_box.x1 == pytest.approx(d_box.x1, abs=0.01)  # share the right edge
+        assert k_box.y1 < d_box.y0  # key underneath
+        assert not distances.get_window_extent().overlaps(key.get_window_extent())
+
+    def test_key_stays_beneath_a_high_distance_legend(self, data_root):
+        # the other branch: room below, so the key drops and nothing is lifted
+        fig = _cdf(data_root, baseline_dir=data_root, legend_loc="upper right")
+        ax = fig.axes[0]
+        distances, key = _cdf_legends(fig)
+        d_box, k_box = profiling._axes_frac(ax, distances), profiling._axes_frac(ax, key)
+
+        assert d_box.y1 == pytest.approx(1.0, abs=0.05)  # never moved
+        assert k_box.y1 < d_box.y0
+
+    def test_key_loc_decouples_the_two_legends(self, data_root):
+        fig = _cdf(
+            data_root,
+            baseline_dir=data_root,
+            legend_loc="upper left",
+            key_loc="lower right",
+        )
+        ax = fig.axes[0]
+        distances, key = _cdf_legends(fig)
+        d_box, k_box = profiling._axes_frac(ax, distances), profiling._axes_frac(ax, key)
+
+        assert d_box.x0 < 0.5 and d_box.y1 > 0.5  # upper left
+        assert k_box.x1 > 0.5 and k_box.y0 < 0.5  # lower right, not stacked
+
+    def test_legend_placement_survives_a_redraw(self, data_root):
+        # the auto-placed legend is frozen once the key hangs off it; left live, "best"
+        # would re-resolve on the next draw and slide out from under the key
+        fig = _cdf(data_root, baseline_dir=data_root)
+        before = [lg.get_window_extent().bounds for lg in _cdf_legends(fig)]
+
+        fig.canvas.draw()
+
+        after = [lg.get_window_extent().bounds for lg in _cdf_legends(fig)]
+        assert after == pytest.approx(before)
+
     def test_dpi_survives_to_savefig(self, data_root, tmp_path):
         fig = _cdf(data_root, dpi=200)
         out = tmp_path / "cdf.png"
@@ -594,3 +671,47 @@ class TestShow:
 
         assert shown == []
         assert isinstance(fig, Figure)
+
+
+class TestLerTable:
+    def _rows(self, root, baseline, **kw):
+        return ler_table(DISTANCES, root, baseline_dir=baseline, verbose=False, **kw)
+
+    def test_a_sweep_against_itself_reads_as_no_difference(self, data_root):
+        rows = self._rows(data_root, data_root)
+        for r in rows:
+            if r["distance"] == "all":
+                assert r["min ratio"] == r["max ratio"] == pytest.approx(1.0)
+            elif r["stat"] == "yield":
+                assert r["ratio"] == pytest.approx(0.0)
+            else:
+                assert r["ratio"] == pytest.approx(1.0)
+
+    def test_spread_out_profiled_against_a_constant_baseline(self, tmp_path):
+        """The uniform case: one LER for every placement on the baseline, so its spreads
+        are 1 while the profiled chip's exceed 1, with a better best and a worse worst."""
+        roots = {}
+        for key, lers in [("profiled", [0.001, 0.002, 0.004, 0.008]), ("baseline", [0.003] * 4)]:
+            serialize.set_data_dir(tmp_path / key)
+            try:
+                for d in DISTANCES:
+                    _save_sweep(d, lers)
+            finally:
+                serialize.set_data_dir()
+            roots[key] = tmp_path / key
+        rows = {(r["distance"], r["stat"]): r for r in self._rows(roots["profiled"], roots["baseline"])}
+        for d in DISTANCES:
+            assert rows[(d, "spread worst/best")]["baseline"] == pytest.approx(1.0)
+            assert rows[(d, "spread worst/best")]["profiled"] == pytest.approx(8.0)
+            assert rows[(d, "worst")]["ratio"] > 1 > rows[(d, "best")]["ratio"]
+        assert rows[("all", "worst")]["max ratio"] == pytest.approx(8 / 3)
+
+    def test_one_row_per_stat_per_distance_plus_summary_and_named_columns(self, named_roots, capsys):
+        primary, baseline = named_roots
+        rows = ler_table(DISTANCES, primary, baseline_dir=baseline, verbose=False, explain=True)
+        per_distance = [r for r in rows if r["distance"] != "all"]
+        assert len(per_distance) == len(DISTANCES) * len(profiling._STAT_MEANINGS)
+        assert {r["stat"] for r in rows if r["distance"] == "all"} == set(profiling._SUMMARISED)
+        assert {"derived contour", "uniform homogeneous"} <= set(per_distance[0])
+        out = capsys.readouterr().out
+        assert all(stat in out for stat in profiling._STAT_MEANINGS)

@@ -3,8 +3,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+import re
 from math import ceil, floor, log10
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple, Union
 
 from qsnow.interface.models import CSSType, Coupler, Qubit, Status, Tag, Coord
 
@@ -19,11 +20,16 @@ if TYPE_CHECKING:
 
 ColorLike = Union[str, float]
 
-# Horizontal strip reserved per colorbar: the bar itself plus its tick labels. A
-# side-mounted title sits to the *right* of its bar, which is where the next bar would go,
-# so each additional bar also buys a gap wide enough for the previous bar's title.
-_COLORBAR_PX = 100
-_COLORBAR_TITLE_PX = 40
+# Horizontal strip reserved per colorbar, sized from the font so the figure *widens* to
+# fit its labels rather than letting plotly's margin autoexpand narrow the plot (which,
+# with the y axis scale-anchored to x, pads the axis range and shows coordinates the chip
+# does not have). `_colorbar_strip_px` composes these.
+_COLORBAR_BAR_PX = 40  # plotly's 30 px bar plus its outside ticks and label gap
+_COLORBAR_PAD_PX = 16  # clearance after the widest text
+_PX_PER_PT_PER_CHAR = 0.62  # sans text width per point per character (DejaVu Sans: 0.58-0.64)
+_BOLD_FACTOR = 1.1
+_DEFAULT_FONT_PX = 12  # plotly's own default when no template sets one
+_AUTO_TICK_CHARS = 6  # e.g. "0.0004": width budget for ticks plotly chooses itself
 
 # Plot-area sizing. One scale covers both axes (see `_compute_geometry`), so the cap and
 # floor bound the *longer* side and the shorter one follows from the chip's aspect ratio.
@@ -91,6 +97,7 @@ class LogicalStyle:
     facecolor: ColorLike = "none"
     alpha: float = 1.0
     linewidth: float = 2.0
+    label_size: float = 10  # font size of the "tile N" label, in points
 
 
 @dataclass
@@ -115,6 +122,10 @@ class VisualizationStyle:
     # Write each qubit's index into its marker. Off by default: legible at a few hundred
     # qubits, illegible past that, and it costs one annotation per qubit.
     qubit_labels: bool = False
+    qubit_label_size: float = 12  # font size of those index labels, in points
+    # Coordinate tick labels (0, 1, ...) on both axes. Off for dense chips or print
+    # figures; the tick marks and grid stay.
+    axis_labels: bool = True
 
 
 _STATUS_COLORS = {
@@ -426,6 +437,9 @@ def device_heatmap_style(
     limits: Optional[Tuple[float, float]] = None,
     coupler_limits: Optional[Tuple[float, float]] = None,
     desc: Optional[str] = None,
+    axis_labels: bool = True,
+    label_size: float = 12,
+    tile_label_size: float = 10,
 ) -> VisualizationStyle:
     """Qubit and coupler error rates together, each on its own independently scaled colorbar.
 
@@ -443,7 +457,10 @@ def device_heatmap_style(
 
     `log` follows the preset unless given explicitly. `labels=True` writes each qubit's
     index into its marker - readable on a few hundred qubits, not on a few thousand, which
-    is why it is off by default.
+    is why it is off by default; `label_size` is their font size in points, and
+    `tile_label_size` that of the "tile N" label on each placed tile.
+    `axis_labels=False` drops the coordinate numbers from both axes (marks and grid
+    stay), for dense chips or print figures.
     """
     try:
         look = _DEVICE_PRESETS[preset]
@@ -505,7 +522,9 @@ def device_heatmap_style(
         )
 
     def logical_style_fn(tag: Tag) -> LogicalStyle:
-        return _default_logical_style(tag, edgecolor=look["logical_edgecolor"])
+        return _default_logical_style(
+            tag, edgecolor=look["logical_edgecolor"], label_size=tile_label_size
+        )
 
     return VisualizationStyle(
         style_fn=style_fn,
@@ -515,6 +534,8 @@ def device_heatmap_style(
         coupler_style=coupler_style_fn,
         coupler_colorbar=coupler_bar,
         qubit_labels=labels,
+        qubit_label_size=label_size,
+        axis_labels=axis_labels,
     )
 
 
@@ -697,7 +718,7 @@ class _LayoutGeometry:
     fig_height: int
     colorbar_px: int
     domain_frac: float
-    colorbar_step: float
+    colorbar_x: Tuple[float, ...]  # paper-fraction left edge of each colorbar strip
     colorbar_y: float
     colorbar_len: float
 
@@ -721,8 +742,47 @@ def _axis_spans(chip: Chip) -> Tuple[float, float]:
     return (x1 - x0, y1 - y0)
 
 
+def _font_px() -> int:
+    """The base font size plotly will render with: the default template's, else 12.
+
+    The one place the package reads the plotly template, so a notebook that sets
+    `pio.templates[...].layout.font.size` gets colorbar strips sized to match.
+    """
+    import plotly.io as pio
+
+    template = pio.templates[pio.templates.default] if pio.templates.default else None
+    size = template.layout.font.size if template is not None else None
+    return int(size or _DEFAULT_FONT_PX)
+
+
+def _text_px(text: str, font_px: int, *, bold: bool = False) -> int:
+    """Estimated rendered width of `text` (HTML tags stripped) at `font_px`."""
+    plain = re.sub(r"<[^>]+>", "", text)
+    return ceil(_PX_PER_PT_PER_CHAR * font_px * len(plain) * (_BOLD_FACTOR if bold else 1.0))
+
+
+def _colorbar_strip_px(bar: ColorbarSpec, font_px: int) -> int:
+    """Pixels to reserve for `bar` so its bar, tick labels and title all fit at `font_px`.
+
+    Tick labels sit to the right of the bar; a bottom title is anchored at the bar's left
+    edge, so the strip must be at least as wide as the title; a side title is rotated and
+    adds one line height to the right of the labels.
+    """
+    label_chars = max((len(re.sub(r"<[^>]+>", "", t)) for t in bar.ticktext or []), default=_AUTO_TICK_CHARS)
+    labels_px = _COLORBAR_BAR_PX + ceil(_PX_PER_PT_PER_CHAR * font_px * label_chars)
+    title_px = _text_px(bar.label, font_px, bold="<b>" in bar.label)
+    if bar.title_side == "bottom":
+        return max(labels_px, title_px) + _COLORBAR_PAD_PX
+    return labels_px + ceil(1.4 * font_px) + _COLORBAR_PAD_PX
+
+
+def _style_strips(style: VisualizationStyle, font_px: int) -> List[int]:
+    """The strip widths a style's colorbars need, qubit bar first."""
+    return [_colorbar_strip_px(b, font_px) for b in (style.colorbar, style.coupler_colorbar) if b is not None]
+
+
 def _compute_geometry(
-    chip: Chip, n_colorbars: int = 0, *, extra_top_margin: int = 0
+    chip: Chip, colorbar_strips: Sequence[int] = (), *, extra_top_margin: int = 0
 ) -> _LayoutGeometry:
     ## Misc. Colorbar Spacing Configuration ##
 
@@ -745,8 +805,14 @@ def _compute_geometry(
     plot_px_height = round(span_y * scale)
     base_width = plot_px_width + margin_l + margin_r
     fig_height = plot_px_height + margin_t + margin_b
-    colorbar_px = _COLORBAR_PX * n_colorbars + _COLORBAR_TITLE_PX * max(0, n_colorbars - 1)
-    domain_frac = plot_px_width / (plot_px_width + colorbar_px) if colorbar_px else 1.0
+    colorbar_px = sum(colorbar_strips)
+    total_px = plot_px_width + colorbar_px
+    domain_frac = plot_px_width / total_px
+    # each strip starts where the previous one ends, in paper fraction
+    edges, x = [], plot_px_width
+    for strip in colorbar_strips:
+        edges.append(x / total_px)
+        x += strip
 
     # NOTE - Colorbar `y`/`len` are in *paper* fraction (the whole figure, margins included), not the
     # cartesian plot's own domain - so without this, the bar overshoots top/bottom by the margins.
@@ -761,12 +827,7 @@ def _compute_geometry(
         fig_height=fig_height,
         colorbar_px=colorbar_px,
         domain_frac=domain_frac,
-        # paper-fraction width of one colorbar strip, so bar `i` sits clear of bar `i-1`
-        colorbar_step=(
-            (_COLORBAR_PX + _COLORBAR_TITLE_PX) / (plot_px_width + colorbar_px)
-            if colorbar_px
-            else 0.0
-        ),
+        colorbar_x=tuple(edges),
         colorbar_y=(colorbar_bottom_frac + colorbar_top_frac) / 2,
         colorbar_len=colorbar_top_frac - colorbar_bottom_frac,
     )
@@ -902,7 +963,7 @@ def _build_style_layer(
             return marker
         colorbar = dict(
             title=dict(text=bar.label, side=bar.title_side),
-            x=geometry.domain_frac + slot * geometry.colorbar_step,
+            x=geometry.colorbar_x[slot],
             xanchor="left",
             y=geometry.colorbar_y,
             yanchor="middle",
@@ -978,7 +1039,7 @@ def _build_style_layer(
                     yanchor="middle",
                     font=dict(
                         color=_label_color(qubit_fill.get(coord, "")),
-                        size=12,
+                        size=style.qubit_label_size,
                         family="Andale Mono, monospace, bold",
                     ),
                 )
@@ -1016,7 +1077,7 @@ def _build_style_layer(
                     xanchor="right",
                     yanchor="top",
                     font=dict(
-                        color=ls.edgecolor, size=10, family="Andale Mono, monospace"
+                        color=ls.edgecolor, size=ls.label_size, family="Andale Mono, monospace"
                     ),
                     bgcolor="rgba(128,128,128,0.25)",
                 )
@@ -1080,8 +1141,7 @@ def visualize(
     if fig is None:
         fig = Figure()
 
-    n_colorbars = (style.colorbar is not None) + (style.coupler_colorbar is not None)
-    geometry = _compute_geometry(chip, n_colorbars)
+    geometry = _compute_geometry(chip, _style_strips(style, _font_px()))
     layer = _build_style_layer(
         chip, style, geometry, logical_color_gradient=logical_color_gradient
     )
@@ -1098,6 +1158,9 @@ def visualize(
         fig.add_trace(Scattergl(**trace_kwargs))
 
     _apply_frame(fig, chip, geometry)
+    if not style.axis_labels:
+        fig.update_xaxes(showticklabels=False)
+        fig.update_yaxes(showticklabels=False)
 
     if show:
         fig.show()
