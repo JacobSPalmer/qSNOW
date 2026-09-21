@@ -1,20 +1,20 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from copy import deepcopy
+from dataclasses import dataclass
 from math import isclose
 from statistics import mean
-from dataclasses import dataclass
-from copy import deepcopy
 from typing import Dict, List, Optional, Tuple, Union
 from warnings import warn
 
 from qsnow.visualize import (
     VisualizationStyle,
-    default_style,
     default_interactive_styles,
-    with_couplers,
+    default_style,
     visualize,
     visualize_interactive,
+    with_couplers,
 )
 
 from .grid import Grid
@@ -33,8 +33,8 @@ from .models import (
 from .noise import (
     Center,
     LogCenter,
-    NoiseDistribution,
     LogSkewContour,
+    NoiseDistribution,
     NormalContour,
     RandomGaussian,
     RandomUniform,
@@ -524,9 +524,7 @@ class Chip(Grid):
     ) -> bool:
         """Whether every qubit of `tile` lands on a chip site when moved to `origin`."""
         dx, dy = origin[0] - tile.origin[0], origin[1] - tile.origin[1]
-        return all(
-            self.lattice.is_site((x + dx, y + dy)) for x, y in tile._c2i
-        )
+        return all(self.lattice.is_site((x + dx, y + dy)) for x, y in tile._c2i)
 
     def _keepout(self, footprint: Tuple[Coord, Coord]) -> Tuple[Coord, Coord]:
         """The region a footprint reserves: itself plus a `+x`/`+y` margin.
@@ -594,7 +592,9 @@ class Chip(Grid):
         if style is not None:
             visualize(self, style=style, show=True)
         elif not interactive:
-            visualize(self, style=with_couplers(default_style, self, couplers), show=True)
+            visualize(
+                self, style=with_couplers(default_style, self, couplers), show=True
+            )
         else:
             styles = default_interactive_styles(self)
             styles.update(extra_styles or {})

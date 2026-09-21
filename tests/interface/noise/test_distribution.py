@@ -54,7 +54,15 @@ class TestRecipe:
 
     def test_record_lists_positional_params_before_keyword_ones(self):
         record = SkewContour(0.01, 0.003, 1.5, seed=3).as_dict()
-        assert list(record) == ["name", "location", "deviation", "skew", "center", "slope", "seed"]
+        assert list(record) == [
+            "name",
+            "location",
+            "deviation",
+            "skew",
+            "center",
+            "slope",
+            "seed",
+        ]
 
     def test_randomized_distributions_resolve_a_seed(self):
         assert RandomGaussian(0.01, 0.002).seed is not None
@@ -69,7 +77,9 @@ class TestRecipe:
             NoiseDistribution.from_dict({"name": "no such thing"})
 
     def test_json_lists_are_coerced_back_to_tuples(self):
-        dist = NoiseDistribution.from_dict({"name": "uniform random", "bounds": [0.01, 0.05], "seed": 1})
+        dist = NoiseDistribution.from_dict(
+            {"name": "uniform random", "bounds": [0.01, 0.05], "seed": 1}
+        )
         assert dist == RandomUniform((0.01, 0.05), seed=1)
 
     def test_abstract_classes_cannot_be_instantiated(self):
@@ -98,7 +108,9 @@ class TestProducers:
         out = dist.sites(chip)
         lo, hi = p_bounds()
         assert out.keys() == chip.noise_map.keys()
-        assert all(isinstance(n, NoiseProfile) and lo <= n.p <= hi for n in out.values())
+        assert all(
+            isinstance(n, NoiseProfile) and lo <= n.p <= hi for n in out.values()
+        )
         assert len({id(n) for n in out.values()}) == len(out)
 
     @pytest.mark.parametrize("dist", SAMPLED + [Uniform(0.01)])
@@ -151,7 +163,10 @@ class TestSeededBaselines:
             (RandomGaussian(0.01, 0.002, seed=7), "random_gaussian_6x6_seed7.npy"),
             (NormalContour(0.01, 0.003, seed=3), "normal_contour_6x6_seed3.npy"),
             (SkewContour(0.01, 0.003, 1.5, seed=3), "skew_contour_6x6_seed3.npy"),
-            (SkewContour(0.01, 0.003, 1.5, "median", seed=3), "skew_contour_median_6x6_seed3.npy"),
+            (
+                SkewContour(0.01, 0.003, 1.5, "median", seed=3),
+                "skew_contour_median_6x6_seed3.npy",
+            ),
         ],
     )
     def test_sites_match_the_recorded_baseline(self, dist, filename):
@@ -163,7 +178,9 @@ class TestSeededBaselines:
     def test_correlated_couplers_match_the_recorded_baseline(self):
         chip = Chip(6, 6)
         chip.generate_noise(SkewContour(0.01, 0.003, 1.5, seed=3))
-        chip.generate_coupler_noise(SkewContour(0.05, 0.01, 1.0, seed=4), correlation=0.6)
+        chip.generate_coupler_noise(
+            SkewContour(0.05, 0.01, 1.0, seed=4), correlation=0.6
+        )
         expected = np.load(BASELINES / "skew_contour_couplers_6x6_seed4_rho0p6.npy")
         assert np.array_equal(np.array([c.noise.p for c in chip.couplers]), expected)
 
@@ -196,7 +213,9 @@ class TestCrossCorrelation:
         return stats.spearmanr(own, ends).statistic
 
     def test_full_correlation_reproduces_the_endpoint_mean_ordering(self, landscape):
-        landscape.generate_coupler_noise(SkewContour(0.05, 0.01, 1.0, seed=4), correlation=1.0)
+        landscape.generate_coupler_noise(
+            SkewContour(0.05, 0.01, 1.0, seed=4), correlation=1.0
+        )
         assert self._endpoint_mean_correlation(landscape) == pytest.approx(1.0)
 
     def test_zero_correlation_ignores_the_site_landscape(self, landscape):
@@ -210,26 +229,36 @@ class TestCrossCorrelation:
     def test_correlation_orders_the_coupling_strength(self, landscape):
         observed = []
         for rho in (0.0, 0.5, 1.0):
-            landscape.generate_coupler_noise(SkewContour(0.05, 0.01, 1.0, seed=4), correlation=rho)
+            landscape.generate_coupler_noise(
+                SkewContour(0.05, 0.01, 1.0, seed=4), correlation=rho
+            )
             observed.append(self._endpoint_mean_correlation(landscape))
         assert observed[0] < observed[1] < observed[2]
         assert 0.3 < observed[1] < 0.8
 
     def test_couplers_take_their_own_marginal(self, landscape):
-        landscape.generate_coupler_noise(SkewContour(0.05, 0.01, 1.0, seed=4), correlation=0.5)
+        landscape.generate_coupler_noise(
+            SkewContour(0.05, 0.01, 1.0, seed=4), correlation=0.5
+        )
         p = [c.noise.p for c in landscape.couplers]
         assert np.mean(p) == pytest.approx(0.05, rel=0.1)
         assert stats.skew(p) > 0.3
 
     def test_an_iid_distribution_can_be_correlated_too(self, landscape):
-        landscape.generate_coupler_noise(RandomGaussian(0.05, 0.01, seed=4), correlation=1.0)
+        landscape.generate_coupler_noise(
+            RandomGaussian(0.05, 0.01, seed=4), correlation=1.0
+        )
         assert self._endpoint_mean_correlation(landscape) == pytest.approx(1.0)
 
     def test_requires_a_site_landscape_with_variance(self, chip):
         chip.generate_noise(Uniform(0.01))
         with pytest.raises(ValueError, match="variance"):
-            chip.generate_coupler_noise(SkewContour(0.05, 0.01, seed=4), correlation=0.5)
+            chip.generate_coupler_noise(
+                SkewContour(0.05, 0.01, seed=4), correlation=0.5
+            )
 
     def test_slope_below_three_is_rejected(self, landscape):
         with pytest.raises(ValueError, match="slope"):
-            landscape.generate_coupler_noise(SkewContour(0.05, 0.01, 1.0, slope=2, seed=4))
+            landscape.generate_coupler_noise(
+                SkewContour(0.05, 0.01, 1.0, slope=2, seed=4)
+            )

@@ -1,8 +1,8 @@
 import pytest
 
 from qsnow.interface.models import (
-    CSSType,
     Coupler,
+    CSSType,
     NoiseProfile,
     Qubit,
     Status,
@@ -24,6 +24,7 @@ class TestNoiseProfile:
     def test_rejects_value_outside_bounds(self, bad_p):
         with pytest.raises(ValueError):
             NoiseProfile(p=bad_p)
+
 
 class TestQubit:
     def test_defaults(self):

@@ -55,12 +55,12 @@ def _panels_for(which: Which) -> Tuple[Panel, ...]:
     raise ValueError(f"which must be 'sites', 'couplers' or 'both', given {which!r}.")
 
 
-def _rates_for(chip: "Chip", panel: Panel) -> np.ndarray:
+def _rates_for(chip: Chip, panel: Panel) -> np.ndarray:
     profiles = chip.noise_map if panel == "sites" else chip.coupler_map
     return np.array([n.p for n in profiles.values()], dtype=float)
 
 
-def _panel_title(chip: "Chip", panel: Panel, n: int) -> str:
+def _panel_title(chip: Chip, panel: Panel, n: int) -> str:
     """`sites (n=…)`, or `couplers (n=…, derived: <mode>)` while the couplers still
     equal the endpoint combination they were derived from - otherwise the panel would
     present the site data back as if it were a second measurement."""
@@ -70,7 +70,7 @@ def _panel_title(chip: "Chip", panel: Panel, n: int) -> str:
     return title + ")"
 
 
-def _log_ticks(ax: "Axes") -> None:
+def _log_ticks(ax: Axes) -> None:
     """Log x-axis with labels on the decades only.
 
     Matplotlib labels only the decades while the axis spans more than one, then switches
@@ -93,7 +93,7 @@ def _series_color() -> str:
     return plt.rcParams["axes.prop_cycle"].by_key()["color"][0]
 
 
-def _draw_histogram(ax: "Axes", values: np.ndarray, edges, color: str) -> None:
+def _draw_histogram(ax: Axes, values: np.ndarray, edges, color: str) -> None:
     ax.hist(values, bins=edges, histtype="stepfilled", alpha=_FILL_ALPHA, color=color)
     ax.hist(values, bins=edges, histtype="step", color=color, linewidth=_OUTLINE_WIDTH)
 
@@ -133,11 +133,15 @@ def _stats_text(values: np.ndarray, logx: bool, mode: StatsMode) -> str:
     """One monospace line, `mean 0.0122  med 0.00748  log sd 0.301  log skew 1.3`."""
     if mode not in _STATS_MODES:
         raise ValueError(f"stats must be 'raw', 'log' or None, given {mode!r}.")
-    stats = _log_sample_stats(values) if mode == "log" and logx else _sample_stats(values)
+    stats = (
+        _log_sample_stats(values) if mode == "log" and logx else _sample_stats(values)
+    )
     return "  ".join(f"{name} {value:.3g}" for name, value in stats.items())
 
 
-def _draw_stats_box(ax: "Axes", values: np.ndarray, logx: bool, mode: Optional[StatsMode], color: str) -> None:
+def _draw_stats_box(
+    ax: Axes, values: np.ndarray, logx: bool, mode: Optional[StatsMode], color: str
+) -> None:
     if mode is None:
         return
     ax.text(
@@ -165,14 +169,16 @@ def _bin_edges(values: np.ndarray, bins: int, logx: bool):
         return bins
     lo, hi = float(values.min()), float(values.max())
     if lo <= 0:
-        raise ValueError("A log x-axis needs strictly positive rates; found a value <= 0.")
+        raise ValueError(
+            "A log x-axis needs strictly positive rates; found a value <= 0."
+        )
     if lo == hi:
         return bins
     return np.geomspace(lo, hi, bins + 1)
 
 
 def per_histogram(
-    chip: "Chip",
+    chip: Chip,
     *,
     which: Which = "both",
     stats: Optional[StatsMode] = "log",
@@ -185,7 +191,7 @@ def per_histogram(
     bins: int = 25,
     dpi: Optional[int] = None,
     show: bool = True,
-) -> Optional["Figure"]:
+) -> Optional[Figure]:
     """Histogram(s) of a chip's physical error rates, per site and/or per coupler.
 
     `which` picks the panels: `"sites"`, `"couplers"`, or `"both"` side by side. With

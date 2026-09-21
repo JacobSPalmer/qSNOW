@@ -1,6 +1,6 @@
 import pytest
 
-from qsnow.interface.models import CSSType, Coupler, NoiseProfile, Qubit
+from qsnow.interface.models import Coupler, CSSType, NoiseProfile, Qubit
 from qsnow.interface.rules import (
     ChannelRule,
     InjectionRule,
@@ -153,7 +153,9 @@ class TestRulesetSources:
         qubits, coupler_at = _pair()
         rule = ChannelRule("DEPOLARIZE2", "active", scalar=2.0, source="coupler")
 
-        assert Ruleset().rate_for(rule, [0, 1], qubits, coupler_at) == pytest.approx(0.4)
+        assert Ruleset().rate_for(rule, [0, 1], qubits, coupler_at) == pytest.approx(
+            0.4
+        )
 
     def test_rate_for_routes_to_the_named_source(self):
         qubits, coupler_at = _pair()
@@ -176,7 +178,9 @@ class TestRulesetSources:
         qubits, coupler_at = _pair()
         rule = ChannelRule("DEPOLARIZE2", "active", source="nonexistent")
 
-        assert Ruleset().rate_for(rule, [0, 1], qubits, coupler_at) == pytest.approx(0.02)
+        assert Ruleset().rate_for(rule, [0, 1], qubits, coupler_at) == pytest.approx(
+            0.02
+        )
 
     def test_custom_source_can_be_registered(self):
         qubits, coupler_at = _pair()

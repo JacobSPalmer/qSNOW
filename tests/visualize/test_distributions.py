@@ -7,8 +7,8 @@ import warnings
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
-from scipy.stats import skew
 from matplotlib.figure import Figure
+from scipy.stats import skew
 
 from qsnow.interface.chip import Chip
 from qsnow.visualize.distributions import per_histogram
@@ -84,7 +84,9 @@ class TestPanels:
         assert all(a.get_xscale() == "log" for a in fig.axes)
         edges = _bin_edges(ax)
         ratios = edges[1:] / edges[:-1]
-        assert max(ratios) == pytest.approx(min(ratios), rel=1e-6)  # equal ratios, not widths
+        assert max(ratios) == pytest.approx(
+            min(ratios), rel=1e-6
+        )  # equal ratios, not widths
 
     def test_log_ticks_label_the_decades_only(self, chip):
         # regression: a panel spanning under a decade got every minor tick labelled in
@@ -165,7 +167,10 @@ class TestStatsBox:
         ]
 
     def test_raw_mode_keeps_the_raw_moments_on_a_log_axis(self, chip):
-        assert self._box(chip, logx=True, stats="raw").get_text() == self._box(chip, stats="raw").get_text()
+        assert (
+            self._box(chip, logx=True, stats="raw").get_text()
+            == self._box(chip, stats="raw").get_text()
+        )
 
     @pytest.mark.parametrize("stats", ["raw", "log"])
     def test_uniform_landscape_prints_nan_skew_without_warning(self, chip, stats):

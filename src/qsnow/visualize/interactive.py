@@ -1,6 +1,7 @@
 """Interactive figures: in-figure style switching and standalone HTML export."""
 
 from __future__ import annotations
+
 from collections.abc import Mapping
 from dataclasses import replace
 from datetime import datetime
@@ -17,8 +18,8 @@ from qsnow.visualize.visualize import (
     _style_strips,
     coupler_heatmap_style,
     css_style,
-    device_heatmap_style,
     default_style,
+    device_heatmap_style,
     noise_heatmap_style,
 )
 
@@ -183,7 +184,10 @@ def visualize_interactive(
     # widest view wins per colorbar slot, so switching styles never resizes the plot
     font_px = _font_px()
     per_style = [_style_strips(s, font_px) for s in styles.values()]
-    strips = [max(w[i] for w in per_style if len(w) > i) for i in range(max(map(len, per_style)))]
+    strips = [
+        max(w[i] for w in per_style if len(w) > i)
+        for i in range(max(map(len, per_style)))
+    ]
     geometry = _compute_geometry(
         chip,
         strips,

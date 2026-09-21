@@ -4,7 +4,7 @@ import pytest
 from scipy import stats
 
 from qsnow.interface.chip import Chip, LogicalTile
-from qsnow.interface.lattice import CHECKERBOARD, SQUARE
+from qsnow.interface.lattice import SQUARE
 from qsnow.interface.models import NoiseProfile, Status
 from qsnow.interface.noise import RandomGaussian, SkewContour, p_bounds
 
@@ -54,7 +54,9 @@ class TestCrossLatticePlacement:
 
         assert chip.add_tile(logical_tile, (0, 0))
 
-    def test_dense_tile_is_rejected_on_a_checkerboard_chip(self, chip: Chip, dense_circuit):
+    def test_dense_tile_is_rejected_on_a_checkerboard_chip(
+        self, chip: Chip, dense_circuit
+    ):
         tile = LogicalTile(dense_circuit, lattice=SQUARE)
 
         with pytest.raises(ValueError, match="off-lattice"):
@@ -165,7 +167,9 @@ class TestCouplerNoiseGeneration:
         return c
 
     def test_assigns_every_coupler_within_bounds(self, landscape: Chip):
-        landscape.generate_coupler_noise(SkewContour(0.05, 0.01, 1.0, seed=4), correlation=0.5)
+        landscape.generate_coupler_noise(
+            SkewContour(0.05, 0.01, 1.0, seed=4), correlation=0.5
+        )
         lo, hi = p_bounds()
         assert all(lo <= c.noise.p <= hi for c in landscape.couplers)
         assert landscape.has_independent_couplers
@@ -179,20 +183,28 @@ class TestCouplerNoiseGeneration:
         assert summary["coupler_model"]["name"] == "skewed contour"
         assert summary["coupler_correlation"] == 0.6
 
-    def test_a_site_generator_afterwards_re_derives_and_drops_the_record(self, landscape: Chip):
-        landscape.generate_coupler_noise(SkewContour(0.05, 0.01, 1.0, seed=4), correlation=0.5)
+    def test_a_site_generator_afterwards_re_derives_and_drops_the_record(
+        self, landscape: Chip
+    ):
+        landscape.generate_coupler_noise(
+            SkewContour(0.05, 0.01, 1.0, seed=4), correlation=0.5
+        )
         landscape.generate_noise(RandomGaussian(0.01, 0.002, seed=1))
         assert landscape.spec.coupler_model is None
         assert landscape.spec.coupler_correlation is None
         assert not landscape.has_independent_couplers
 
     def test_a_hand_override_drops_the_record(self, landscape: Chip):
-        landscape.generate_coupler_noise(SkewContour(0.05, 0.01, 1.0, seed=4), correlation=0.5)
+        landscape.generate_coupler_noise(
+            SkewContour(0.05, 0.01, 1.0, seed=4), correlation=0.5
+        )
         landscape.set_coupler_noise_map({landscape.couplers[0].ends: 0.2})
         assert landscape.spec.coupler_model is None
 
     def test_copy_keeps_the_record(self, landscape: Chip):
-        landscape.generate_coupler_noise(SkewContour(0.05, 0.01, 1.0, seed=4), correlation=0.5)
+        landscape.generate_coupler_noise(
+            SkewContour(0.05, 0.01, 1.0, seed=4), correlation=0.5
+        )
         clone = landscape.copy()
         assert clone.spec.coupler_model == landscape.spec.coupler_model
         assert clone.spec.coupler_correlation == 0.5
@@ -302,7 +314,6 @@ class TestChipTilePlacement:
         assert tile2 == lg_chip.pop_tile(1)
         assert all(not q.is_active() for q in t2_region.values())
 
-
     def test_remove_tile_takes_that_tile_off_by_identity(
         self, lg_chip: Chip, logical_tile: LogicalTile
     ):
@@ -316,7 +327,9 @@ class TestChipTilePlacement:
         with pytest.raises(ValueError):
             lg_chip.remove_tile(second)
 
-    def test_clear_tiles_removes_every_tile(self, lg_chip: Chip, logical_tile: LogicalTile):
+    def test_clear_tiles_removes_every_tile(
+        self, lg_chip: Chip, logical_tile: LogicalTile
+    ):
         # regression: popping by index while enumerating skipped every other tile
         for loc in [(0, 0), (8, 0), (12, 8)]:
             lg_chip.add_tile(logical_tile.copy(), loc)
@@ -331,9 +344,14 @@ class TestChipSpec:
     def test_generators_record_a_typed_noise_model(self, chip: Chip):
         chip.generate_gaussian_noise(mean=0.01, deviation=0.002, seed=7)
 
-        assert chip.spec.noise_model == RandomGaussian(mean=0.01, deviation=0.002, seed=7)
+        assert chip.spec.noise_model == RandomGaussian(
+            mean=0.01, deviation=0.002, seed=7
+        )
         assert chip.summary()["noise_model"] == {
-            "name": "gaussian", "mean": 0.01, "deviation": 0.002, "seed": 7
+            "name": "gaussian",
+            "mean": 0.01,
+            "deviation": 0.002,
+            "seed": 7,
         }
 
     def test_skewed_contour_records_its_shape_parameters(self, chip: Chip):
@@ -341,8 +359,13 @@ class TestChipSpec:
 
         assert chip.spec.noise_model == SkewContour(0.01, 0.003, 1.5, "median", seed=3)
         assert chip.summary()["noise_model"] == {
-            "name": "skewed contour", "location": 0.01, "deviation": 0.003, "skew": 1.5,
-            "center": "median", "slope": 5, "seed": 3,
+            "name": "skewed contour",
+            "location": 0.01,
+            "deviation": 0.003,
+            "skew": 1.5,
+            "center": "median",
+            "slope": 5,
+            "seed": 3,
         }
         assert chip.summary()["noise_model"]["name"] == "skewed contour"
 

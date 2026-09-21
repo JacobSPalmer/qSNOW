@@ -2,21 +2,20 @@ import pytest
 
 from qsnow.interface.models import Qubit, Status
 from qsnow.visualize.visualize import (
-    CouplerStyle,
     QubitStyle,
     VisualizationStyle,
+    _colorbar_strip_px,
     _default_qubit_style_by_status,
     _discrete_colormap_fn,
-    area_selection_style,
-    custom_heatmap_style,
-    default_style,
+    _floored_colorscale,
+    _font_px,
+    _label_color,
     _labelled_mantissas,
     _log_ticks,
-    _colorbar_strip_px,
-    _font_px,
-    _floored_colorscale,
-    _label_color,
+    area_selection_style,
     coupler_heatmap_style,
+    custom_heatmap_style,
+    default_style,
     device_heatmap_style,
     noise_heatmap_style,
     packing_profile_style,
@@ -98,8 +97,12 @@ class TestVisualizeFigure:
         full = fig.full_figure_for_development(warn=False)
         # not exact, unlike the square case above: plotly quantizes the plot area to
         # whole pixels, which leaves a few thousandths of a coordinate unit behind.
-        assert full.layout.xaxis.range == pytest.approx(fig.layout.xaxis.range, abs=0.01)
-        assert full.layout.yaxis.range == pytest.approx(fig.layout.yaxis.range, abs=0.01)
+        assert full.layout.xaxis.range == pytest.approx(
+            fig.layout.xaxis.range, abs=0.01
+        )
+        assert full.layout.yaxis.range == pytest.approx(
+            fig.layout.yaxis.range, abs=0.01
+        )
 
     def test_logical_color_gradient_overrides_default_edgecolor(
         self, lg_chip, logical_tile
@@ -322,21 +325,30 @@ class TestLogTicks:
 
         assert text[-1] == "10<sup>-2</sup>"
         assert [t for t in text if t] == ["10<sup>-2</sup>"]
-        assert len(vals) == 9  # 2e-3 .. 9e-3 and 1e-2: every mantissa in range has a mark
+        assert (
+            len(vals) == 9
+        )  # 2e-3 .. 9e-3 and 1e-2: every mantissa in range has a mark
 
     def test_labelled_mantissas_add_2_and_5_when_asked(self):
         import math
 
         _, text = _log_ticks(math.log10(1e-3), math.log10(1e-2), labelled=(1, 2, 5))
 
-        assert [t for t in text if t] == ["10<sup>-3</sup>", "2×10<sup>-3</sup>", "5×10<sup>-3</sup>", "10<sup>-2</sup>"]
+        assert [t for t in text if t] == [
+            "10<sup>-3</sup>",
+            "2×10<sup>-3</sup>",
+            "5×10<sup>-3</sup>",
+            "10<sup>-2</sup>",
+        ]
 
     def test_tick_positions_are_log10_of_their_values(self):
         import math
 
         vals, _ = _log_ticks(math.log10(1e-3), math.log10(1e-2))
 
-        assert vals == [pytest.approx(math.log10(m * 1e-3)) for m in range(1, 10)] + [pytest.approx(-2)]
+        assert vals == [pytest.approx(math.log10(m * 1e-3)) for m in range(1, 10)] + [
+            pytest.approx(-2)
+        ]
 
     def test_rule_labels_decades_only_once_two_fit(self):
         assert _labelled_mantissas(1.5) == (1,)
@@ -377,7 +389,10 @@ class TestDeviceHeatmapStyle:
         two = visualize(chip, style=device)
 
         font = _font_px()
-        expected = sum(_colorbar_strip_px(b, font) for b in (device.colorbar, device.coupler_colorbar))
+        expected = sum(
+            _colorbar_strip_px(b, font)
+            for b in (device.colorbar, device.coupler_colorbar)
+        )
         expected -= _colorbar_strip_px(noise_heatmap_style(chip).colorbar, font)
         assert two.layout.width - one.layout.width == expected
 
@@ -397,7 +412,10 @@ class TestDeviceHeatmapStyle:
         finally:
             template.layout.font.size = before
 
-        plot_px = lambda fig: fig.layout.xaxis.domain[1] * (fig.layout.width - fig.layout.margin.l - fig.layout.margin.r)
+        plot_px = lambda fig: (
+            fig.layout.xaxis.domain[1]
+            * (fig.layout.width - fig.layout.margin.l - fig.layout.margin.r)
+        )
         assert large.layout.width > small.layout.width
         assert plot_px(large) == pytest.approx(plot_px(small))
 
@@ -488,7 +506,11 @@ class TestDeviceHeatmapPresets:
     def test_bar_titles_sit_beneath_the_bars_in_both_presets(self, chip):
         for preset in ("qsnow", "device"):
             style = device_heatmap_style(measured(chip), preset=preset)
-            assert style.colorbar.title_side == style.coupler_colorbar.title_side == "bottom"
+            assert (
+                style.colorbar.title_side
+                == style.coupler_colorbar.title_side
+                == "bottom"
+            )
             assert style.colorbar.label == "<b>Qubit (p<sub>q</sub>)</b>"
             assert style.coupler_colorbar.label == "<b>Coupler (p<sub>c</sub>)</b>"
 
@@ -528,9 +550,9 @@ class TestLabelContrast:
         "fill, expected",
         [
             ("rgb(255, 255, 255)", "black"),  # hot_r's low end
-            ("rgb(0, 0, 0)", "white"),        # hot_r's high end
-            ("rgb(8, 48, 107)", "white"),     # Blues' high end
-            ("lightgray", "white"),           # unparseable named color
+            ("rgb(0, 0, 0)", "white"),  # hot_r's high end
+            ("rgb(8, 48, 107)", "white"),  # Blues' high end
+            ("lightgray", "white"),  # unparseable named color
             ("", "white"),
         ],
     )
@@ -558,8 +580,11 @@ class TestFlooredColorscale:
         floored = _floored_colorscale("Blues", floor=0.25)[0][1]
 
         assert full != floored
-        assert _label_color(full) == "black"    # i.e. the raw low end is very pale
-        assert _floored_colorscale("Blues")[-1][1] == _floored_colorscale("Blues", 0.0)[-1][1]
+        assert _label_color(full) == "black"  # i.e. the raw low end is very pale
+        assert (
+            _floored_colorscale("Blues")[-1][1]
+            == _floored_colorscale("Blues", 0.0)[-1][1]
+        )
 
     def test_spans_the_full_zero_to_one_domain(self):
         scale = _floored_colorscale("Blues")

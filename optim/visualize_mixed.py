@@ -27,9 +27,8 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch, Rectangle
-
 from model_mixed import _parse_distances, build_and_solve
-from packing_data import chip_grid_dim, footprint_span, load_lers, mixed_candidates
+from packing_data import chip_grid_dim, footprint_span, load_lers
 
 # Per-distance tile colors (fill/edge). Extend if more distances are ever used.
 DIST_COLORS = {
@@ -42,7 +41,7 @@ FALLBACK = {"face": "#7f8c8d", "edge": "#2c3e50", "name": "D?"}
 # two distances; `none`/`both` are fixed.
 CAT_NONE = {"marker": ".", "face": "#d5d5d5", "edge": "#d5d5d5", "size": 12}
 CAT_BOTH = {"marker": "*", "face": "#2ecc71", "edge": "#145a32", "size": 90}
-CAT_LOW = {"marker": "o", "size": 26}   # only the smaller distance valid
+CAT_LOW = {"marker": "o", "size": 26}  # only the smaller distance valid
 CAT_HIGH = {"marker": "^", "size": 34}  # only the larger distance valid
 
 
@@ -82,9 +81,14 @@ def classify_origins(tau, low: int, high: int, data_dir=None):
 def _scatter(ax, pts, marker, face, edge, size, zorder, lw=0.6):
     if pts:
         ax.scatter(
-            [c for _, c in pts], [r for r, _ in pts],
-            marker=marker, s=size, facecolors=face, edgecolors=edge,
-            linewidths=lw, zorder=zorder,
+            [c for _, c in pts],
+            [r for r, _ in pts],
+            marker=marker,
+            s=size,
+            facecolors=face,
+            edgecolors=edge,
+            linewidths=lw,
+            zorder=zorder,
         )
 
 
@@ -102,14 +106,43 @@ def visualize(tau: float, distances=(3, 5), data_dir=None) -> Path:
 
     # Origin validity markers (drawn under the translucent tiles). Order matters
     # only for overlap; "none" is most numerous and least important, so first.
-    _scatter(ax, cats["none"], CAT_NONE["marker"], CAT_NONE["face"],
-             CAT_NONE["edge"], CAT_NONE["size"], zorder=2, lw=0)
-    _scatter(ax, cats["low"], CAT_LOW["marker"], col_low["face"],
-             col_low["edge"], CAT_LOW["size"], zorder=2.3)
-    _scatter(ax, cats["high"], CAT_HIGH["marker"], col_high["face"],
-             col_high["edge"], CAT_HIGH["size"], zorder=2.3)
-    _scatter(ax, cats["both"], CAT_BOTH["marker"], CAT_BOTH["face"],
-             CAT_BOTH["edge"], CAT_BOTH["size"], zorder=2.6)
+    _scatter(
+        ax,
+        cats["none"],
+        CAT_NONE["marker"],
+        CAT_NONE["face"],
+        CAT_NONE["edge"],
+        CAT_NONE["size"],
+        zorder=2,
+        lw=0,
+    )
+    _scatter(
+        ax,
+        cats["low"],
+        CAT_LOW["marker"],
+        col_low["face"],
+        col_low["edge"],
+        CAT_LOW["size"],
+        zorder=2.3,
+    )
+    _scatter(
+        ax,
+        cats["high"],
+        CAT_HIGH["marker"],
+        col_high["face"],
+        col_high["edge"],
+        CAT_HIGH["size"],
+        zorder=2.3,
+    )
+    _scatter(
+        ax,
+        cats["both"],
+        CAT_BOTH["marker"],
+        CAT_BOTH["face"],
+        CAT_BOTH["edge"],
+        CAT_BOTH["size"],
+        zorder=2.6,
+    )
 
     # Placed tiles: a footprint square [r, r+s] x [c, c+s], colored by distance.
     pad = 0.5  # nudge so boundary qubits sit inside the drawn square
@@ -119,22 +152,38 @@ def visualize(tau: float, distances=(3, 5), data_dir=None) -> Path:
         col = DIST_COLORS.get(cand.distance, FALLBACK)
         ax.add_patch(
             Rectangle(
-                (c - pad, r - pad), s + 2 * pad, s + 2 * pad,
-                facecolor=col["face"], edgecolor=col["edge"],
-                alpha=0.20, linewidth=2.0, zorder=3,
+                (c - pad, r - pad),
+                s + 2 * pad,
+                s + 2 * pad,
+                facecolor=col["face"],
+                edgecolor=col["edge"],
+                alpha=0.20,
+                linewidth=2.0,
+                zorder=3,
             )
         )
         ax.text(
-            c + s / 2, r + s / 2, str(i),
-            ha="center", va="center", fontsize=9, fontweight="bold",
-            color=col["edge"], zorder=4,
+            c + s / 2,
+            r + s / 2,
+            str(i),
+            ha="center",
+            va="center",
+            fontsize=9,
+            fontweight="bold",
+            color=col["edge"],
+            zorder=4,
         )
 
     # Chip boundary.
     ax.add_patch(
         Rectangle(
-            (-0.5, -0.5), n_cols, n_rows,
-            fill=False, edgecolor="0.4", linewidth=1.0, zorder=1,
+            (-0.5, -0.5),
+            n_cols,
+            n_rows,
+            fill=False,
+            edgecolor="0.4",
+            linewidth=1.0,
+            zorder=1,
         )
     )
 
@@ -159,27 +208,64 @@ def visualize(tau: float, distances=(3, 5), data_dir=None) -> Path:
 
     nm_low, nm_high = col_low["name"], col_high["name"]
     legend_handles = [
-        plt.Line2D([], [], marker=CAT_NONE["marker"], linestyle="", color=CAT_NONE["face"],
-                   label=f"no valid tile  [{len(cats['none'])}]"),
-        plt.Line2D([], [], marker=CAT_LOW["marker"], linestyle="", markerfacecolor=col_low["face"],
-                   markeredgecolor=col_low["edge"], color=col_low["face"],
-                   label=f"only {nm_low} valid  [{len(cats['low'])}]"),
-        plt.Line2D([], [], marker=CAT_HIGH["marker"], linestyle="", markerfacecolor=col_high["face"],
-                   markeredgecolor=col_high["edge"], color=col_high["face"],
-                   label=f"only {nm_high} valid  [{len(cats['high'])}]"),
-        plt.Line2D([], [], marker=CAT_BOTH["marker"], linestyle="", markerfacecolor=CAT_BOTH["face"],
-                   markeredgecolor=CAT_BOTH["edge"], color=CAT_BOTH["face"], markersize=11,
-                   label=f"both {nm_low} & {nm_high} valid  [{len(cats['both'])}]"),
+        plt.Line2D(
+            [],
+            [],
+            marker=CAT_NONE["marker"],
+            linestyle="",
+            color=CAT_NONE["face"],
+            label=f"no valid tile  [{len(cats['none'])}]",
+        ),
+        plt.Line2D(
+            [],
+            [],
+            marker=CAT_LOW["marker"],
+            linestyle="",
+            markerfacecolor=col_low["face"],
+            markeredgecolor=col_low["edge"],
+            color=col_low["face"],
+            label=f"only {nm_low} valid  [{len(cats['low'])}]",
+        ),
+        plt.Line2D(
+            [],
+            [],
+            marker=CAT_HIGH["marker"],
+            linestyle="",
+            markerfacecolor=col_high["face"],
+            markeredgecolor=col_high["edge"],
+            color=col_high["face"],
+            label=f"only {nm_high} valid  [{len(cats['high'])}]",
+        ),
+        plt.Line2D(
+            [],
+            [],
+            marker=CAT_BOTH["marker"],
+            linestyle="",
+            markerfacecolor=CAT_BOTH["face"],
+            markeredgecolor=CAT_BOTH["edge"],
+            color=CAT_BOTH["face"],
+            markersize=11,
+            label=f"both {nm_low} & {nm_high} valid  [{len(cats['both'])}]",
+        ),
     ]
     for d in distances:
         col = DIST_COLORS.get(d, FALLBACK)
         span = footprint_span(d)
         legend_handles.append(
-            Patch(facecolor=col["face"], edgecolor=col["edge"], alpha=0.4,
-                  label=f"placed {col['name']} (footprint {span + 1}×{span + 1})")
+            Patch(
+                facecolor=col["face"],
+                edgecolor=col["edge"],
+                alpha=0.4,
+                label=f"placed {col['name']} (footprint {span + 1}×{span + 1})",
+            )
         )
-    ax.legend(handles=legend_handles, loc="upper left", bbox_to_anchor=(1.01, 1.0),
-              framealpha=0.95, borderaxespad=0.0)
+    ax.legend(
+        handles=legend_handles,
+        loc="upper left",
+        bbox_to_anchor=(1.01, 1.0),
+        framealpha=0.95,
+        borderaxespad=0.0,
+    )
 
     out_path = Path(__file__).resolve().parent / f"packing_mixed_tau_{tau:g}.png"
     fig.tight_layout()
@@ -189,10 +275,16 @@ def visualize(tau: float, distances=(3, 5), data_dir=None) -> Path:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Visualize the mixed-distance tile packing.")
+    ap = argparse.ArgumentParser(
+        description="Visualize the mixed-distance tile packing."
+    )
     ap.add_argument("tau", type=float, help="LER validity threshold")
-    ap.add_argument("--distances", type=_parse_distances, default=[3, 5],
-                    help="comma-separated code distances (default 3,5)")
+    ap.add_argument(
+        "--distances",
+        type=_parse_distances,
+        default=[3, 5],
+        help="comma-separated code distances (default 3,5)",
+    )
     ap.add_argument(
         "--data-dir",
         default=None,

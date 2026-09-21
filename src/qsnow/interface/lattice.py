@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from typing import Dict, Iterable, Iterator, List, Tuple
+from typing import Dict, List, Tuple
 
 from .models import Coord
 
@@ -173,7 +174,9 @@ class Lattice:
                 "1D chain satisfies every lattice. Pass `lattice=` explicitly."
             )
 
-        return CHECKERBOARD if all(CHECKERBOARD.is_site(c) for c in distinct) else SQUARE
+        return (
+            CHECKERBOARD if all(CHECKERBOARD.is_site(c) for c in distinct) else SQUARE
+        )
 
 
 CHECKERBOARD = Lattice(name="checkerboard", pitch=2)

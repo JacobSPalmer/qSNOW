@@ -168,7 +168,9 @@ def log_skewed_target(
     if location <= 0:
         raise ValueError(f"location must be a positive rate, given {location}.")
     if deviation <= 0:
-        raise ValueError(f"deviation must be positive (decades of log10 rate), given {deviation}.")
+        raise ValueError(
+            f"deviation must be positive (decades of log10 rate), given {deviation}."
+        )
     if center == "median":
         loc = np.log10(location) - pearson3(skew, loc=0.0, scale=deviation).median()
     elif center == "geometric":
@@ -243,7 +245,7 @@ def scale_gaussian_contour(
     return final_values
 
 
-def iid_gaussian_field(chip: "Chip", seed: int) -> Dict[Coord, float]:
+def iid_gaussian_field(chip: Chip, seed: int) -> Dict[Coord, float]:
     """One independent standard-normal value per site: a field with no spatial structure."""
     from numpy.random import default_rng
 
@@ -252,7 +254,7 @@ def iid_gaussian_field(chip: "Chip", seed: int) -> Dict[Coord, float]:
 
 
 def correlated_gaussian_field(
-    chip: "Chip", mean_: float, deviation: float, seed: int, slope: int
+    chip: Chip, mean_: float, deviation: float, seed: int, slope: int
 ) -> Dict[Coord, float]:
     """
     A spatially correlated Gaussian value per site, before any reshaping.
@@ -278,7 +280,9 @@ def correlated_gaussian_field(
 
     buffer_l, buffer_h = chip.unit_dims
     buffer_chip = Chip(buffer_l + slope + 1, buffer_h + slope + 1, lattice=chip.lattice)
-    buffer_chip.set_noise_map(RandomGaussian(mean_, deviation, seed=seed).sites(buffer_chip))
+    buffer_chip.set_noise_map(
+        RandomGaussian(mean_, deviation, seed=seed).sites(buffer_chip)
+    )
 
     tile = SCTile(slope)
     field: Dict[Coord, float] = {}

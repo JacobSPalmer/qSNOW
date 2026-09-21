@@ -1,11 +1,11 @@
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
-from stim import Circuit
 from time import perf_counter
+from typing import Dict, List, Optional, Tuple
 
 import sinter
+from stim import Circuit
 
 from qsnow.experiments.experiment import Experiment, ResultsLike
 from qsnow.experiments.sampling import (  # noqa: F401  (re-exported for callers)
@@ -23,6 +23,7 @@ from qsnow.visualize import (
 )
 
 logger = logging.getLogger(__name__)
+
 
 @dataclass
 class SquarePackingExp(Experiment):
@@ -46,11 +47,10 @@ class SquarePackingExp(Experiment):
     def _generate_profile(self, chip: Chip, tile: LogicalTile) -> List[Coord]:
         return chip.candidate_placements(tile)
 
-
     # ------------------------------------------------------------------
     # Simulation
     # ------------------------------------------------------------------
-    
+
     def _circuit_for_profile_loc(self, loc: Coord) -> Circuit:
         """The tile's noise-injected circuit at `loc`, moving or placing the tile there."""
         if self.tile.initialized() and self.tile.chip is self.chip:
@@ -134,20 +134,20 @@ class SquarePackingExp(Experiment):
                 }
                 for s in run.stats
             }
-            #TODO - the stats is stored in config rn but will need to be moved to it's own subdictionary, which will likely require a migration
-            #TODO - create minor versioning in the serialize code
+            # TODO - the stats is stored in config rn but will need to be moved to it's own subdictionary, which will likely require a migration
+            # TODO - create minor versioning in the serialize code
             self.config.update(
                 **sampler.run_config(),
                 stats={
-                    'runtime': {
-                        'generation': f"{t_generation}",
+                    "runtime": {
+                        "generation": f"{t_generation}",
                         **{k: f"{v}" for k, v in run.timings.items()},
                     }
                 },
             )
 
         return self.results
-    
+
     # ------------------------------------------------------------------
     # Simulation
     # ------------------------------------------------------------------
@@ -159,13 +159,24 @@ class SquarePackingExp(Experiment):
             "tile": self.tile.summary(),
             "placements": len(self.profile),
         }
-    
+
     def _footprint_for(self, origin: Coord) -> Tuple[Coord, Coord]:
         return self.chip.footprint_for(origin, self.tile.length, self.tile.height)
 
     def _average_per_for_candidate_placements(self) -> Dict[Coord, float]:
         from statistics import mean
-        return {o: mean([q.noise.p for q in self.chip.select_rect(*o, *self._footprint_for(o)[1]).values()]) for o in self.profile}
+
+        return {
+            o: mean(
+                [
+                    q.noise.p
+                    for q in self.chip.select_rect(
+                        *o, *self._footprint_for(o)[1]
+                    ).values()
+                ]
+            )
+            for o in self.profile
+        }
 
     def _bounds_for_candidate_placements(self) -> Dict[Coord, Coord]:
         return {o: self._footprint_for(o)[1] for o in self.profile}
@@ -174,14 +185,24 @@ class SquarePackingExp(Experiment):
         self, results: Optional[ResultsLike] = None
     ) -> Dict[str, VisualizationStyle]:
         """The view bundle for `show`: chip-level views plus LER/placement results."""
-        ler_map = {k: v["ler"] for k, v in self._results_record(results).results.items()}
+        ler_map = {
+            k: v["ler"] for k, v in self._results_record(results).results.items()
+        }
         bounds_map = self._bounds_for_candidate_placements()
         avg_per_map = self._average_per_for_candidate_placements()
-        base_map = {k: f'{k} → {bounds_map.get(k) if bounds_map.get(k) else k}' for k in self.profile}
+        base_map = {
+            k: f"{k} → {bounds_map.get(k) if bounds_map.get(k) else k}"
+            for k in self.profile
+        }
 
-        profile = {loc: {"base": f'{loc} → {bounds_map.get(loc) if bounds_map.get(loc) else loc}',
-                         "ler": ler_map.get(loc), 
-                         "bound": bounds_map.get(loc)} for loc in self.profile}
+        profile = {
+            loc: {
+                "base": f"{loc} → {bounds_map.get(loc) if bounds_map.get(loc) else loc}",
+                "ler": ler_map.get(loc),
+                "bound": bounds_map.get(loc),
+            }
+            for loc in self.profile
+        }
 
         styles = {
             "PER": noise_heatmap_style(
@@ -195,17 +216,17 @@ class SquarePackingExp(Experiment):
             "Avg. PER": custom_heatmap_style(
                 self.chip,
                 avg_per_map,
-                'Avg. PER',
-                additional_hovertext={'base': base_map, 'LER': ler_map},
+                "Avg. PER",
+                additional_hovertext={"base": base_map, "LER": ler_map},
                 desc="Average physical error rate across the tile footprint for each candidate site.",
             ),
             "LER": custom_heatmap_style(
                 self.chip,
                 ler_map,
-                'LER',
-                additional_hovertext={'base': base_map, 'Avg. PER': avg_per_map},
+                "LER",
+                additional_hovertext={"base": base_map, "Avg. PER": avg_per_map},
                 desc="Sampled logical error rate (LER) if the tile's origin were placed at each candidate site.",
-            )
+            ),
         }
 
         return styles

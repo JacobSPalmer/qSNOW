@@ -20,9 +20,22 @@ run_and_serialize_spp_experiment = run_experiment.run_and_serialize_spp_experime
 save_configuration = run_experiment.save_configuration
 from qsnow.helpers import serialize
 from qsnow.interface.chip import Chip
-from qsnow.interface.noise import LogSkewContour, NormalContour, RandomGaussian, SkewContour, Uniform
+from qsnow.interface.noise import (
+    LogSkewContour,
+    NormalContour,
+    RandomGaussian,
+    SkewContour,
+    Uniform,
+)
 
-SMALL = dict(distances=[3], shots=50, max_errors=None, min_errors=1, shot_ceiling=None, additional_label="t")
+SMALL = dict(
+    distances=[3],
+    shots=50,
+    max_errors=None,
+    min_errors=1,
+    shot_ceiling=None,
+    additional_label="t",
+)
 
 
 @pytest.fixture(autouse=True)
@@ -32,9 +45,13 @@ def _isolated_data_dir(tmp_path):
 
 
 def _run(chip, tmp_path, **kw):
-    params = dict(location=0.01, deviation=0.003, skew=1.5, seed=3, noise_model="skewed-contour")
+    params = dict(
+        location=0.01, deviation=0.003, skew=1.5, seed=3, noise_model="skewed-contour"
+    )
     params.update(kw)
-    return run_and_serialize_spp_experiment(chip, data_directory=tmp_path / "data", **SMALL, **params)
+    return run_and_serialize_spp_experiment(
+        chip, data_directory=tmp_path / "data", **SMALL, **params
+    )
 
 
 class TestDistributionFromFlags:
@@ -63,7 +80,9 @@ class TestDistributionFromFlags:
     def test_canonical_names_pass_through_unchanged(self):
         assert [resolve_model(m) for m in MODEL_CHOICES] == list(MODEL_CHOICES)
 
-    @pytest.mark.parametrize("model, center", [("skewed-contour", "mean"), ("log-skewed-contour", "median")])
+    @pytest.mark.parametrize(
+        "model, center", [("skewed-contour", "mean"), ("log-skewed-contour", "median")]
+    )
     def test_no_center_takes_the_class_default(self, model, center):
         # regression: a fixed 'mean' default made log-skewed-contour unusable without --center
         assert distribution_from_flags(model, 0.01, 0.3, 1.0).center == center
@@ -81,16 +100,29 @@ class TestCouplerFlags:
 
     def test_coupler_model_and_correlation_are_applied_and_recorded(self, tmp_path):
         chip = _run(
-            Chip(5, 5), tmp_path,
-            coupler_model="skewed-contour", coupler_location=0.05, coupler_deviation=0.01,
-            coupler_skew=1.0, coupler_seed=4, correlation=0.6,
+            Chip(5, 5),
+            tmp_path,
+            coupler_model="skewed-contour",
+            coupler_location=0.05,
+            coupler_deviation=0.01,
+            coupler_skew=1.0,
+            coupler_seed=4,
+            correlation=0.6,
         )
         assert chip.spec.coupler_model == SkewContour(0.05, 0.01, 1.0, seed=4)
         assert chip.spec.coupler_correlation == 0.6
         assert chip.has_independent_couplers
 
     def test_saved_experiment_carries_the_coupler_record(self, tmp_path):
-        _run(Chip(5, 5), tmp_path, coupler_model="gaussian", coupler_location=0.05, coupler_deviation=0.01, coupler_seed=4, correlation=0.5)
+        _run(
+            Chip(5, 5),
+            tmp_path,
+            coupler_model="gaussian",
+            coupler_location=0.05,
+            coupler_deviation=0.01,
+            coupler_seed=4,
+            correlation=0.5,
+        )
         exp = serialize.import_latest("*t_d3*")
         assert exp.chip.spec.coupler_model == RandomGaussian(0.05, 0.01, seed=4)
         assert exp.chip.spec.coupler_correlation == 0.5
@@ -100,7 +132,13 @@ class TestCouplerFlags:
         chip.generate_noise(SkewContour(0.01, 0.003, 1.5, seed=3))
         chip.generate_coupler_noise(Uniform(0.2))
         before = [c.noise.p for c in chip.couplers]
-        _run(chip, tmp_path, coupler_model="gaussian", coupler_location=0.05, coupler_deviation=0.01)
+        _run(
+            chip,
+            tmp_path,
+            coupler_model="gaussian",
+            coupler_location=0.05,
+            coupler_deviation=0.01,
+        )
         assert [c.noise.p for c in chip.couplers] == before
         assert chip.spec.coupler_model == Uniform(0.2)
 
@@ -112,23 +150,42 @@ class TestCouplerFlags:
 class TestSaveConfiguration:
     def test_records_the_resolved_seeds_and_every_coupler_flag(self, tmp_path):
         chip = _run(
-            Chip(5, 5), tmp_path, seed=None,
-            coupler_model="skewed-contour", coupler_location=0.05, coupler_deviation=0.01,
-            coupler_skew=1.0, coupler_seed=None, correlation=0.6,
+            Chip(5, 5),
+            tmp_path,
+            seed=None,
+            coupler_model="skewed-contour",
+            coupler_location=0.05,
+            coupler_deviation=0.01,
+            coupler_skew=1.0,
+            coupler_seed=None,
+            correlation=0.6,
         )
         args = {
-            "name": "cfg", "model": "skewed-contour", "location": 0.01, "seed": None, "center": None,
-            "coupler_model": "skewed-contour", "coupler_location": 0.05, "coupler_seed": None,
-            "correlation": 0.6, "max_errors": None,
+            "name": "cfg",
+            "model": "skewed-contour",
+            "location": 0.01,
+            "seed": None,
+            "center": None,
+            "coupler_model": "skewed-contour",
+            "coupler_location": 0.05,
+            "coupler_seed": None,
+            "correlation": 0.6,
+            "max_errors": None,
         }
         save_configuration(dict(args), chip, "cfg")
 
         text = (serialize.get_data_dir() / "cfg.txt").read_text().split()
         assert text[text.index("--seed") + 1] == str(chip.spec.noise_model.seed)
-        assert text[text.index("--coupler_seed") + 1] == str(chip.spec.coupler_model.seed)
-        assert text[text.index("--center") + 1] == "mean"  # resolved, not the None that was passed
+        assert text[text.index("--coupler_seed") + 1] == str(
+            chip.spec.coupler_model.seed
+        )
+        assert (
+            text[text.index("--center") + 1] == "mean"
+        )  # resolved, not the None that was passed
         assert text[text.index("--correlation") + 1] == "0.6"
-        assert "--max_errors" not in text  # a None flag is omitted, not written as "None"
+        assert (
+            "--max_errors" not in text
+        )  # a None flag is omitted, not written as "None"
 
 
 class TestMainValidation:
@@ -139,10 +196,15 @@ class TestMainValidation:
         return info.value.code
 
     def test_coupler_model_without_location_is_a_parser_error(self, monkeypatch):
-        code = self._main(monkeypatch, ["--location", "0.01", "--distances", "3", "--coupler_model", "gaussian"])
+        code = self._main(
+            monkeypatch,
+            ["--location", "0.01", "--distances", "3", "--coupler_model", "gaussian"],
+        )
         assert code == 2
 
     def test_correlation_outside_unit_interval_is_a_parser_error(self, monkeypatch):
         # `--mean` on purpose: the alias saved configs still use must keep parsing
-        code = self._main(monkeypatch, ["--mean", "0.01", "--distances", "3", "--correlation", "1.5"])
+        code = self._main(
+            monkeypatch, ["--mean", "0.01", "--distances", "3", "--correlation", "1.5"]
+        )
         assert code == 2

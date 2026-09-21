@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from statistics import mean
-from typing import Dict, List, Literal, Optional, Union, TypeAlias
+from typing import Dict, List, Literal, Optional, TypeAlias, Union
 
 from .models import Coord, Coupler, Qubit
 
@@ -274,7 +274,7 @@ def _coupler_source(targets, qubits, coupler_at) -> float:
 
 
 # TODO - move these to a rule_types or something along those lines
-TriggerFunc: TypeAlias  = Callable[
+TriggerFunc: TypeAlias = Callable[
     [List[List[int]], Dict[int, Qubit]], bool
 ]  # specifies when to trigger rule
 FilterFunc: TypeAlias = Callable[
@@ -346,6 +346,7 @@ class ChannelRule:
     def __repr__(self) -> str:
         return f"ChannelRule({f'name={self.name},' if self.name is not None else ''}channel={self.channel}, on_qubits={self.filter}, rate={self.scalar}p, from={self.source})"
 
+
 @dataclass
 class InjectionRule:
     operation: str
@@ -392,7 +393,9 @@ class Ruleset:
     def __init__(self, injection_rules: Optional[List[InjectionRule]] = None):
         # Copied, so neither a constructor default nor a caller's list is ever aliased
         # between rulesets: adding a rule to one tile must not add it to every other.
-        self._rules: List[InjectionRule] = list(injection_rules) if injection_rules else []
+        self._rules: List[InjectionRule] = (
+            list(injection_rules) if injection_rules else []
+        )
         self._filters: Dict[str, Filter] = {f.name: f for f in _DEFAULT_FILTERS}
         self._triggers: Dict[str, Trigger] = {t.name: t for t in _DEFAULT_TRIGGERS}
         self._sources: Dict[str, Source] = {s.name: s for s in _DEFAULT_SOURCES}
