@@ -1,22 +1,51 @@
 """Core visualization library for qSNOW objects."""
+
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
+import re
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, replace
+from math import ceil, floor, log10
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
-from qsnow.interface.models import CSSType, Qubit, Status, Tag, Coord
+from qsnow.interface.models import Coord, Coupler, CSSType, Qubit, Status, Tag
 
 if TYPE_CHECKING:
     from plotly.graph_objs._figure import Figure
+
     from qsnow.interface.chip import Chip
-    from qsnow.interface.tile import LogicalTile
 
 # ------------------------------------------------------------------
 # Visualization style classes/types
 # ------------------------------------------------------------------
 
 ColorLike = Union[str, float]
+
+# Horizontal strip reserved per colorbar, sized from the font so the figure *widens* to
+# fit its labels rather than letting plotly's margin autoexpand narrow the plot (which,
+# with the y axis scale-anchored to x, pads the axis range and shows coordinates the chip
+# does not have). `_colorbar_strip_px` composes these.
+_COLORBAR_BAR_PX = 40  # plotly's 30 px bar plus its outside ticks and label gap
+_COLORBAR_PAD_PX = 16  # clearance after the widest text
+_PX_PER_PT_PER_CHAR = (
+    0.62  # sans text width per point per character (DejaVu Sans: 0.58-0.64)
+)
+_BOLD_FACTOR = 1.1
+_DEFAULT_FONT_PX = 12  # plotly's own default when no template sets one
+_AUTO_TICK_CHARS = 6  # e.g. "0.0004": width budget for ticks plotly chooses itself
+
+# Plot-area sizing. One scale covers both axes (see `_compute_geometry`), so the cap and
+# floor bound the *longer* side and the shorter one follows from the chip's aspect ratio.
+_PX_PER_COORD = 60
+_MIN_FIG_PX = 600
+_MAX_FIG_PX = 900
+
+# Half a cell of breathing room before the first coordinate and after the last.
+# `_compute_geometry` sizes the plot area from these and `_apply_frame` installs them as
+# the axis ranges; they must not drift, or plotly's scaleanchor silently distorts the
+# range to reconcile the two.
+_RANGE_LO = -0.75
+_RANGE_HI = -0.25
 
 _SHAPE_TYPES = {
     "s": "rect",
@@ -39,10 +68,29 @@ class QubitStyle:
 
 @dataclass
 class ColorbarSpec:
-    colorscale: str
+    # A plotly colorscale name, or an explicit [[frac, color], ...] list (see
+    # `_floored_colorscale`).
+    colorscale: Union[str, List[List[Any]]]
     cmin: float
     cmax: float
     label: str = ""
+    # Explicit tick positions/labels, in the same units as cmin/cmax. A log-scaled style
+    # feeds log10 values as colors and uses these to label the bar in the original units.
+    tickvals: Optional[List[float]] = None
+    ticktext: Optional[List[str]] = None
+    # 'right' keeps a lone title from eating into the bar's length; 'top' reads better
+    # when several bars sit side by side and their titles would otherwise run vertically.
+    title_side: str = "right"
+
+
+@dataclass
+class CouplerStyle:
+    """How one coupler is drawn, represented as a line between the two qubits it joins."""
+
+    color: ColorLike = "lightgray"
+    width: float = 2.0
+    alpha: float = 1.0
+    custom_hovertext: Optional[str] = None
 
 
 # TODO - add options in logical style for text or perhaps add a title style
@@ -53,6 +101,7 @@ class LogicalStyle:
     facecolor: ColorLike = "none"
     alpha: float = 1.0
     linewidth: float = 2.0
+    label_size: float = 10  # font size of the "tile N" label, in points
 
 
 @dataclass
@@ -63,6 +112,24 @@ class VisualizationStyle:
     # One-line description of what this style shows, surfaced as a caption
     # next to the style dropdown in `visualize_interactive()`.
     desc: Optional[str] = None
+    # Optional edge layer, mirroring `logical_style`. Left None by every default style:
+    # while couplers sit at their derived value they are a function of the qubit rates
+    # already on screen, so drawing them would restate that data as if it were a second
+    # measurement (and couplers outnumber qubits ~2:1). Style factories opt in via their
+    # own `couplers=` argument - see `noise_heatmap_style`.
+    coupler_style: Optional[Callable[[Coupler], CouplerStyle]] = None
+    # Give the coupler layer its own scale instead of sharing `colorbar`. Needed whenever
+    # qubit and coupler rates occupy different ranges - measured two-qubit rates typically
+    # run several times higher, and one shared scale would flatten the qubit variation.
+    # Costs a second (invisible) trace, since plotly draws one colorbar per trace.
+    coupler_colorbar: Optional[ColorbarSpec] = None
+    # Write each qubit's index into its marker. Off by default: legible at a few hundred
+    # qubits, illegible past that, and it costs one annotation per qubit.
+    qubit_labels: bool = False
+    qubit_label_size: float = 12  # font size of those index labels, in points
+    # Coordinate tick labels (0, 1, ...) on both axes. Off for dense chips or print
+    # figures; the tick marks and grid stay.
+    axis_labels: bool = True
 
 
 _STATUS_COLORS = {
@@ -132,17 +199,105 @@ css_style = VisualizationStyle(
 )
 
 
+def _show_couplers(chip: Chip, couplers: Union[bool, str]) -> bool:
+    """Resolve a `couplers=` argument, where "auto" means "only if they'd show anything".
+
+    A coupler layer is worth its ink only when the rates are not still a function of the
+    qubit rates the same figure already draws - see `Chip.has_independent_couplers`.
+    """
+    return chip.has_independent_couplers if couplers == "auto" else bool(couplers)
+
+
+def with_couplers(
+    style: VisualizationStyle, chip: Chip, couplers: Union[bool, str] = "auto"
+) -> VisualizationStyle:
+    """Return `style` with the coupler edge layer enabled or disabled.
+
+    A copy, never a mutation, so the shared module-level style singletons stay pristine.
+    """
+    if not _show_couplers(chip, couplers):
+        return replace(style, coupler_style=None)
+
+    # Color by rate only where the style has a scale to read it against; on a
+    # non-heatmap view (status, CSS type) the edges are topology, not data, so they get
+    # one neutral color rather than a float plotly has no way to interpret.
+    if style.colorbar is not None:
+        coupler_style = coupler_heatmap_style(chip).coupler_style
+    else:
+
+        def coupler_style(coupler: Coupler) -> CouplerStyle:
+            return CouplerStyle(
+                color="lightgray",
+                width=1.5,
+                custom_hovertext=_coupler_hovertext(coupler),
+            )
+
+    return replace(style, coupler_style=coupler_style)
+
+
+def _floored_colorscale(
+    name: str, floor: float = 0.25, steps: int = 9
+) -> List[List[Any]]:
+    """`name` with its palest end trimmed off.
+
+    Couplers are drawn as bare lines with no outline, so a near-white low end - which
+    `Blues` and `hot_r` both have - vanishes against the figure's light background and
+    takes the lattice topology with it. Qubit markers do not need this: their black edge
+    keeps them visible however pale the fill.
+    """
+    from plotly.colors import sample_colorscale
+
+    fracs = [floor + (1.0 - floor) * i / (steps - 1) for i in range(steps)]
+    return [[i / (steps - 1), c] for i, c in enumerate(sample_colorscale(name, fracs))]
+
+
+def _label_color(fill: ColorLike) -> str:
+    """Black or white, whichever reads against `fill`.
+
+    Qubit labels cannot be a fixed colour: `hot_r` is white at its low end and black at its
+    high end, so any single choice disappears at one extreme. Perceived luminance picks the
+    readable one, which also keeps custom colorscales working.
+    """
+    if not isinstance(fill, str) or not fill.startswith("rgb"):
+        return "white"
+    try:
+        r, g, b = (
+            float(v) for v in fill[fill.index("(") + 1 : fill.index(")")].split(",")[:3]
+        )
+    except (ValueError, IndexError):
+        return "white"
+    return "black" if (0.299 * r + 0.587 * g + 0.114 * b) > 140 else "white"
+
+
+def _coupler_hovertext(coupler: Coupler) -> str:
+    (x0, y0), (x1, y1) = coupler.ends
+    return _hovertext_format(
+        f"({x0}, {y0}) <-> ({x1}, {y1})", noise=f"{coupler.noise.p:.4f}"
+    )
+
+
 def noise_heatmap_style(
     chip: Chip,
     colorscale: str = "hot_r",
     limits: Optional[Tuple[float, float]] = None,
     desc: Optional[str] = None,
+    *,
+    couplers: Union[bool, str] = "auto",
 ) -> VisualizationStyle:
-    """Color each qubit by its noise value `p`, normalized across the chip."""
+    """Color each qubit by its noise value `p`, normalized across the chip.
+
+    Couplers join the same scale when they carry rates of their own; `couplers=True`/`False`
+    forces the layer on or off.
+    """
+    show_couplers = _show_couplers(chip, couplers)
     if limits:
         cmin, cmax = limits
     else:
         p_values = [qubit.noise.p for qubit in chip.qubits]
+        # one shared scale: qubit and coupler p are the same quantity on the same bound,
+        # so a single colorbar reads both (and plotly allows only one per trace anyway)
+        if show_couplers:
+            p_values += [c.noise.p for c in chip.couplers]
         cmin, cmax = min(p_values), max(p_values)
 
     def style_fn(qubit: Qubit) -> QubitStyle:
@@ -159,6 +314,11 @@ def noise_heatmap_style(
     def logical_style_fn(tag: Tag) -> LogicalStyle:
         return _default_logical_style(tag, edgecolor="blue")
 
+    def coupler_style_fn(coupler: Coupler) -> CouplerStyle:
+        return CouplerStyle(
+            color=coupler.noise.p, custom_hovertext=_coupler_hovertext(coupler)
+        )
+
     return VisualizationStyle(
         style_fn=style_fn,
         colorbar=ColorbarSpec(
@@ -166,6 +326,287 @@ def noise_heatmap_style(
         ),
         logical_style=logical_style_fn,
         desc=desc,
+        coupler_style=coupler_style_fn if show_couplers else None,
+    )
+
+
+def _labelled_mantissas(span: float) -> Tuple[int, ...]:
+    """Which mantissas get a label on a log colorbar spanning `span` decades.
+
+    Decades only once the bar holds two of them; a narrower bar also labels 2 and 5 so it
+    is not left with a single readable tick. One rule for a whole figure: a two-bar style
+    passes the *smaller* span so both bars are labelled alike.
+    """
+    return (1,) if span >= 1.5 else (1, 2, 5)
+
+
+def _log_tick_label(mantissa: int, exponent: int) -> str:
+    """`10<sup>-3</sup>`, or `2×10<sup>-3</sup>`: plotly's HTML for a power of ten."""
+    return ("" if mantissa == 1 else f"{mantissa}×") + f"10<sup>{exponent}</sup>"
+
+
+def _log_ticks(
+    lo: float, hi: float, *, labelled: Tuple[int, ...] = (1,)
+) -> Tuple[List[float], List[str]]:
+    """Colorbar ticks for a log10-scaled range, one at every mantissa 1..9 per decade.
+
+    Returns positions in log10 space (what the colors are keyed on) paired with labels:
+    powers of ten in scientific notation for the mantissas in `labelled`, empty text for
+    the rest, which plotly then draws as an unlabelled mark - the same look as a log axis.
+    """
+    vals: List[float] = []
+    text: List[str] = []
+    for k in range(floor(lo), ceil(hi) + 1):
+        for m in range(1, 10):
+            v = log10(m) + k
+            if lo <= v <= hi:
+                vals.append(v)
+                text.append(_log_tick_label(m, k) if m in labelled else "")
+    if not any(text):  # a range too narrow to hold a labelled mantissa: label its ends
+        vals, text = [lo, hi], [f"{10.0**lo:.2g}", f"{10.0**hi:.2g}"]
+    return vals, text
+
+
+def _log_colorbar(
+    lo: float,
+    hi: float,
+    colorscale: Any,
+    label: str,
+    *,
+    labelled: Optional[Tuple[int, ...]] = None,
+) -> Tuple[ColorbarSpec, Callable[[float], float]]:
+    """A log10 colorbar over `[lo, hi]` (already in log10), plus the transform to apply to
+    each raw value.
+
+    The colour machinery stays linear; only the numbers handed to it are logarithms, which
+    keeps `resolve_fill` and the colorbar code free of any scale special-casing. `labelled`
+    defaults to the rule for this bar's own span; a multi-bar style passes one shared value.
+    """
+    if lo == hi:
+        lo, hi = lo - 0.5, hi + 0.5
+    tickvals, ticktext = _log_ticks(
+        lo, hi, labelled=labelled or _labelled_mantissas(hi - lo)
+    )
+    spec = ColorbarSpec(
+        colorscale=colorscale,
+        cmin=lo,
+        cmax=hi,
+        label=label,
+        tickvals=tickvals,
+        ticktext=ticktext,
+    )
+    # Values at or below zero pin to the bottom of the scale rather than blowing up.
+    return spec, (lambda v: log10(v) if v > 0 else lo)
+
+
+def _log_range(
+    values: List[float], limits: Optional[Tuple[float, float]]
+) -> Tuple[float, float]:
+    """`(log10 lo, log10 hi)` of `limits`, else of the positive `values`."""
+    if limits:
+        return log10(limits[0]), log10(limits[1])
+    positive = [v for v in values if v > 0]
+    return (log10(min(positive)), log10(max(positive))) if positive else (-3.0, -2.0)
+
+
+_DEVICE_PRESETS: Dict[str, Dict[str, Any]] = {
+    # The package's own language - identical to `noise_heatmap_style` in every respect a
+    # single-layer heatmap has an opinion about. The coupler scale is the one deviation,
+    # and it is irreducible: two bars must be told apart.
+    "qsnow": dict(
+        marker="s",
+        size=0.5,
+        edgecolor="black",
+        linewidths=0.75,
+        qubit_colorscale="hot_r",
+        coupler_colorscale=_floored_colorscale("Blues"),
+        coupler_width=7.0,
+        title_side="bottom",
+        qubit_label="<b>Qubit (p<sub>q</sub>)</b>",
+        coupler_label="<b>Coupler (p<sub>c</sub>)</b>",
+        logical_edgecolor="blue",
+        log=False,
+    ),
+    # The device site-map look: circular qubits, perceptually uniform ramps, log rates.
+    "device": dict(
+        marker="o",
+        size=0.7,
+        edgecolor="#e5ecf6",
+        linewidths=1.5,
+        qubit_colorscale="Viridis_r",
+        coupler_colorscale=_floored_colorscale("Magma_r", floor=0.15),
+        coupler_width=7.0,
+        title_side="bottom",
+        qubit_label="<b>Qubit (p<sub>q</sub>)</b>",
+        coupler_label="<b>Coupler (p<sub>c</sub>)</b>",
+        logical_edgecolor="red",
+        log=True,
+    ),
+}
+
+
+# TODO - allow for custom device stylings (i.e., manually override each individual attr above via a helper function that can be passed into preset such that preset is ultimately a dict)
+def device_heatmap_style(
+    chip: Chip,
+    *,
+    preset: str = "qsnow",
+    log: Optional[bool] = None,
+    labels: bool = False,
+    qubit_colorscale: Optional[Union[str, List[List[Any]]]] = None,
+    coupler_colorscale: Optional[Union[str, List[List[Any]]]] = None,
+    limits: Optional[Tuple[float, float]] = None,
+    coupler_limits: Optional[Tuple[float, float]] = None,
+    desc: Optional[str] = None,
+    axis_labels: bool = True,
+    label_size: float = 12,
+    tile_label_size: float = 10,
+) -> VisualizationStyle:
+    """Qubit and coupler error rates together, each on its own independently scaled colorbar.
+
+    The view for a chip whose couplers carry measured rates. Unlike `noise_heatmap_style`,
+    the two layers do *not* share a scale: two-qubit rates typically run several times
+    higher than single-qubit ones, and one shared range would compress all the qubit
+    variation into the bottom of the bar. Two scales cost a second (invisible) trace,
+    since plotly draws at most one colorbar per trace.
+
+    Two looks are available through `preset`. The default `"qsnow"` follows the package's
+    own conventions - square markers, black edges, the `hot_r` ramp, a blue logical outline
+    - so it sits beside `noise_heatmap_style` without looking like a different tool; the
+    coupler's own `Blues` ramp is the single, unavoidable deviation. `"device"` is the
+    denser device site-map look: circular qubits, perceptually uniform ramps, log rates.
+
+    `log` follows the preset unless given explicitly. `labels=True` writes each qubit's
+    index into its marker - readable on a few hundred qubits, not on a few thousand, which
+    is why it is off by default; `label_size` is their font size in points, and
+    `tile_label_size` that of the "tile N" label on each placed tile.
+    `axis_labels=False` drops the coordinate numbers from both axes (marks and grid
+    stay), for dense chips or print figures.
+    """
+    try:
+        look = _DEVICE_PRESETS[preset]
+    except KeyError:
+        raise ValueError(
+            f"Unknown device heatmap preset '{preset}'. "
+            f"Known presets: {sorted(_DEVICE_PRESETS)}."
+        ) from None
+
+    log = look["log"] if log is None else log
+    qubit_colorscale = qubit_colorscale or look["qubit_colorscale"]
+    coupler_colorscale = coupler_colorscale or look["coupler_colorscale"]
+    qubit_label, coupler_label = look["qubit_label"], look["coupler_label"]
+
+    qubit_p = [q.noise.p for q in chip.qubits]
+    coupler_p = [c.noise.p for c in chip.couplers] or [0.0]
+
+    if log:
+        q_range = _log_range(qubit_p, limits)
+        c_range = _log_range(coupler_p, coupler_limits)
+        # one tick rule for both bars, set by the narrower one, so their labels agree
+        labelled = _labelled_mantissas(
+            min(q_range[1] - q_range[0], c_range[1] - c_range[0])
+        )
+        qubit_bar, qubit_tx = _log_colorbar(
+            *q_range, qubit_colorscale, qubit_label, labelled=labelled
+        )
+        coupler_bar, coupler_tx = _log_colorbar(
+            *c_range, coupler_colorscale, coupler_label, labelled=labelled
+        )
+    else:
+        qubit_tx = coupler_tx = lambda v: v
+        qubit_bar = ColorbarSpec(
+            qubit_colorscale, *(limits or (min(qubit_p), max(qubit_p))), qubit_label
+        )
+        coupler_bar = ColorbarSpec(
+            coupler_colorscale,
+            *(coupler_limits or (min(coupler_p), max(coupler_p))),
+            coupler_label,
+        )
+
+    qubit_bar.title_side = coupler_bar.title_side = look["title_side"]
+
+    def style_fn(qubit: Qubit) -> QubitStyle:
+        return QubitStyle(
+            color=qubit_tx(qubit.noise.p),
+            marker=look["marker"],
+            size=look["size"],
+            edgecolor=look["edgecolor"],
+            linewidths=look["linewidths"],
+            custom_hovertext=_hovertext_format(
+                f"({qubit.loc[0]}, {qubit.loc[1]})",
+                status=qubit.status.name,
+                # 4 significant figures, not 4 decimals: this style exists to show the
+                # sub-1e-4 rates that `:.4f` would flatten to '0.0000'.
+                noise=f"{qubit.noise.p:.4g}",
+            ),
+        )
+
+    def coupler_style_fn(coupler: Coupler) -> CouplerStyle:
+        return CouplerStyle(
+            color=coupler_tx(coupler.noise.p),
+            width=look["coupler_width"],
+            custom_hovertext=_coupler_hovertext(coupler),
+        )
+
+    def logical_style_fn(tag: Tag) -> LogicalStyle:
+        return _default_logical_style(
+            tag, edgecolor=look["logical_edgecolor"], label_size=tile_label_size
+        )
+
+    return VisualizationStyle(
+        style_fn=style_fn,
+        colorbar=qubit_bar,
+        logical_style=logical_style_fn,
+        desc=desc,
+        coupler_style=coupler_style_fn,
+        coupler_colorbar=coupler_bar,
+        qubit_labels=labels,
+        qubit_label_size=label_size,
+        axis_labels=axis_labels,
+    )
+
+
+def coupler_heatmap_style(
+    chip: Chip,
+    colorscale: str = "hot_r",
+    limits: Optional[Tuple[float, float]] = None,
+    desc: Optional[str] = None,
+) -> VisualizationStyle:
+    """Color each *coupler* by its rate, with the qubits greyed out behind them.
+
+    The mirror of `noise_heatmap_style` for the edge layer: use it when the couplers are
+    the subject rather than context.
+    """
+    if limits:
+        cmin, cmax = limits
+    else:
+        p_values = [c.noise.p for c in chip.couplers] or [0.0]
+        cmin, cmax = min(p_values), max(p_values)
+
+    def style_fn(qubit: Qubit) -> QubitStyle:
+        return QubitStyle(
+            color="lightgray",
+            custom_hovertext=_hovertext_format(
+                f"({qubit.loc[0]}, {qubit.loc[1]})",
+                status=qubit.status.name,
+                noise=f"{qubit.noise.p:.4f}",
+            ),
+        )
+
+    def coupler_style_fn(coupler: Coupler) -> CouplerStyle:
+        return CouplerStyle(
+            color=coupler.noise.p,
+            width=3.0,
+            custom_hovertext=_coupler_hovertext(coupler),
+        )
+
+    return VisualizationStyle(
+        style_fn=style_fn,
+        colorbar=ColorbarSpec(
+            colorscale=colorscale, cmin=cmin, cmax=cmax, label="Coupler noise (p)"
+        ),
+        logical_style=_default_logical_style,
+        desc=desc,
+        coupler_style=coupler_style_fn,
     )
 
 
@@ -178,7 +619,9 @@ def packing_profile_style(
         return QubitStyle(
             color="pink" if valid else "lightgray",
             custom_hovertext=_hovertext_format(
-                base=f"{(qubit.loc[0], qubit.loc[1])} -> {profile.get('bound')}" if valid else f"{(qubit.loc[0], qubit.loc[1])}",
+                base=f"{(qubit.loc[0], qubit.loc[1])} -> {profile.get('bound')}"
+                if valid
+                else f"{(qubit.loc[0], qubit.loc[1])}",
                 valid=valid,
                 ler=profile.get("ler", None),
             ),
@@ -196,7 +639,7 @@ def custom_heatmap_style(
     limits: Optional[Tuple[float, float]] = None,
     colorbar_label: Optional[str] = None,
     additional_hovertext: Optional[Dict[str, Dict[Coord, Any]]] = None,
-    desc: Optional[str] = None
+    desc: Optional[str] = None,
 ) -> VisualizationStyle:
     if limits:
         cmin, cmax = limits
@@ -211,30 +654,40 @@ def custom_heatmap_style(
         # raw value; the colorscale mapping is applied trace-wide by `visualize()`
         if qubit.loc:
             heatmap_val = float_map.get(qubit.loc)
-            hovertext_dict = {float_label: f"{heatmap_val:.4f}" if heatmap_val is not None else None}
+            hovertext_dict = {
+                float_label: f"{heatmap_val:.4f}" if heatmap_val is not None else None
+            }
 
-            if additional_hovertext: 
+            if additional_hovertext:
                 for attr_title, attr_map in additional_hovertext.items():
                     attr_val = attr_map.get(qubit.loc, None)
                     if attr_val:
-                        attr_val = f"{attr_val:.4f}" if isinstance(attr_val, float) else attr_val
+                        attr_val = (
+                            f"{attr_val:.4f}"
+                            if isinstance(attr_val, float)
+                            else attr_val
+                        )
                     hovertext_dict |= {attr_title: attr_val}
 
-            base = hovertext_dict.pop('base', None) or f"({qubit.loc[0]}, {qubit.loc[1]})"
+            base = (
+                hovertext_dict.pop("base", None) or f"({qubit.loc[0]}, {qubit.loc[1]})"
+            )
 
             return QubitStyle(
                 color=heatmap_val if heatmap_val is not None else "lightgray",
-                custom_hovertext=_hovertext_format(
-                    base = base,
-                    **hovertext_dict
-                ),
+                custom_hovertext=_hovertext_format(base=base, **hovertext_dict),
             )
         else:
-            raise AttributeError('Qubit must have location in order to be visualized.')
+            raise AttributeError("Qubit must have location in order to be visualized.")
 
     return VisualizationStyle(
         style_fn=qubit_style_fn,
-        colorbar=ColorbarSpec(colorscale=colorscale, cmin=cmin, cmax=cmax, label=colorbar_label or float_label),
+        colorbar=ColorbarSpec(
+            colorscale=colorscale,
+            cmin=cmin,
+            cmax=cmax,
+            label=colorbar_label or float_label,
+        ),
         logical_style=None,
         desc=desc,
     )
@@ -303,12 +756,80 @@ class _LayoutGeometry:
     fig_height: int
     colorbar_px: int
     domain_frac: float
+    colorbar_x: Tuple[float, ...]  # paper-fraction left edge of each colorbar strip
     colorbar_y: float
     colorbar_len: float
 
 
+def _axis_ranges(chip: Chip) -> Tuple[List[float], List[float]]:
+    """
+    The x and y ranges the frame installs - the single source of the figure's data aspect.
+
+    The y range runs high-to-low so row 0 renders at the top, matching how a chip's
+    coordinates are read.
+    """
+    return (
+        [_RANGE_LO, chip.length + _RANGE_HI],
+        [chip.height + _RANGE_HI, _RANGE_LO],
+    )
+
+
+def _axis_spans(chip: Chip) -> Tuple[float, float]:
+    """Coordinate width and height of `_axis_ranges`, i.e. the aspect the plot must match."""
+    (x0, x1), (y1, y0) = _axis_ranges(chip)
+    return (x1 - x0, y1 - y0)
+
+
+def _font_px() -> int:
+    """The base font size plotly will render with: the default template's, else 12.
+
+    The one place the package reads the plotly template, so a notebook that sets
+    `pio.templates[...].layout.font.size` gets colorbar strips sized to match.
+    """
+    import plotly.io as pio
+
+    template = pio.templates[pio.templates.default] if pio.templates.default else None
+    size = template.layout.font.size if template is not None else None
+    return int(size or _DEFAULT_FONT_PX)
+
+
+def _text_px(text: str, font_px: int, *, bold: bool = False) -> int:
+    """Estimated rendered width of `text` (HTML tags stripped) at `font_px`."""
+    plain = re.sub(r"<[^>]+>", "", text)
+    return ceil(
+        _PX_PER_PT_PER_CHAR * font_px * len(plain) * (_BOLD_FACTOR if bold else 1.0)
+    )
+
+
+def _colorbar_strip_px(bar: ColorbarSpec, font_px: int) -> int:
+    """Pixels to reserve for `bar` so its bar, tick labels and title all fit at `font_px`.
+
+    Tick labels sit to the right of the bar; a bottom title is anchored at the bar's left
+    edge, so the strip must be at least as wide as the title; a side title is rotated and
+    adds one line height to the right of the labels.
+    """
+    label_chars = max(
+        (len(re.sub(r"<[^>]+>", "", t)) for t in bar.ticktext or []),
+        default=_AUTO_TICK_CHARS,
+    )
+    labels_px = _COLORBAR_BAR_PX + ceil(_PX_PER_PT_PER_CHAR * font_px * label_chars)
+    title_px = _text_px(bar.label, font_px, bold="<b>" in bar.label)
+    if bar.title_side == "bottom":
+        return max(labels_px, title_px) + _COLORBAR_PAD_PX
+    return labels_px + ceil(1.4 * font_px) + _COLORBAR_PAD_PX
+
+
+def _style_strips(style: VisualizationStyle, font_px: int) -> List[int]:
+    """The strip widths a style's colorbars need, qubit bar first."""
+    return [
+        _colorbar_strip_px(b, font_px)
+        for b in (style.colorbar, style.coupler_colorbar)
+        if b is not None
+    ]
+
+
 def _compute_geometry(
-    chip: Chip, reserve_colorbar: bool, *, extra_top_margin: int = 0
+    chip: Chip, colorbar_strips: Sequence[int] = (), *, extra_top_margin: int = 0
 ) -> _LayoutGeometry:
     ## Misc. Colorbar Spacing Configuration ##
 
@@ -318,12 +839,27 @@ def _compute_geometry(
     margin_l, margin_r, margin_b = base_margin, base_margin, base_margin
     margin_t = base_margin + 20 + extra_top_margin
 
-    plot_px_width = min(900, max(600, chip.length * 60)) - 2 * base_margin
-    plot_px_height = min(900, max(600, chip.height * 60)) - 2 * base_margin
+    # One px-per-coordinate scale for both axes, sized off the longer side, so the plot
+    # area's aspect matches the data's and plotly's scaleanchor has nothing to reconcile.
+    # Clamping each axis independently (as this used to) collapsed the frame to a square
+    # whenever both sides saturated the same bound - which on a checkerboard chip, whose
+    # coordinate span is `pitch` times its unit extent, was essentially always.
+    span_x, span_y = _axis_spans(chip)
+    longest = max(span_x, span_y)
+    fig_px = min(_MAX_FIG_PX, max(_MIN_FIG_PX, longest * _PX_PER_COORD))
+    scale = (fig_px - 2 * base_margin) / longest
+    plot_px_width = round(span_x * scale)
+    plot_px_height = round(span_y * scale)
     base_width = plot_px_width + margin_l + margin_r
     fig_height = plot_px_height + margin_t + margin_b
-    colorbar_px = 100 if reserve_colorbar else 0
-    domain_frac = plot_px_width / (plot_px_width + colorbar_px) if colorbar_px else 1.0
+    colorbar_px = sum(colorbar_strips)
+    total_px = plot_px_width + colorbar_px
+    domain_frac = plot_px_width / total_px
+    # each strip starts where the previous one ends, in paper fraction
+    edges, x = [], plot_px_width
+    for strip in colorbar_strips:
+        edges.append(x / total_px)
+        x += strip
 
     # NOTE - Colorbar `y`/`len` are in *paper* fraction (the whole figure, margins included), not the
     # cartesian plot's own domain - so without this, the bar overshoots top/bottom by the margins.
@@ -338,6 +874,7 @@ def _compute_geometry(
         fig_height=fig_height,
         colorbar_px=colorbar_px,
         domain_frac=domain_frac,
+        colorbar_x=tuple(edges),
         colorbar_y=(colorbar_bottom_frac + colorbar_top_frac) / 2,
         colorbar_len=colorbar_top_frac - colorbar_bottom_frac,
     )
@@ -354,8 +891,10 @@ class _StyleLayer:
 
     shapes: List[Dict[str, Any]]
     annotations: List[Dict[str, Any]]
-    trace_kwargs: Dict[str, Any]
-    has_colorbar: bool
+    # One entry per colorbar-bearing group: the qubit hover trace, plus a coupler hover
+    # trace when the style gives couplers their own scale. Callers must add all of them
+    # and keep them visible together.
+    traces: List[Dict[str, Any]]
 
 
 def _build_style_layer(
@@ -368,9 +907,70 @@ def _build_style_layer(
 ) -> _StyleLayer:
     from plotly.colors import sample_colorscale
 
-    ## Qubit Style Configuration ##
-    shapes: List[Dict[str, Any]] = []
+    def resolve_fill(color: ColorLike, bar: Optional[ColorbarSpec] = None) -> ColorLike:
+        """Map a style's raw value onto a concrete color via the style's colorbar.
+
+        Done in python rather than by plotly because the visible marks are layout shapes,
+        which take a literal `fillcolor`; the colorbar legend is drawn separately off the
+        invisible hover trace.
+        """
+        bar = bar if bar is not None else style.colorbar
+        if bar is None or isinstance(color, str):
+            return color
+        span = bar.cmax - bar.cmin
+        norm = (float(color) - bar.cmin) / span if span else 0.5
+        return sample_colorscale(bar.colorscale, [max(0.0, min(1.0, norm))])[0]
+
+    ## Coupler Style Configuration ##
+    # Built first so the edge lines sit at the head of the shape list and therefore render
+    # *beneath* the qubit marks - plotly draws shapes in list order. Skipped entirely when
+    # the style declares no coupler layer, which is every default style.
+    coupler_shapes: List[Dict[str, Any]] = []
     xs, ys, raw_colors, fillcolors, hovertext = [], [], [], [], []
+    # A coupler layer with its own scale needs its own trace to carry its own colorbar,
+    # so its hover points are kept apart; otherwise they ride the qubit trace.
+    c_xs, c_ys, c_raw, c_fills, c_hover = [], [], [], [], []
+    coupler_bar = style.coupler_colorbar
+    if style.coupler_style is not None:
+        for coupler in chip.couplers:
+            cs = style.coupler_style(coupler)
+            (x0, y0), (x1, y1) = coupler.ends
+            linecolor = resolve_fill(cs.color, coupler_bar)
+
+            coupler_shapes.append(
+                dict(
+                    type="line",
+                    x0=x0,
+                    y0=y0,
+                    x1=x1,
+                    y1=y1,
+                    line=dict(color=linecolor, width=cs.width),
+                    opacity=cs.alpha,
+                    layer="above",
+                )
+            )
+
+            # Shapes cannot carry hover, so couplers ride the same invisible marker trace
+            # the qubits already use - anchored at the edge midpoint. Keeping them in that
+            # one trace is what preserves the one-trace-per-style contract that
+            # `visualize_interactive`'s visibility array indexes on.
+            mx, my = coupler.midpoint
+            if coupler_bar is not None:
+                c_xs.append(mx)
+                c_ys.append(my)
+                c_raw.append(cs.color)
+                c_fills.append(linecolor)
+                c_hover.append(cs.custom_hovertext)
+            else:
+                xs.append(mx)
+                ys.append(my)
+                raw_colors.append(cs.color if style.colorbar is not None else 0)
+                fillcolors.append(linecolor)
+                hovertext.append(cs.custom_hovertext)
+
+    ## Qubit Style Configuration ##
+    shapes: List[Dict[str, Any]] = coupler_shapes
+    qubit_fill: Dict[Coord, ColorLike] = {}
     for qubit in chip.qubits:
         if not qubit.loc:
             raise AttributeError(
@@ -379,14 +979,8 @@ def _build_style_layer(
         x, y = qubit.loc
         s = style.style_fn(qubit)
 
-        if style.colorbar is not None and not isinstance(s.color, str):
-            span = style.colorbar.cmax - style.colorbar.cmin
-            norm = (float(s.color) - style.colorbar.cmin) / span if span else 0.5
-            fillcolor = sample_colorscale(
-                style.colorbar.colorscale, [max(0.0, min(1.0, norm))]
-            )[0]
-        else:
-            fillcolor = s.color
+        fillcolor = resolve_fill(s.color)
+        qubit_fill[(x, y)] = fillcolor
 
         r = s.size / 2
         shapes.append(
@@ -409,25 +1003,41 @@ def _build_style_layer(
         fillcolors.append(fillcolor)
         hovertext.append(s.custom_hovertext)
 
-    hover_marker: Dict[str, object] = dict(size=20, opacity=0)
-    if style.colorbar is not None:
-        hover_marker.update(
-            color=raw_colors,
-            colorscale=style.colorbar.colorscale,
-            cmin=style.colorbar.cmin,
-            cmax=style.colorbar.cmax,
-            # title.side='right' (vs the default 'top') keeps the title from eating into `len`,
-            # so the gradient itself - not the title - spans the full computed plot-aligned length.
-            colorbar=dict(
-                title=dict(text=style.colorbar.label, side="right"),
-                x=geometry.domain_frac,
-                xanchor="left",
-                y=geometry.colorbar_y,
-                yanchor="middle",
-                len=geometry.colorbar_len,
-            ),
+    def hover_marker_for(
+        bar: Optional[ColorbarSpec], values, slot: int
+    ) -> Dict[str, object]:
+        """An invisible marker spec that renders colorbar `slot` for `bar`, if any."""
+        marker: Dict[str, object] = dict(size=20, opacity=0)
+        if bar is None:
+            return marker
+        colorbar = dict(
+            title=dict(text=bar.label, side=bar.title_side),
+            x=geometry.colorbar_x[slot],
+            xanchor="left",
+            y=geometry.colorbar_y,
+            yanchor="middle",
+            len=geometry.colorbar_len,
+        )
+        if bar.tickvals is not None:
+            # `ticks="outside"`: plotly's colorbar default draws no tick marks, and the
+            # unlabelled sub-decade positions would then be invisible
+            colorbar.update(
+                tickmode="array",
+                tickvals=bar.tickvals,
+                ticktext=bar.ticktext,
+                ticks="outside",
+            )
+        marker.update(
+            color=values,
+            colorscale=bar.colorscale,
+            cmin=bar.cmin,
+            cmax=bar.cmax,
+            colorbar=colorbar,
             showscale=True,
         )
+        return marker
+
+    hover_marker = hover_marker_for(style.colorbar, raw_colors, 0)
 
     ## Qubit Hover Box Configuration ##
     # In the default (non-colorbar) style, tint each hover box to match its qubit's fill color.
@@ -437,19 +1047,59 @@ def _build_style_layer(
         else dict(bgcolor=fillcolors, font=dict(color="black"))
     )
 
-    trace_kwargs: Dict[str, Any] = dict(
-        x=xs,
-        y=ys,
-        mode="markers",
-        marker=hover_marker,
-        hovertext=hovertext,
-        hoverinfo="text",
-        name=name,
-        hoverlabel=hoverlabel,
-    )
+    traces: List[Dict[str, Any]] = [
+        dict(
+            x=xs,
+            y=ys,
+            mode="markers",
+            marker=hover_marker,
+            hovertext=hovertext,
+            hoverinfo="text",
+            name=name,
+            hoverlabel=hoverlabel,
+        )
+    ]
+    if coupler_bar is not None:
+        # The coupler colorbar takes the slot after the qubit one, when that exists.
+        traces.append(
+            dict(
+                x=c_xs,
+                y=c_ys,
+                mode="markers",
+                marker=hover_marker_for(
+                    coupler_bar, c_raw, 1 if style.colorbar is not None else 0
+                ),
+                hovertext=c_hover,
+                hoverinfo="text",
+                name=f"{name} couplers",
+                hoverlabel=None,
+            )
+        )
+
+    ## Qubit Label Configuration ##
+    annotations: List[Dict[str, Any]] = []
+    if style.qubit_labels:
+        # Row-major reading order (left to right, top to bottom), so the index matches how
+        # a device map is normally numbered rather than the grid's storage order.
+        ordered = sorted(chip.grid, key=lambda c: (c[1], c[0]))
+        for idx, coord in enumerate(ordered):
+            annotations.append(
+                dict(
+                    x=coord[0],
+                    y=coord[1],
+                    text=str(idx),
+                    showarrow=False,
+                    xanchor="center",
+                    yanchor="middle",
+                    font=dict(
+                        color=_label_color(qubit_fill.get(coord, "")),
+                        size=style.qubit_label_size,
+                        family="Andale Mono, monospace, bold",
+                    ),
+                )
+            )
 
     ## Logical Tiling Configuration ##
-    annotations: List[Dict[str, Any]] = []
     if chip.tiles and style.logical_style is not None:
         edgecolor_fn = _discrete_colormap_fn((3, 17))
         for i, tile in enumerate(chip.tiles, start=0):
@@ -481,28 +1131,26 @@ def _build_style_layer(
                     xanchor="right",
                     yanchor="top",
                     font=dict(
-                        color=ls.edgecolor, size=10, family="Andale Mono, monospace"
+                        color=ls.edgecolor,
+                        size=ls.label_size,
+                        family="Andale Mono, monospace",
                     ),
                     bgcolor="rgba(128,128,128,0.25)",
                 )
             )
 
-    return _StyleLayer(
-        shapes=shapes,
-        annotations=annotations,
-        trace_kwargs=trace_kwargs,
-        has_colorbar=style.colorbar is not None,
-    )
+    return _StyleLayer(shapes=shapes, annotations=annotations, traces=traces)
 
 
 def _apply_frame(fig: Figure, chip: Chip, geometry: _LayoutGeometry) -> None:
     ## Axis and Layout Configuration ##
+    x_range, y_range = _axis_ranges(chip)
     fig.update_xaxes(
         side="top",
         dtick=1,
         showgrid=True,
         zeroline=True,
-        range=[-0.75, chip.length - 0.25],
+        range=x_range,
         domain=[0, geometry.domain_frac],
         showline=True,
         linecolor="black",
@@ -513,7 +1161,7 @@ def _apply_frame(fig: Figure, chip: Chip, geometry: _LayoutGeometry) -> None:
         dtick=1,
         showgrid=True,
         zeroline=True,
-        range=[chip.height - 0.25, -0.75],
+        range=y_range,
         scaleanchor="x",
         scaleratio=1,
         showline=True,
@@ -549,7 +1197,7 @@ def visualize(
     if fig is None:
         fig = Figure()
 
-    geometry = _compute_geometry(chip, reserve_colorbar=style.colorbar is not None)
+    geometry = _compute_geometry(chip, _style_strips(style, _font_px()))
     layer = _build_style_layer(
         chip, style, geometry, logical_color_gradient=logical_color_gradient
     )
@@ -562,9 +1210,13 @@ def visualize(
         shapes=list(fig.layout.shapes) + layer.shapes,
         annotations=list(fig.layout.annotations) + layer.annotations,
     )
-    fig.add_trace(Scattergl(**layer.trace_kwargs))
+    for trace_kwargs in layer.traces:
+        fig.add_trace(Scattergl(**trace_kwargs))
 
     _apply_frame(fig, chip, geometry)
+    if not style.axis_labels:
+        fig.update_xaxes(showticklabels=False)
+        fig.update_yaxes(showticklabels=False)
 
     if show:
         fig.show()

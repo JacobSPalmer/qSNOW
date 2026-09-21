@@ -12,12 +12,12 @@ dependencies = [
     "stim",
     "sinter",
     "plotly",
-    "matplotlib",
+    "matplotlib>=3.8",  # Legend.set_loc, used to pin the stacked CDF legends
     "nbformat",
     "shapely",
     "scipy",
     "pymatching",
-    "tqdm"
+    "tqdm",
 ]
 
 [project.optional-dependencies]

@@ -1,8 +1,12 @@
+from statistics import mean
+
 import pytest
+from scipy import stats
 
 from qsnow.interface.chip import Chip, LogicalTile
-from qsnow.interface.lattice import CHECKERBOARD, SQUARE
-from qsnow.interface.models import Status
+from qsnow.interface.lattice import SQUARE
+from qsnow.interface.models import NoiseProfile, Status
+from qsnow.interface.noise import RandomGaussian, SkewContour, p_bounds
 
 
 class TestSquareLatticeChip:
@@ -50,7 +54,9 @@ class TestCrossLatticePlacement:
 
         assert chip.add_tile(logical_tile, (0, 0))
 
-    def test_dense_tile_is_rejected_on_a_checkerboard_chip(self, chip: Chip, dense_circuit):
+    def test_dense_tile_is_rejected_on_a_checkerboard_chip(
+        self, chip: Chip, dense_circuit
+    ):
         tile = LogicalTile(dense_circuit, lattice=SQUARE)
 
         with pytest.raises(ValueError, match="off-lattice"):
@@ -124,6 +130,14 @@ class TestNoiseGeneration:
         assert all(low <= q.noise.p for q in chip.qubits)
         assert any(q.noise.p != 0.0 for q in chip.qubits)
 
+    def test_random_noise_upper_bound_is_the_range_end(self, lg_chip: Chip):
+        # regression: `range[1]` was passed as scipy's `scale` (the width), so
+        # (low, high) actually sampled [low, low + high]
+        low, high = 0.01, 0.02
+        lg_chip.generate_random_noise((low, high), seed=1)
+        assert all(low <= q.noise.p <= high for q in lg_chip.qubits)
+        assert max(q.noise.p for q in lg_chip.qubits) > (low + high) / 2
+
     def test_random_noise_values_vary_across_qubits(self, chip: Chip):
         chip.generate_random_noise((0.01, 0.05), seed=1)
         assert len({q.noise.p for q in chip.qubits}) > 1
@@ -131,6 +145,76 @@ class TestNoiseGeneration:
     def test_gaussian_noise_values_are_nonzero(self, chip: Chip):
         chip.generate_gaussian_noise(mean=0.01, deviation=0.005, seed=1)
         assert any(q.noise.p != 0.0 for q in chip.qubits)
+
+    def test_skewed_contour_shares_the_normal_contour_landscape(self, lg_chip: Chip):
+        # Same seed and slope must give the same peaks and valleys: only the marginal
+        # distribution differs, so the rank order of qubits is identical.
+        lg_chip.generate_normal_contour_noise(0.01, 0.003, seed=3)
+        gaussian = [q.noise.p for q in lg_chip.qubits]
+        lg_chip.generate_skewed_contour_noise(0.01, 0.003, 1.5, seed=3)
+        skewed = [q.noise.p for q in lg_chip.qubits]
+        assert stats.spearmanr(gaussian, skewed).statistic == pytest.approx(1.0)
+
+
+class TestCouplerNoiseGeneration:
+    """Chip-level behaviour of `generate_coupler_noise`; the distribution semantics
+    (correlation, marginals, baselines) live in tests/interface/noise/."""
+
+    @pytest.fixture
+    def landscape(self) -> Chip:
+        c = Chip(6, 6)
+        c.generate_noise(SkewContour(0.01, 0.003, 1.5, seed=3))
+        return c
+
+    def test_assigns_every_coupler_within_bounds(self, landscape: Chip):
+        landscape.generate_coupler_noise(
+            SkewContour(0.05, 0.01, 1.0, seed=4), correlation=0.5
+        )
+        lo, hi = p_bounds()
+        assert all(lo <= c.noise.p <= hi for c in landscape.couplers)
+        assert landscape.has_independent_couplers
+
+    def test_records_the_distribution_and_its_correlation(self, landscape: Chip):
+        dist = SkewContour(0.05, 0.01, 1.0, seed=4)
+        landscape.generate_coupler_noise(dist, correlation=0.6)
+        assert landscape.spec.coupler_model == dist
+        assert landscape.spec.coupler_correlation == 0.6
+        summary = landscape.summary()
+        assert summary["coupler_model"]["name"] == "skewed contour"
+        assert summary["coupler_correlation"] == 0.6
+
+    def test_a_site_generator_afterwards_re_derives_and_drops_the_record(
+        self, landscape: Chip
+    ):
+        landscape.generate_coupler_noise(
+            SkewContour(0.05, 0.01, 1.0, seed=4), correlation=0.5
+        )
+        landscape.generate_noise(RandomGaussian(0.01, 0.002, seed=1))
+        assert landscape.spec.coupler_model is None
+        assert landscape.spec.coupler_correlation is None
+        assert not landscape.has_independent_couplers
+
+    def test_a_hand_override_drops_the_record(self, landscape: Chip):
+        landscape.generate_coupler_noise(
+            SkewContour(0.05, 0.01, 1.0, seed=4), correlation=0.5
+        )
+        landscape.set_coupler_noise_map({landscape.couplers[0].ends: 0.2})
+        assert landscape.spec.coupler_model is None
+
+    def test_copy_keeps_the_record(self, landscape: Chip):
+        landscape.generate_coupler_noise(
+            SkewContour(0.05, 0.01, 1.0, seed=4), correlation=0.5
+        )
+        clone = landscape.copy()
+        assert clone.spec.coupler_model == landscape.spec.coupler_model
+        assert clone.spec.coupler_correlation == 0.5
+
+    def test_setters_copy_whole_profiles(self, chip: Chip):
+        # regression guard for the granular-profile future: a profile handed to the chip
+        # is copied as a profile, not rebuilt from its `p`
+        source = NoiseProfile(0.02)
+        chip.set_noise_map({(0, 0): source})
+        assert chip.loc((0, 0)).noise == source and chip.loc((0, 0)).noise is not source
 
 
 class TestTileClassProperties:
@@ -230,6 +314,113 @@ class TestChipTilePlacement:
         assert tile2 == lg_chip.pop_tile(1)
         assert all(not q.is_active() for q in t2_region.values())
 
+    def test_remove_tile_takes_that_tile_off_by_identity(
+        self, lg_chip: Chip, logical_tile: LogicalTile
+    ):
+        first, second = logical_tile.copy(), logical_tile.copy()
+        lg_chip.add_tile(first, (0, 0))
+        lg_chip.add_tile(second, (10, 10))
+
+        assert lg_chip.remove_tile(second) is second
+        assert lg_chip.tiles == [first]
+        assert not second.initialized()
+        with pytest.raises(ValueError):
+            lg_chip.remove_tile(second)
+
+    def test_clear_tiles_removes_every_tile(
+        self, lg_chip: Chip, logical_tile: LogicalTile
+    ):
+        # regression: popping by index while enumerating skipped every other tile
+        for loc in [(0, 0), (8, 0), (12, 8)]:
+            lg_chip.add_tile(logical_tile.copy(), loc)
+
+        lg_chip.clear_tiles()
+
+        assert lg_chip.tiles == []
+        assert all(not q.is_active() for q in lg_chip.qubits)
+
+
+class TestChipSpec:
+    def test_generators_record_a_typed_noise_model(self, chip: Chip):
+        chip.generate_gaussian_noise(mean=0.01, deviation=0.002, seed=7)
+
+        assert chip.spec.noise_model == RandomGaussian(
+            mean=0.01, deviation=0.002, seed=7
+        )
+        assert chip.summary()["noise_model"] == {
+            "name": "gaussian",
+            "mean": 0.01,
+            "deviation": 0.002,
+            "seed": 7,
+        }
+
+    def test_skewed_contour_records_its_shape_parameters(self, chip: Chip):
+        chip.generate_skewed_contour_noise(0.01, 0.003, 1.5, seed=3, center="median")
+
+        assert chip.spec.noise_model == SkewContour(0.01, 0.003, 1.5, "median", seed=3)
+        assert chip.summary()["noise_model"] == {
+            "name": "skewed contour",
+            "location": 0.01,
+            "deviation": 0.003,
+            "skew": 1.5,
+            "center": "median",
+            "slope": 5,
+            "seed": 3,
+        }
+        assert chip.summary()["noise_model"]["name"] == "skewed contour"
+
+    def test_tool_state_stays_out_of_tag_metadata(self, chip: Chip):
+        chip.generate_gaussian_noise(mean=0.01, deviation=0.002, seed=7)
+        chip.derive_coupler_noise("max")
+
+        assert chip.tag.metadata == {}
+
+    def test_copy_does_not_share_tag_or_spec(self, chip: Chip):
+        # regression: copies shared the original's Tag, so deriving couplers on a
+        # copy rewrote the original's recorded mode
+        chip.generate_uniform_noise(0.01)
+        clone = chip.copy()
+
+        clone.derive_coupler_noise("max")
+        clone.tag.metadata["note"] = "only on the clone"
+
+        assert chip.spec.coupler_mode == "mean"
+        assert clone.spec.coupler_mode == "max"
+        assert "note" not in chip.tag.metadata
+        assert clone.spec.noise_model == chip.spec.noise_model
+
+
+class TestPlacementRejection:
+    def test_valid_placement_has_no_rejection(self, chip: Chip, logical_tile):
+        assert chip.placement_rejection(logical_tile, (0, 0)) is None
+
+    def test_off_lattice_origin_is_fatal(self, chip: Chip, logical_tile):
+        rejection = chip.placement_rejection(logical_tile, (1, 0))
+        assert rejection is not None and rejection.fatal
+
+    def test_occupied_site_is_not_fatal(self, chip: Chip, logical_tile):
+        chip.add_tile(logical_tile, (0, 0))
+        rejection = chip.placement_rejection(logical_tile.copy(), (0, 0))
+        assert rejection is not None and not rejection.fatal
+
+    def test_overflow_is_not_fatal(self, chip: Chip, logical_tile):
+        rejection = chip.placement_rejection(logical_tile, (10, 10))
+        assert rejection is not None and not rejection.fatal
+
+    def test_is_valid_agrees_with_rejection(self, chip: Chip, logical_tile):
+        chip.add_tile(logical_tile.copy(), (0, 0))
+        for loc in [(0, 0), (1, 0), (2, 2), (6, 0), (10, 10)]:
+            assert chip.is_valid_tile_placement(logical_tile, loc) == (
+                chip.placement_rejection(logical_tile, loc) is None
+            )
+
+    def test_ignoring_discounts_a_tiles_own_footprint(self, chip: Chip, logical_tile):
+        chip.add_tile(logical_tile, (0, 0))
+        own = (logical_tile.origin, logical_tile.bound)
+
+        assert chip.placement_rejection(logical_tile, (2, 2)) is not None
+        assert chip.placement_rejection(logical_tile, (2, 2), ignoring=own) is None
+
 
 class TestChipSummary:
     def test_summary_facts(self, chip: Chip):
@@ -246,3 +437,153 @@ class TestChipSummary:
         summary = chip.summary()
         assert summary["n_tiles"] == 1
         assert summary["noise_model"]["name"] == "gaussian"
+
+
+class TestChipCouplers:
+    def test_couplers_are_built_from_the_lattice(self, chip: Chip):
+        # Chip(5,5) on the checkerboard spans 10x10 coords -> a 9x9 grid of diagonal links
+        assert len(chip.couplers) == 81
+
+    def test_square_lattice_couples_cardinal_neighbours(self, square_chip: Chip):
+        assert len(square_chip.couplers) == 40
+        assert square_chip.coupler((0, 0), (0, 1)) is not None
+
+    def test_coupler_lookup_is_order_independent(self, chip: Chip):
+        assert chip.coupler((0, 0), (1, 1)) is chip.coupler((1, 1), (0, 0))
+
+    def test_coupler_raises_for_an_unlinked_pair(self, chip: Chip):
+        with pytest.raises(KeyError, match="No coupler between"):
+            chip.coupler((0, 0), (2, 2))
+
+    def test_find_coupler_returns_none_instead_of_raising(self, chip: Chip):
+        assert chip.find_coupler((0, 0), (2, 2)) is None
+        assert chip.find_coupler((0, 0), (1, 1)) is not None
+
+    def test_every_coupler_joins_two_real_qubits(self, chip: Chip):
+        for coupler in chip.couplers:
+            assert all(e in chip.grid for e in coupler.ends)
+
+
+class TestCouplerNoise:
+    def test_generators_derive_couplers_from_their_endpoints(self, chip: Chip):
+        chip.generate_uniform_noise(0.01)
+
+        assert all(c.noise.p == 0.01 for c in chip.couplers)
+
+    def test_derived_mean_reproduces_the_endpoint_average(self, chip: Chip):
+        chip.generate_random_noise()
+
+        assert all(
+            c.noise.p == pytest.approx(mean([chip.loc(e).noise.p for e in c.ends]))
+            for c in chip.couplers
+        )
+
+    @pytest.mark.parametrize(
+        "mode, expected", [("mean", 0.03), ("max", 0.05), ("min", 0.01)]
+    )
+    def test_derive_modes_combine_the_endpoints(self, chip: Chip, mode, expected):
+        chip.loc((0, 0)).noise.p = 0.01
+        chip.loc((1, 1)).noise.p = 0.05
+
+        chip.derive_coupler_noise(mode)
+
+        assert chip.coupler((0, 0), (1, 1)).noise.p == pytest.approx(expected)
+
+    def test_derive_records_the_model_in_metadata(self, chip: Chip):
+        chip.derive_coupler_noise("max")
+
+        assert chip.spec.coupler_mode == "max"
+
+    def test_set_coupler_noise_map_accepts_floats_and_profiles(self, chip: Chip):
+        chip.set_coupler_noise_map({((0, 0), (1, 1)): 0.2})
+        chip.set_coupler_noise_map({((2, 2), (3, 3)): NoiseProfile(0.3)})
+
+        assert chip.coupler((0, 0), (1, 1)).noise.p == 0.2
+        assert chip.coupler((2, 2), (3, 3)).noise.p == 0.3
+
+    def test_set_noise_map_leaves_coupler_overrides_alone(self, chip: Chip):
+        """A targeted qubit edit must not silently discard a hand-set coupler rate;
+        `derive_coupler_noise()` is the explicit way to re-derive."""
+        chip.generate_uniform_noise(0.01)
+        chip.coupler((0, 0), (1, 1)).noise.p = 0.2
+
+        chip.set_noise_map({(0, 0): 0.05})
+
+        assert chip.coupler((0, 0), (1, 1)).noise.p == 0.2
+
+    def test_copy_preserves_couplers(self, chip: Chip):
+        chip.generate_uniform_noise(0.01)
+        chip.coupler((0, 0), (1, 1)).noise.p = 0.2
+
+        clone = chip.copy()
+
+        assert {e: n.p for e, n in clone.coupler_map.items()} == {
+            e: n.p for e, n in chip.coupler_map.items()
+        }
+
+    def test_copy_couplers_are_independent_objects(self, chip: Chip):
+        chip.generate_uniform_noise(0.01)
+        clone = chip.copy()
+
+        clone.coupler((0, 0), (1, 1)).noise.p = 0.5
+
+        assert chip.coupler((0, 0), (1, 1)).noise.p == 0.01
+
+
+class TestIndependentCouplerDetection:
+    def test_generators_leave_couplers_derived(self, chip: Chip):
+        chip.generate_gaussian_noise(0.01, 0.002)
+
+        assert chip.has_independent_couplers is False
+
+    def test_a_fresh_chip_has_no_independent_couplers(self, chip: Chip):
+        assert chip.has_independent_couplers is False
+
+    def test_a_direct_write_makes_a_coupler_independent(self, chip: Chip):
+        chip.generate_uniform_noise(0.01)
+        chip.coupler((0, 0), (1, 1)).noise.p = 0.2
+
+        assert chip.has_independent_couplers is True
+
+    def test_set_coupler_noise_map_makes_couplers_independent(self, chip: Chip):
+        chip.generate_uniform_noise(0.01)
+        chip.set_coupler_noise_map({((0, 0), (1, 1)): 0.2})
+
+        assert chip.has_independent_couplers is True
+
+    def test_regenerating_noise_keeps_the_derivation_mode(self, chip: Chip):
+        # regression: generators re-derived with the default `mean`, silently
+        # discarding a `max`/`min` choice recorded on the chip
+        chip.generate_uniform_noise(0.01)
+        chip.derive_coupler_noise("max")
+
+        chip.generate_gaussian_noise(0.01, 0.002, seed=1)
+
+        assert chip.spec.coupler_mode == "max"
+        assert all(
+            c.noise.p == max(chip.loc(e).noise.p for e in c.ends) for c in chip.couplers
+        )
+        assert chip.has_independent_couplers is False
+
+    def test_re_deriving_clears_independence(self, chip: Chip):
+        chip.generate_uniform_noise(0.01)
+        chip.coupler((0, 0), (1, 1)).noise.p = 0.2
+
+        chip.derive_coupler_noise()
+
+        assert chip.has_independent_couplers is False
+
+    def test_detection_respects_the_recorded_derivation_mode(self, chip: Chip):
+        """A chip derived with `max` is not 'independent' just because its rates differ
+        from the mean."""
+        chip.loc((0, 0)).noise.p = 0.01
+        chip.loc((1, 1)).noise.p = 0.05
+        chip.derive_coupler_noise("max")
+
+        assert chip.has_independent_couplers is False
+
+    def test_summary_reports_couplers(self, chip: Chip):
+        summary = chip.summary()
+
+        assert summary["n_couplers"] == 81
+        assert summary["independent_couplers"] is False

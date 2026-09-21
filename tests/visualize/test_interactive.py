@@ -166,6 +166,16 @@ class TestExportHtml:
         assert "<dt>Size</dt>" in text
         assert '<p class="desc">conftest test chip</p>' in text
 
+    def test_export_leaves_the_chip_noise_model_intact(self, tmp_path, chip):
+        # regression: the stats strip popped `name` out of the chip's live metadata
+        chip.generate_gaussian_noise(0.01, 0.002, seed=1)
+        before = chip.summary()["noise_model"]
+
+        path = export_html(chip, tmp_path / "chip.html", include_plotlyjs="cdn")
+
+        assert chip.summary()["noise_model"] == before
+        assert "<dt>type</dt><dd>gaussian</dd>" in path.read_text()
+
     def test_default_styles_are_bundled(self, tmp_path, chip):
         path = export_html(chip, tmp_path / "chip.html", include_plotlyjs="cdn")
         text = path.read_text()
@@ -243,3 +253,104 @@ class TestFormatStatRows:
         html = _format_stat_rows({"<tag>": "<script>"})
         assert "<script>" not in html
         assert "&lt;script&gt;" in html
+
+
+class TestCouplerView:
+    def test_derived_couplers_add_no_view(self, chip):
+        """While couplers restate the noise heatmap, the dropdown stays as it was."""
+        chip.generate_gaussian_noise(0.01, 0.002)
+
+        styles = default_interactive_styles(chip)
+
+        assert list(styles) == DEFAULT_NAMES
+
+    def test_independent_couplers_add_a_view(self, chip):
+        chip.generate_gaussian_noise(0.01, 0.002)
+        chip.coupler((0, 0), (1, 1)).noise.p = 0.2
+
+        styles = default_interactive_styles(chip)
+
+        assert list(styles) == DEFAULT_NAMES + ["Coupler Noise", "Qubit + Coupler"]
+        assert all(styles[n].desc for n in ("Coupler Noise", "Qubit + Coupler"))
+
+    def test_single_bar_views_still_map_one_to_one_onto_traces(self, chip):
+        """A coupler layer sharing the qubit colorbar rides the existing trace, so those
+        views keep their 1:1 style-to-trace correspondence."""
+        chip.generate_gaussian_noise(0.01, 0.002)
+        chip.coupler((0, 0), (1, 1)).noise.p = 0.2
+
+        fig = visualize_interactive(chip)
+        single_bar = list(default_interactive_styles(chip))[:4]
+
+        assert [t.name for t in fig.data][:4] == single_bar
+        assert visible_flags(fig)[0] is True
+        for i in range(len(single_bar)):
+            assert sum(fig.layout.updatemenus[0].buttons[i].args[0]["visible"]) == 1
+
+    def test_coupler_view_shapes_include_the_edges(self, chip):
+        chip.generate_gaussian_noise(0.01, 0.002)
+        chip.coupler((0, 0), (1, 1)).noise.p = 0.2
+
+        fig = visualize_interactive(chip)
+        button = next(
+            b for b in fig.layout.updatemenus[0].buttons if b.label == "Coupler Noise"
+        )
+
+        assert len(button.args[1]["shapes"]) == len(chip.qubits) + len(chip.couplers)
+        # buttons still only ever swap these two keys, never geometry
+        assert set(button.args[1]) == {"shapes", "annotations"}
+
+
+class TestCombinedView:
+    def measured(self, chip):
+        chip.generate_uniform_noise(0.004)
+        chip.set_coupler_noise_map({c.ends: 0.02 for c in chip.couplers})
+        return chip
+
+    def test_combined_view_joins_the_bundle_when_couplers_are_independent(self, chip):
+        names = list(default_interactive_styles(self.measured(chip)))
+
+        assert names == DEFAULT_NAMES + ["Coupler Noise", "Qubit + Coupler"]
+
+    def test_a_dual_colorbar_view_contributes_two_traces(self, chip):
+        fig = visualize_interactive(self.measured(chip))
+
+        # four single-bar views plus the combined view's pair
+        assert len(fig.data) == 6
+
+    def test_each_button_shows_exactly_its_own_traces(self, chip):
+        """Visibility is tracked per style *span*, so the combined view lights both of
+        its traces while every single-trace view lights exactly one."""
+        fig = visualize_interactive(self.measured(chip))
+        flags = [b.args[0]["visible"] for b in fig.layout.updatemenus[0].buttons]
+
+        assert [sum(f) for f in flags] == [1, 1, 1, 1, 2]
+        assert all(len(f) == len(fig.data) for f in flags)
+        # every trace is claimed by exactly one view
+        assert [sum(col) for col in zip(*flags)] == [1] * len(fig.data)
+
+    def test_buttons_still_only_swap_shapes_and_annotations(self, chip):
+        fig = visualize_interactive(self.measured(chip))
+
+        for button in fig.layout.updatemenus[0].buttons:
+            assert set(button.args[1]) == {"shapes", "annotations"}
+
+    def test_geometry_is_sized_for_the_widest_view(self, chip):
+        """Two colorbars on one view must not resize the plot when others are shown."""
+        from qsnow.interface.chip import Chip
+
+        fig = visualize_interactive(self.measured(chip))
+        plain = visualize_interactive(Chip(5, 5))
+
+        from qsnow.visualize.visualize import (
+            _colorbar_strip_px,
+            _font_px,
+            device_heatmap_style,
+        )
+
+        # the plain view already carries the qubit bar's strip; the measured chip adds
+        # the coupler bar's
+        device = device_heatmap_style(self.measured(Chip(5, 5)))
+        assert fig.layout.width - plain.layout.width == _colorbar_strip_px(
+            device.coupler_colorbar, _font_px()
+        )

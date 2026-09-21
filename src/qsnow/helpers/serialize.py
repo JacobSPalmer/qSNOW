@@ -8,7 +8,7 @@ The qSNOW serialization library supports round-tripping (1:1 import-export) of `
 (and code subclasses like `SCTile`), `SquarePackingExp`, and the generic `Experiment` through JSON
 files (.flake) files, capturing everything needed to rebuild the object with the exact same setup:
 
-    from qsnow.helpers.serialize import export_json, import_json, import_latest
+    from qsnow.helpers.serialize import export_flake, import_flake, import_latest
 
     export_flake(chip)                      # -> data/chips/chip_5x5_<timestamp>.flake
     export_flake(tile)                      # -> data/tiles/tile_rsc_memory_z_d3_<timestamp>.flake
@@ -28,13 +28,22 @@ Notes:
     carry a `TileSpec` which contains tile-specific information. Specifically,
     the arguements to the generator/generation function that produced the underlying
     tile are passed here and used to regenerate the flake upon import.
-  - Ruleset injection rules are fully serialized. Custom triggers/filters
-    (beyond the built-in defaults) hold arbitrary callables and cannot be
-    serialized; a warning is raised if any are present at export (the handling of
-    serializing arbitrary callables is a TODO feature down the line)
+  - Chips carry a `ChipSpec`: the `NoiseDistribution` that produced the site rates
+    (stored as its `as_dict()` record: name, parameters, seed), the coupler derivation
+    mode, and (v5/v6) the coupler distribution plus the correlation it was applied
+    with, None while the couplers are derived or hand-set. Before v4 the first two
+    lived in `tag.metadata`; the v3->v4 migration lifts them out. v6 replaced the
+    name-and-dict record with distribution objects (same flat shape on disk); v7
+    renamed the "derived contour" record to "normal contour" to match `NormalContour`.
+  - Ruleset injection rules are fully serialized and restored on every tile type,
+    code subclasses included. Custom triggers/filters/sources (beyond the built-in
+    defaults) hold arbitrary callables and cannot be serialized; a warning is
+    raised if any are present at export (the handling of serializing arbitrary
+    callables is a TODO feature down the line when i have time to circle back)
   - Code subclasses (e.g. `SCTile`) are rebuilt through their own constructor
-    using the spec's `generator_args`. Additional subclasses are registered with
-    `register_tile_type()`.
+    using the spec's `generator_args`; `tile_from_dict` then restores the stored
+    tag and ruleset on top. Additional subclasses are registered with
+    `register_tile_type()` and get the same treatment.
   - Exports are stamped with `format_version`; older flakes are upgraded in
     memory on import if the exist within the default data configuration file.
 
@@ -47,6 +56,7 @@ Any change to an export's structure must:
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable
 from datetime import datetime
 from logging import getLogger
@@ -58,24 +68,27 @@ from stim import Circuit
 
 logger = getLogger(__name__)
 
+import logging
+
 from qsnow.experiments.experiment import Experiment, ExperimentResults
 from qsnow.experiments.squarepacking.game import SquarePackingExp
 from qsnow.interface.chip import Chip, LogicalTile
 from qsnow.interface.codes.rsc import SCTile
 from qsnow.interface.lattice import CHECKERBOARD, lattice_by_name
-from qsnow.interface.models import Coord, Tag, TileSpec
+from qsnow.interface.models import ChipSpec, Coord, CouplerKey, Tag, TileSpec
+from qsnow.interface.noise import NoiseDistribution
 from qsnow.interface.rules import (
     _DEFAULT_FILTERS,
+    _DEFAULT_SOURCES,
     _DEFAULT_TRIGGERS,
     ChannelRule,
     InjectionRule,
     Ruleset,
 )
 
-import logging
 logger = logging.getLogger(__name__)
 
-FORMAT_VERSION = 2
+FORMAT_VERSION = 7
 
 # ------------------------------------------------------------------
 # Format versioning / migrations
@@ -102,6 +115,7 @@ def _migration(from_version: int):
 
     return register
 
+
 # TODO - migrate to add date to each file as a 'created' attr
 
 # NOTE - This migration process is necessary so that when (inevitably) some sort of attribute change takes place the serialize function doesn't shit the bed
@@ -124,6 +138,92 @@ def _v1_to_v2(data: Dict) -> Dict:
     """
     if data.get("__qsnow__") == "Chip" or "base_circuit" in data:
         data.setdefault("lattice", CHECKERBOARD.name)
+    return data
+
+
+@_migration(2)
+def _v2_to_v3(data: Dict) -> Dict:
+    """v3 records per-coupler error rates; before it, two-qubit noise was always the mean
+    of a gate's two endpoint qubits.
+
+    Left empty rather than derived here: the migration sees only the dict, and the import
+    derives couplers from the restored qubit noise when this map is empty - which
+    reproduces the pre-v3 rates exactly.
+    """
+    if data.get("__qsnow__") == "Chip":
+        data.setdefault("couplers", {})
+    return data
+
+
+@_migration(3)
+def _v3_to_v4(data: Dict) -> Dict:
+    """v4 moves the noise-model record and coupler derivation mode out of
+    `tag.metadata` into a typed `spec`, so code no longer branches on free-form
+    annotation. Pre-v4 chips wrote `noise_model` and `coupler_model` into metadata;
+    both are lifted out here and removed, so a migrated chip carries them once.
+    """
+    if data.get("__qsnow__") == "Chip":
+        metadata = data.get("tag", {}).get("metadata", {})
+        noise_model = metadata.pop("noise_model", None)
+        coupler_model = metadata.pop("coupler_model", None) or {}
+        data.setdefault(
+            "spec",
+            {
+                "noise_model": noise_model,
+                "coupler_mode": coupler_model.get("mode", "mean"),
+            },
+        )
+    return data
+
+
+@_migration(4)
+def _v4_to_v5(data: Dict) -> Dict:
+    """v5 adds `spec.coupler_model`, the coupler generator record. A v4 chip never had
+    one, so the field is absent, which `ChipSpec` reads as "derived from endpoints"."""
+    if data.get("__qsnow__") == "Chip":
+        data.setdefault("spec", {}).setdefault("coupler_model", None)
+    return data
+
+
+@_migration(5)
+def _v5_to_v6(data: Dict) -> Dict:
+    """v6 records noise as `NoiseDistribution` objects. Two v5 records need renaming
+    to match their classes: the coupler record "correlated contour" is `SkewContour`
+    applied with a correlation, which now lives in `spec.coupler_correlation`; and
+    "uniform random" spelled its bounds `range`, now `bounds`."""
+    if data.get("__qsnow__") == "Chip":
+        spec = data.setdefault("spec", {})
+        spec.setdefault("coupler_correlation", None)
+        coupler_model = spec.get("coupler_model")
+        if coupler_model and coupler_model.get("name") == "correlated contour":
+            coupler_model["name"] = "skewed contour"
+            spec["coupler_correlation"] = coupler_model.pop("correlation", None)
+        noise_model = spec.get("noise_model")
+        if (
+            noise_model
+            and noise_model.get("name") == "uniform random"
+            and "range" in noise_model
+        ):
+            noise_model["bounds"] = noise_model.pop("range")
+    return data
+
+
+@_migration(6)
+def _v6_to_v7(data: Dict) -> Dict:
+    """v7 renames the "derived contour" record to "normal contour", matching the
+    `NormalContour` class and its `normal-contour` CLI flag.
+
+    "Derived" already means "follows its endpoints" for couplers, so the old name read
+    as a coupler mode rather than as the normal-marginal member of the contour family
+    (`NormalContour`/`SkewContour`/`LogSkewContour`). Both the site and the coupler
+    record can hold it.
+    """
+    if data.get("__qsnow__") == "Chip":
+        spec = data.get("spec", {})
+        for key in ("noise_model", "coupler_model"):
+            record = spec.get(key)
+            if record and record.get("name") == "derived contour":
+                record["name"] = "normal contour"
     return data
 
 
@@ -153,15 +253,17 @@ def _find_repo_root() -> Path:
 
 # TODO - consider moving this to platform specific cache location (like .)
 # TODO - move the default to be a part of the package-wide configuration file when refactoring for package distribution
-# Default export root: `.qsnow/` at the repo root. Override with set_data_dir()
+# Default export root: `data/` at the repo root. Override with set_data_dir()
 # for tests, notebooks, or an absolute location.
 _DEFAULT_DATA_DIR = _find_repo_root() / "data"
 _DATA_DIR = _DEFAULT_DATA_DIR
 
 _TIMESTAMP_FORMAT = "%Y-%m-%d_%H-%M-%S"
 
-def get_timestamp(format = _TIMESTAMP_FORMAT):
-    return datetime.now().strftime(_TIMESTAMP_FORMAT)
+
+def get_timestamp(format: str = _TIMESTAMP_FORMAT) -> str:
+    return datetime.now().strftime(format)
+
 
 def set_data_dir(path: Optional[Union[str, Path]] = None) -> None:
     """
@@ -178,6 +280,29 @@ def get_data_dir() -> Path:
     The current root folder used for automatic export paths.
     """
     return _DATA_DIR
+
+
+def flake_ref(target: Union[str, Path], relative_to: Optional[Union[str, Path]]) -> str:
+    """
+    How one flake names another on disk: a path relative to the referring flake's
+    own directory (just the filename in the usual layout, where a setup and its
+    results are siblings under `experiments/`), so a data folder can be moved or
+    renamed as a unit without breaking the link. When the referring flake has no
+    location yet, the target is named absolutely, which is the only thing that
+    still resolves. `resolve_flake_ref` is the inverse.
+    """
+    target = Path(target).resolve()
+    if relative_to is None:
+        return str(target)
+    return os.path.relpath(target, Path(relative_to).resolve().parent)
+
+
+def resolve_flake_ref(ref: str, relative_to: Optional[Union[str, Path]]) -> Path:
+    """The path a `flake_ref` written into the flake at `relative_to` points at."""
+    path = Path(ref)
+    if path.is_absolute() or relative_to is None:
+        return path
+    return Path(relative_to).parent / path
 
 
 def _subfolder(obj: Any) -> str:
@@ -242,6 +367,15 @@ def _key_to_coord(key: str) -> Coord:
     return tuple(int(p) if p.is_integer() else p for p in parts)  # type: ignore
 
 
+def _coupler_to_key(ends: CouplerKey) -> str:
+    return f"{_coord_to_key(ends[0])}|{_coord_to_key(ends[1])}"
+
+
+def _key_to_coupler(key: str) -> CouplerKey:
+    a, b = key.split("|")
+    return (_key_to_coord(a), _key_to_coord(b))
+
+
 # ------------------------------------------------------------------
 # Ruleset
 # ------------------------------------------------------------------
@@ -250,12 +384,15 @@ def _key_to_coord(key: str) -> Coord:
 def ruleset_to_dict(ruleset: Ruleset) -> Dict:
     default_triggers = {t.name for t in _DEFAULT_TRIGGERS}
     default_filters = {f.name for f in _DEFAULT_FILTERS}
-    custom = (set(ruleset._triggers) - default_triggers) | (
-        set(ruleset._filters) - default_filters
+    default_sources = {s.name for s in _DEFAULT_SOURCES}
+    custom = (
+        (set(ruleset._triggers) - default_triggers)
+        | (set(ruleset._filters) - default_filters)
+        | (set(ruleset._sources) - default_sources)
     )
     if custom:
         warn(
-            f"Ruleset contains custom triggers/filters {sorted(custom)} which hold callables "
+            f"Ruleset contains custom triggers/filters/sources {sorted(custom)} which hold callables "
             f"and cannot be serialized. They must be re-registered manually after import.",
             stacklevel=2,
         )
@@ -280,6 +417,7 @@ def _channel_to_dict(channel: ChannelRule) -> Dict:
         "filter": channel.filter,
         "scalar": channel.scalar,
         "name": channel.name,
+        "source": channel.source,
     }
 
 
@@ -317,6 +455,28 @@ def tag_from_dict(data: Dict) -> Tag:
         name=data["name"],
         desc=data["desc"],
         metadata=data["metadata"],
+    )
+
+
+def chip_spec_to_dict(spec: ChipSpec) -> Dict:
+    return {
+        "noise_model": spec.noise_model.as_dict() if spec.noise_model else None,
+        "coupler_model": spec.coupler_model.as_dict() if spec.coupler_model else None,
+        "coupler_correlation": spec.coupler_correlation,
+        "coupler_mode": spec.coupler_mode,
+    }
+
+
+def chip_spec_from_dict(data: Dict) -> ChipSpec:
+    noise_model = data.get("noise_model")
+    coupler_model = data.get("coupler_model")
+    return ChipSpec(
+        noise_model=NoiseDistribution.from_dict(noise_model) if noise_model else None,
+        coupler_mode=data.get("coupler_mode", "mean"),
+        coupler_model=NoiseDistribution.from_dict(coupler_model)
+        if coupler_model
+        else None,
+        coupler_correlation=data.get("coupler_correlation"),
     )
 
 
@@ -374,8 +534,6 @@ def _logical_tile_from_dict(data: Dict) -> LogicalTile:
         origin=tuple(data["construct_origin"]),
         x_buffer=data["x_buffer"],
         y_buffer=data["y_buffer"],
-        ruleset=ruleset_from_dict(data["ruleset"]),
-        tag=tag_from_dict(data["tag"]),
         spec=spec_from_dict(data["spec"]),
         lattice=lattice_by_name(data["lattice"]),
     )
@@ -415,10 +573,12 @@ def tile_from_dict(data: Dict) -> LogicalTile:
         )
         importer = _logical_tile_from_dict
     tile = importer(data)
-    # subclass importers rebuild through their constructor, which regenerates the
-    # tag; restore the stored annotations so they survive the round trip (the spec
-    # is owned by the constructor and matches the stored one by construction)
+    # Importers (built-in and `register_tile_type`d alike) rebuild through their
+    # constructor, which regenerates the tag and defaults the ruleset. Restore both
+    # here, once for every tile type, so they survive the round trip (the spec is
+    # owned by the constructor and matches the stored one by construction).
     tile.tag = tag_from_dict(data["tag"])
+    tile.ruleset = ruleset_from_dict(data["ruleset"])
     return tile
 
 
@@ -432,12 +592,16 @@ def chip_to_dict(chip: Chip) -> Dict:
         "__qsnow__": "Chip",
         "format_version": FORMAT_VERSION,
         "tag": tag_to_dict(chip.tag),
+        "spec": chip_spec_to_dict(chip.spec),
         # the original constructor arguments, in unit cells (the coordinate extent
         # they span is decided by the lattice)
         "length": chip.unit_dims[0],
         "height": chip.unit_dims[1],
         "lattice": chip.lattice.name,
         "noise": {_coord_to_key(c): q.noise.p for c, q in chip.grid.items()},
+        "couplers": {
+            _coupler_to_key(ends): n.p for ends, n in chip.coupler_map.items()
+        },
         "tiles": [tile_to_dict(t) for t in chip.tiles],
     }
 
@@ -448,10 +612,19 @@ def chip_from_dict(data: Dict) -> Chip:
         data["length"], data["height"], lattice=lattice_by_name(data["lattice"])
     )
     chip.tag = tag_from_dict(data["tag"])
+    chip.spec = chip_spec_from_dict(data["spec"])
 
     # TODO - move all this to have noise map to dict using the NoiseMap "type"
     for key, p in data["noise"].items():
         chip.loc(_key_to_coord(key)).noise.p = p
+
+    # An export that predates couplers carries none, so derive them from the qubit noise
+    # just restored - the same default a freshly generated chip gets.
+    if data["couplers"]:
+        for key, p in data["couplers"].items():
+            chip.coupler(*_key_to_coupler(key)).noise.p = p
+    else:
+        chip.derive_coupler_noise(chip.spec.coupler_mode)
     # Re-placing each tile rebuilds qubit statuses/types exactly as add_tile did originally.
     # TODO - same for TileMap when/if typing becomes explicit
     for tile_data in data["tiles"]:
@@ -506,17 +679,6 @@ def square_packing_from_dict(data: Dict) -> SquarePackingExp:
     exp.tag = tag_from_dict(data["tag"])
     exp.config = data["config"]
     exp.results_refs = data["results_refs"]
-
-    if exp.results_refs:
-        for p in exp.results_refs:
-            try:
-                exp.results = import_flake(p).results
-                break
-            except FileNotFoundError:
-                logger.debug(
-                    f"Experiment result flake with filename {p} could not be loaded."
-                )
-
     return exp
 
 
@@ -529,27 +691,34 @@ def experiment_from_dict(data: Dict) -> Experiment:
     exp = Experiment(**data["config"])
     exp.tag = tag_from_dict(data["tag"])
     exp.results_refs = data["results_refs"]
-
-    # This is the one violation to the round-tripping technically:
-    # While the experiment objects contain a Experiment.result, the flakes do not.
-    # While an experiment can be ran many times and provide different results, the setup never changes.
-    # Thus, we only store a reference to any result .flakes for this exp.
-    # However, for convenience, this will see if it can find the latest result (if there is one)
-    # referenced in the experiment.flake and load it into the Experiment.result.
-    if exp.results_refs:
-        for p in exp.results_refs:
-            try:
-                exp.results = import_flake(p).results
-                break
-            except FileNotFoundError:
-                logger.debug(
-                    f"Experiment result flake with filename {p} could not be loaded."
-                )
     return exp
 
 
-def results_to_dict(exp: Experiment) -> Dict:
-    """Serialize an experiment's `results` as a standalone record referencing its setup."""
+def _load_latest_results(exp: Experiment) -> None:
+    """
+    Fill `exp.results` from the newest results flake the setup references, if it is
+    on disk.
+
+    This is the one deliberate break from strict round-tripping: an experiment
+    object holds `results`, but its flake only names the results flakes it produced
+    (a setup is written once, each run writes a new results file). Refs are
+    resolved against the setup flake's own location, so this can only run once
+    `exp.source` is known - i.e. from `import_flake`, not from a bare dict.
+    """
+    for ref in reversed(exp.results_refs):
+        path = resolve_flake_ref(ref, exp.source)
+        if path.exists():
+            exp.results = import_flake(path).results
+            return
+        logger.debug(f"Experiment results flake {path} is not on disk; skipping.")
+
+
+def results_to_dict(exp: Experiment, path: Optional[Union[str, Path]] = None) -> Dict:
+    """
+    Serialize an experiment's `results` as a standalone record referencing its setup.
+    `path` is where the record will be written, so the setup can be named relative
+    to it (see `flake_ref`); without it the setup is named absolutely.
+    """
     if exp.source is None:
         warn(
             "Experiment has no saved setup file, so these results will not reference "
@@ -559,7 +728,7 @@ def results_to_dict(exp: Experiment) -> Dict:
     return {
         "__qsnow__": "ExperimentResults",
         "format_version": FORMAT_VERSION,
-        "experiment": exp.source.name if exp.source is not None else None,
+        "experiment": flake_ref(exp.source, path) if exp.source is not None else None,
         "desc": exp.desc,
         "run_config": exp.config,
         "results": {
@@ -593,7 +762,7 @@ def export_results(
     """
     if path is None:
         stamp = get_timestamp()
-        path = ( 
+        path = (
             _DATA_DIR
             / _subfolder(exp)
             / f"results_{label or _label(exp)}_{stamp}.flake"
@@ -601,7 +770,7 @@ def export_results(
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
-        json.dump(results_to_dict(exp), f, indent=indent)
+        json.dump(results_to_dict(exp, path), f, indent=indent)
     return path
 
 
@@ -698,6 +867,7 @@ def import_flake(path: Union[str, Path]) -> Any:
         obj = from_dict(json.load(f))
     if isinstance(obj, Experiment):
         obj.source = Path(path)
+        _load_latest_results(obj)
     return obj
 
 
@@ -738,7 +908,9 @@ def summarize_exports(
     return summary
 
 
-def import_latest(pattern: str = "*", kind: Optional[str] = None, *, silent: bool = False) -> Any:
+def import_latest(
+    pattern: str = "*", kind: Optional[str] = None, *, silent: bool = False
+) -> Any:
     """
     Import the most recent export whose filename matches `pattern`. If `silent` is true, no print message will be shown (useful for
     internal operations that rely on this method to not overwhelm.)

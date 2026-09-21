@@ -4,10 +4,10 @@ from typing import Dict, List, Literal, Optional
 
 from stim import Circuit
 
-from ..chip import LogicalTile
 from ..lattice import CHECKERBOARD
 from ..models import Coord, CSSType, Tag, TileSpec
 from ..rules import ChannelRule, InjectionRule, Ruleset
+from ..tile import LogicalTile
 
 
 class SCTile(LogicalTile):
@@ -17,7 +17,12 @@ class SCTile(LogicalTile):
         rounds: Optional[int] = None,
         task: Literal["memory_x", "memory_z"] = "memory_z",
         origin: Coord = (0, 0),
+        *,
+        ruleset: Optional[Ruleset] = None,
+        tag: Optional[Tag] = None,
     ):
+        # `ruleset`/`tag` are the per-instance state the generator args cannot rebuild,
+        # so `copy()` and the serialize importer hand them back in through here.
         if rounds is None:
             rounds = distance
         generator = lambda t, d, r: Circuit.generated(
@@ -31,7 +36,8 @@ class SCTile(LogicalTile):
             origin=origin,
             # stim's rotated surface-code generators emit checkerboard coordinates
             lattice=CHECKERBOARD,
-            tag=Tag(name=f"rsc_{task}_d{distance}"),
+            tag=tag if tag is not None else Tag(name=f"rsc_{task}_d{distance}"),
+            ruleset=ruleset,
             spec=TileSpec(
                 tile_type=type(self).__name__,
                 distance=distance,
@@ -91,11 +97,11 @@ class SCTile(LogicalTile):
     # TODO shift the custom_rules into the ChannelRuleset object, adding the add_rule method within the LogicalTile super class
     def _init_ruleset(self, custom_rules: List[InjectionRule] = []) -> Ruleset:
 
-        def on_operation(op: str, trig, before, after, name = None) -> InjectionRule:
-            return InjectionRule(op, trig, before, after, name = name)
+        def on_operation(op: str, trig, before, after, name=None) -> InjectionRule:
+            return InjectionRule(op, trig, before, after, name=name)
 
-        def apply_channel(channel, filter, scalar = 1.0, name = None):
-            return ChannelRule(channel, filter, scalar=scalar, name=name)
+        def apply_channel(channel, filter, scalar=1.0, name=None, source="qubit_mean"):
+            return ChannelRule(channel, filter, scalar=scalar, name=name, source=source)
 
         # Default application of SI1000 ruleset
         return Ruleset(
@@ -104,46 +110,79 @@ class SCTile(LogicalTile):
                     "R",
                     "all_qubits",
                     before=[],
-                    after=[apply_channel("X_ERROR", "all_qubits", 2.0, name='Init')],           #InitZ(p)           -> SI1000(2p)
+                    after=[
+                        apply_channel("X_ERROR", "all_qubits", 2.0, name="Init")
+                    ],  # InitZ(p)           -> SI1000(2p)
                 ),
                 on_operation(
                     "H",
                     "x_measures",
                     before=[],
                     after=[
-                            apply_channel("DEPOLARIZE1", "active", .1, name='Clifford1'),       #AnyClifford1(p)    -> SI1000(p/10) 
-                            apply_channel("DEPOLARIZE1", "idle", .1, name='Idle'),              #Idle(p)            -> SI1000(p/10)
-                        ],
+                        apply_channel(
+                            "DEPOLARIZE1", "active", 0.1, name="Clifford1"
+                        ),  # AnyClifford1(p)    -> SI1000(p/10)
+                        apply_channel(
+                            "DEPOLARIZE1", "idle", 0.1, name="Idle"
+                        ),  # Idle(p)            -> SI1000(p/10)
+                    ],
                 ),
                 on_operation(
                     "CX",
                     "any",
                     before=[],
                     after=[
-                        apply_channel("DEPOLARIZE2", "active", 1, name='Clifford2'),          #AnyClifford2(p)   -> SI1000(p)
-                        apply_channel("DEPOLARIZE1", "idle", .1, name='Idle'),                #Idle(p)           -> SI1000(p/10)
+                        # The two-qubit error is the coupler's, not the endpoints'. Couplers
+                        # derive as the mean of their two qubits by default, so this is
+                        # numerically identical until a coupler is given its own rate.
+                        apply_channel(
+                            "DEPOLARIZE2",
+                            "active",
+                            1,
+                            name="Clifford2",
+                            source="coupler",
+                        ),  # AnyClifford2(p)   -> SI1000(p)
+                        apply_channel(
+                            "DEPOLARIZE1", "idle", 0.1, name="Idle"
+                        ),  # Idle(p)           -> SI1000(p/10)
                     ],
                 ),
                 on_operation(
                     "MR",
                     "all_measures",
                     before=[
-                        apply_channel("X_ERROR", "all_measures", 5.0, name='Measure'),        #Measure(p)        -> SI1000(5p)
-                        apply_channel("DEPOLARIZE1", "idle", 2.0, name='ResonatorIdle'),      #ResonatorIdle(p)  -> SI1000(2p)
-                        apply_channel("DEPOLARIZE1", "idle", .1, name='Idle'),                #Idle(p)           -> SI1000(p/10)
+                        apply_channel(
+                            "X_ERROR", "all_measures", 5.0, name="Measure"
+                        ),  # Measure(p)        -> SI1000(5p)
+                        apply_channel(
+                            "DEPOLARIZE1", "idle", 2.0, name="ResonatorIdle"
+                        ),  # ResonatorIdle(p)  -> SI1000(2p)
+                        apply_channel(
+                            "DEPOLARIZE1", "idle", 0.1, name="Idle"
+                        ),  # Idle(p)           -> SI1000(p/10)
                     ],
                     after=[
-                        apply_channel("X_ERROR", "all_measures", 2.0, name='Init'),           #InitZ(p)          -> SI1000(2p)
-                        apply_channel("DEPOLARIZE1", "idle", 2.0, name='ResonatorIdle'),      #ResonatorIdle(p)  -> SI1000(2p)
-                        apply_channel("DEPOLARIZE1", "idle", .1, name='Idle'),                #Idle(p)           -> SI1000(p/10)
+                        apply_channel(
+                            "X_ERROR", "all_measures", 2.0, name="Init"
+                        ),  # InitZ(p)          -> SI1000(2p)
+                        apply_channel(
+                            "DEPOLARIZE1", "idle", 2.0, name="ResonatorIdle"
+                        ),  # ResonatorIdle(p)  -> SI1000(2p)
+                        apply_channel(
+                            "DEPOLARIZE1", "idle", 0.1, name="Idle"
+                        ),  # Idle(p)           -> SI1000(p/10)
                     ],
                 ),
                 on_operation(
                     "M",
                     "data",
                     before=[
-                        apply_channel("X_ERROR", "all_qubits", 5.0),                          #Measure(p)        -> SI1000(5p)
-                        apply_channel("DEPOLARIZE1", "idle", 2.0),                            #ResonatorIdle(p)  -> SI1000(2p)
+                        apply_channel(
+                            "X_ERROR", "all_qubits", 5.0
+                        ),  # Measure(p)        -> SI1000(5p)
+                        apply_channel(
+                            "DEPOLARIZE1", "idle", 2.0
+                        ),  # ResonatorIdle(p)  -> SI1000(2p)
                     ],
                     after=[],
                 ),
@@ -157,8 +196,10 @@ class SCTile(LogicalTile):
         return s
 
     def copy(self) -> SCTile:
+        """Return a fresh uninitialized copy: same code, ruleset, and annotations."""
         return SCTile(
             distance=self.spec.generator_args["distance"],
             rounds=self.spec.generator_args["rounds"],
             task=self.spec.generator_args["task"],
+            **self._carried_state(),
         )

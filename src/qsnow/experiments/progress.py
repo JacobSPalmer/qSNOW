@@ -1,5 +1,5 @@
-"""Progress display for experiments, backed by tqdm.
-"""
+"""Progress display for experiments, backed by tqdm."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
@@ -18,7 +18,9 @@ T = TypeVar("T")
 # "24.05666666666667/41". Formatting the count explicitly keeps the bar readable.
 _COUNT = "{n:.0f}/{total:.0f}"
 _BAR_FORMAT = (
-    "{desc}: {percentage:3.0f}%|{bar}| " + _COUNT + " [{elapsed}<{remaining}, {rate_fmt}{postfix}]"
+    "{desc}: {percentage:3.0f}%|{bar}| "
+    + _COUNT
+    + " [{elapsed}<{remaining}, {rate_fmt}{postfix}]"
 )
 _BAR_FORMAT_NO_ETA = (
     "{desc}: {percentage:3.0f}%|{bar}| " + _COUNT + " [{elapsed}, {rate_fmt}{postfix}]"
@@ -131,14 +133,18 @@ class PhasedProgress:
         phase advances in coarse, bursty steps that make an ETA jump around).
         """
         self._index += 1
-        label = f"[{self._index}/{self._phases}] {description}" if self._phases else description
+        label = (
+            f"[{self._index}/{self._phases}] {description}"
+            if self._phases
+            else description
+        )
 
         row = _Row(label, total)
         self._rows.append(row)
 
         bar: Optional[tqdm] = None
         if not self._disable:
-            #TODO - fix so that each bar has same width and x anchor
+            # TODO - fix so that each bar has same width and x anchor
             bar = tqdm(
                 total=total,
                 desc=label,

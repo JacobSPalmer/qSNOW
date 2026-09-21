@@ -1,27 +1,32 @@
 """Interactive figures: in-figure style switching and standalone HTML export."""
 
 from __future__ import annotations
+
 from collections.abc import Mapping
 from dataclasses import replace
 from datetime import datetime
 from html import escape
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Optional, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
 
 from qsnow.visualize.visualize import (
     VisualizationStyle,
     _apply_frame,
     _build_style_layer,
     _compute_geometry,
+    _font_px,
+    _style_strips,
+    coupler_heatmap_style,
     css_style,
     default_style,
+    device_heatmap_style,
     noise_heatmap_style,
 )
 
 if TYPE_CHECKING:
     from plotly.graph_objs._figure import Figure
 
-    from qsnow.experiments import ExperimentResults, SquarePackingExp
+    from qsnow.experiments import ResultsLike, SquarePackingExp
     from qsnow.interface.chip import Chip
 
 __all__ = [
@@ -69,8 +74,12 @@ def _style_desc_annotation(desc: str) -> Dict[str, object]:
 
 
 def default_interactive_styles(chip: Chip) -> Dict[str, VisualizationStyle]:
-    """The standard chip-level view bundle: status, CSS type, and noise heatmap."""
-    return {
+    """The standard chip-level view bundle: status, CSS type, and noise heatmap.
+
+    Gains a coupler view only when the couplers carry rates of their own; while they are
+    still derived from their endpoints the view would restate the noise heatmap.
+    """
+    styles = {
         "Status": replace(
             default_style,
             desc="Qubit assignment status (inactive / logical / ancilla).",
@@ -83,6 +92,15 @@ def default_interactive_styles(chip: Chip) -> Dict[str, VisualizationStyle]:
             chip, desc="Heatmap of each qubit's physical error rate p."
         ),
     }
+    if chip.has_independent_couplers:
+        styles["Coupler Noise"] = coupler_heatmap_style(
+            chip, desc="Heatmap of each coupler's two-qubit error rate p."
+        )
+        styles["Qubit + Coupler"] = device_heatmap_style(
+            chip,
+            desc="Qubit and coupler error rates together, each on its own log scale.",
+        )
+    return styles
 
 
 def _noise_model_text(noise_model: Optional[Dict]) -> Optional[str]:
@@ -163,9 +181,16 @@ def visualize_interactive(
 
     # Constant geometry across views (colorbar strip reserved if any style needs
     # it) so switching styles never resizes the plot.
+    # widest view wins per colorbar slot, so switching styles never resizes the plot
+    font_px = _font_px()
+    per_style = [_style_strips(s, font_px) for s in styles.values()]
+    strips = [
+        max(w[i] for w in per_style if len(w) > i)
+        for i in range(max(map(len, per_style)))
+    ]
     geometry = _compute_geometry(
         chip,
-        reserve_colorbar=any(s.colorbar is not None for s in styles.values()),
+        strips,
         extra_top_margin=_DROPDOWN_MARGIN_PX
         + (_TITLE_MARGIN_PX if title else 0)
         + (_DESC_MARGIN_PX if has_desc else 0),
@@ -192,8 +217,19 @@ def visualize_interactive(
     # HTML shouldn't depend on WebGL availability. Only the active trace is
     # visible; plotly draws colorbars only for visible traces, so each view's
     # colorbar shows/hides automatically.
+    # A style contributes one trace per colorbar it draws, so visibility is tracked by
+    # each style's *span* of traces rather than by a 1:1 style-to-trace index.
+    spans: List[Tuple[int, int]] = []
+    n_traces = 0
     for i, layer in enumerate(layers.values()):
-        fig.add_trace(Scatter(**layer.trace_kwargs, visible=i == active_idx))
+        spans.append((n_traces, len(layer.traces)))
+        for trace_kwargs in layer.traces:
+            fig.add_trace(Scatter(**trace_kwargs, visible=i == active_idx))
+            n_traces += 1
+
+    def visibility(style_index: int) -> List[bool]:
+        start, count = spans[style_index]
+        return [start <= j < start + count for j in range(n_traces)]
 
     active_layer = layers[active]
     fig.update_layout(
@@ -206,7 +242,7 @@ def visualize_interactive(
                         label=name,
                         method="update",
                         args=[
-                            {"visible": [j == i for j in range(len(names))]},
+                            {"visible": visibility(i)},
                             {
                                 "shapes": layer.shapes,
                                 "annotations": layer.annotations
@@ -362,14 +398,12 @@ def _format_stat_rows(stats: Mapping[str, object]) -> str:
 # TODO - revist the whole look of the exportable. fine for now and unimportant overall but it looks clunky and lame
 # TODO - cleanup the noise and chip stats
 def _noise_stats(summary: Dict[str, object]) -> Dict[str, str]:
-    noise = summary.get("noise_model", {})
-    stats = {}
-    if isinstance(noise, dict):
-        if noise.get("name"):
-            stats["type"] = noise.pop("name")
-        stats |= {k: v for k, v in noise.items() if k not in ("seed")}
-
-        stats.pop("seed", None)
+    """Noise-model facts for the stats strip, built without mutating the summary."""
+    noise = summary.get("noise_model")
+    if not isinstance(noise, dict):
+        return {}
+    stats = {"type": noise["name"]} if noise.get("name") else {}
+    stats |= {k: v for k, v in noise.items() if k not in ("name", "seed")}
     return stats
 
 
@@ -454,7 +488,7 @@ def export_html(
 
 def export_square_packing(
     exp: SquarePackingExp,
-    results: ExperimentResults,
+    results: ResultsLike,
     path: Optional[Union[str, Path]] = None,
     *,
     styles: Optional[Mapping[str, VisualizationStyle]] = None,
@@ -466,7 +500,8 @@ def export_square_packing(
     """
     Write a standalone interactive HTML page for `SquarePackingExp` results and return its path.
 
-    Either the experiment should have results stored in `Experiments.result` or `results` should be provided as a keyword argument.
+    `results` is either a persisted `ExperimentResults` record or the dict
+    `SquarePackingExp.run()` returns (`exp.results`).
     """
     # deferred import: qsnow.helpers.serialize imports the experiment stack,
     # which imports this package (same pattern as Experiment.save)
@@ -486,6 +521,7 @@ def export_square_packing(
         path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
+    results = exp._results_record(results)
     if styles is None:
         styles = exp._interactive_styles(results)
 
@@ -507,7 +543,7 @@ def export_square_packing(
     tile_stats_html = _format_stat_box("Tile", _format_stat_rows(tile_stats))
 
     exp_stats: Dict = _spp_stats(summary)
-    exp_stats |= {"Shots": str(results.run_config["shots"])}
+    exp_stats |= {"Shots": str(results.run_config.get("shots", "N/A"))}
     exp_stats_html = _format_stat_box("Experiment", _format_stat_rows(exp_stats))
 
     if summary["chip"].get("noise_model", False):

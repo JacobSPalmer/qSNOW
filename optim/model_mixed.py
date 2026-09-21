@@ -36,7 +36,6 @@ from typing import FrozenSet, List
 
 import gurobipy as gp
 from gurobipy import GRB
-
 from packing_data import Candidate, mixed_candidates
 
 
@@ -111,7 +110,9 @@ def build_and_solve(tau, distances=(3, 5), data_dir=None, verbose: bool = True):
         by_origin.setdefault(c.origin, []).append(i)
     for origin, idxs in by_origin.items():
         if len(idxs) > 1:
-            model.addConstr(gp.quicksum(y[i] for i in idxs) <= 1, name=f"origin_{origin}")
+            model.addConstr(
+                gp.quicksum(y[i] for i in idxs) <= 1, name=f"origin_{origin}"
+            )
 
     # LP relaxation bound (illustrates formulation tightness).
     model.update()  # flush pending vars/constraints before copying
@@ -139,9 +140,7 @@ def _report(tau, distances, cands, cliques, lp_bound, model, chosen) -> None:
     cand_by_d = Counter(c.distance for c in cands)
     print("\n=== mixed-distance (threshold-count) formulation ===")
     print(f"tau = {tau}, distances = {tuple(distances)}")
-    counts = ", ".join(
-        f"D{d}: {cand_by_d.get(d, 0)}" for d in sorted(cand_by_d)
-    )
+    counts = ", ".join(f"D{d}: {cand_by_d.get(d, 0)}" for d in sorted(cand_by_d))
     print(f"|candidates| = {len(cands)} ({counts}), {len(cliques)} clique constraints")
     print(f"LP relaxation bound : {lp_bound:.4f}")
     placed = ", ".join(f"D{d}: {n_by_d.get(d, 0)}" for d in sorted(distances))

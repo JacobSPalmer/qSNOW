@@ -1,4 +1,5 @@
 from pathlib import Path
+from statistics import mean
 
 import pytest
 
@@ -15,6 +16,14 @@ from qsnow.helpers.serialize import (
 from qsnow.interface.chip import Chip, LogicalTile
 from qsnow.interface.codes.rsc import SCTile
 from qsnow.interface.lattice import CHECKERBOARD, SQUARE
+from qsnow.interface.noise import (
+    NormalContour,
+    RandomGaussian,
+    RandomUniform,
+    SkewContour,
+    Uniform,
+)
+from qsnow.interface.rules import InjectionRule, Ruleset, Source
 
 
 @pytest.fixture
@@ -48,6 +57,26 @@ class TestTileRoundTrip:
         restored = from_dict(to_dict(tile))
 
         assert repr(restored._ruleset) == repr(tile._ruleset)
+
+    def test_custom_ruleset_survives_subclass_import(self):
+        # regression: the SCTile importer rebuilt from generator args and ignored
+        # the exported ruleset, so any non-default ruleset came back as SI1000
+        tile = SCTile(distance=3)
+        tile.ruleset = Ruleset(
+            [InjectionRule("H", "any", before=[], after=[], name="custom")]
+        )
+        restored = from_dict(to_dict(tile))
+
+        assert isinstance(restored, SCTile)
+        assert [r.name for r in restored.ruleset.rules] == ["custom"]
+        assert repr(restored.ruleset) == repr(tile.ruleset)
+
+    def test_custom_source_warns_on_export(self):
+        tile = SCTile(distance=3)
+        tile.ruleset.add_source(Source("always_half", lambda t, q, c: 0.5))
+
+        with pytest.warns(UserWarning, match="always_half"):
+            to_dict(tile)
 
     def test_sc_tile_restores_subclass(self):
         tile = SCTile(distance=3, rounds=2, task="memory_x")
@@ -258,7 +287,9 @@ class TestResultsFlow:
         exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
         # sourced from the sampler itself, so this breaks if run_config drops a key
         exp.config.update(
-            **ErrorFloorSampler(shots=1_000, min_errors=3, max_topup_shots=5_000).run_config()
+            **ErrorFloorSampler(
+                shots=1_000, min_errors=3, max_topup_shots=5_000
+            ).run_config()
         )
         exp.results = {(0, 0): {"ler": 0.001, "shots": 1000, "errors": 1}}
 
@@ -268,7 +299,11 @@ class TestResultsFlow:
         setup_config = json.loads(setup_path.read_text())["config"]
         results_config = json.loads(results_path.read_text())["run_config"]
 
-        for config in (setup_config, results_config, import_flake(results_path).run_config):
+        for config in (
+            setup_config,
+            results_config,
+            import_flake(results_path).run_config,
+        ):
             assert config["min_errors"] == 3
             assert config["max_topup_shots"] == 5_000
             assert config["shots"] == 1_000
@@ -318,6 +353,101 @@ class TestResultsFlow:
             results_path = exp.save_results()
 
         assert import_flake(results_path).experiment_ref is None
+
+
+class TestResultsLinkage:
+    """A setup flake and its results flakes name each other relative to their own
+    locations, so the link survives any working directory and a moved data folder."""
+
+    @staticmethod
+    def _saved_pair(chip):
+        from qsnow.experiments.squarepacking.game import SquarePackingExp
+
+        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        exp.results = {(0, 0): {"ler": 0.001, "shots": 1000, "errors": 1}}
+        setup_path = exp.save()
+        results_path = exp.save_results()
+        return exp, setup_path, results_path
+
+    def test_reimported_setup_carries_its_results_from_any_cwd(
+        self, data_dir, chip, tmp_path, monkeypatch
+    ):
+        # regression: refs were bare filenames resolved against the cwd, so a setup
+        # imported from anywhere but the data folder silently came back with no results
+        exp, setup_path, _ = self._saved_pair(chip)
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        monkeypatch.chdir(elsewhere)
+
+        assert import_flake(setup_path).results == exp.results
+
+    def test_moved_data_folder_keeps_the_pair_linked(self, data_dir, chip, tmp_path):
+        import shutil
+
+        exp, setup_path, _ = self._saved_pair(chip)
+        moved = shutil.move(str(data_dir), str(tmp_path / "archive"))
+        set_data_dir(tmp_path / "unrelated")
+
+        restored = import_flake(Path(moved) / "experiments" / setup_path.name)
+
+        assert restored.results == exp.results
+
+    def test_newest_results_flake_wins(self, data_dir, chip):
+        exp, setup_path, _ = self._saved_pair(chip)
+        exp.results = {(0, 0): {"ler": 0.5, "shots": 10, "errors": 5}}
+        exp.save_results(path=data_dir / "experiments" / "results_later.flake")
+
+        assert import_flake(setup_path).results == exp.results
+
+    def test_bare_filename_refs_from_older_flakes_resolve_beside_the_setup(
+        self, data_dir, chip
+    ):
+        # pre-fix setups recorded only the filename; that is the sibling-relative
+        # form, so it resolves without a migration
+        exp, setup_path, results_path = self._saved_pair(chip)
+        assert exp.results_refs == [results_path.name]
+
+        assert import_flake(setup_path).results == exp.results
+
+    def test_results_flake_names_its_setup_relative_to_itself(self, data_dir, chip):
+        from qsnow.experiments.squarepacking.game import SquarePackingExp
+
+        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        exp.results = {(0, 0): {"ler": 0.001}}
+        setup_path = exp.save()
+        results_path = exp.save_results(
+            path=data_dir / "experiments" / "runs" / "r.flake"
+        )
+
+        record = import_flake(results_path)
+
+        assert record.experiment_ref == f"../{setup_path.name}"
+        assert exp.results_refs == ["runs/r.flake"]
+
+    def test_missing_results_flake_leaves_results_empty(self, data_dir, chip):
+        exp, setup_path, results_path = self._saved_pair(chip)
+        results_path.unlink()
+
+        assert import_flake(setup_path).results == {}
+
+    def test_flake_ref_round_trips(self, tmp_path):
+        from qsnow.helpers.serialize import flake_ref, resolve_flake_ref
+
+        referrer = tmp_path / "experiments" / "setup.flake"
+        target = tmp_path / "experiments" / "runs" / "r.flake"
+
+        assert flake_ref(target, referrer) == "runs/r.flake"
+        assert resolve_flake_ref(flake_ref(target, referrer), referrer) == target
+        # nothing to be relative to: the absolute path is the only thing that resolves
+        assert Path(flake_ref(target, None)).is_absolute()
+        assert resolve_flake_ref(flake_ref(target, None), None) == target.resolve()
+
+
+def test_get_timestamp_honours_its_format():
+    from qsnow.helpers.serialize import get_timestamp
+
+    # regression: the argument was accepted and ignored
+    assert len(get_timestamp("%Y")) == 4
 
 
 class TestJsonFileRoundTrip:
@@ -482,3 +612,217 @@ class TestFormatVersioning:
 
         assert applied == [1, 2]
         assert isinstance(restored, Chip)
+
+
+class TestCouplerRoundTrip:
+    def test_coupler_rates_survive_a_round_trip(self, chip):
+        chip.generate_random_noise()
+        chip.coupler((0, 0), (1, 1)).noise.p = 0.2
+
+        restored = from_dict(to_dict(chip))
+
+        assert {e: n.p for e, n in restored.coupler_map.items()} == {
+            e: n.p for e, n in chip.coupler_map.items()
+        }
+
+    def test_a_hand_set_coupler_is_not_re_derived_on_import(self, chip):
+        """The override must survive, not be recomputed from its endpoints."""
+        chip.generate_uniform_noise(0.01)
+        chip.coupler((0, 0), (1, 1)).noise.p = 0.2
+
+        restored = from_dict(to_dict(chip))
+
+        assert restored.coupler((0, 0), (1, 1)).noise.p == 0.2
+
+    def test_channel_rule_source_round_trips(self, chip):
+        chip.add_tile(SCTile(distance=3), (2, 2))
+
+        restored = from_dict(to_dict(chip))
+        cx_rule = next(
+            r for r in restored.tiles[0].ruleset.rules if r.operation == "CX"
+        )
+
+        assert cx_rule.after[0].source == "coupler"
+
+
+class TestChipSpecRoundTrip:
+    def test_noise_model_and_coupler_mode_round_trip(self, chip):
+        chip.generate_gaussian_noise(mean=0.01, deviation=0.002, seed=7)
+        chip.derive_coupler_noise("max")
+
+        restored = from_dict(to_dict(chip))
+
+        assert restored.spec.noise_model == RandomGaussian(0.01, 0.002, seed=7)
+        assert restored.spec.coupler_mode == "max"
+        assert restored.has_independent_couplers is False
+
+    def test_coupler_model_round_trips_with_its_rates(self, chip):
+        chip.generate_noise(SkewContour(0.01, 0.003, 1.5, seed=3))
+        chip.generate_coupler_noise(
+            SkewContour(0.05, 0.01, 1.0, seed=4), correlation=0.6
+        )
+
+        restored = from_dict(to_dict(chip))
+
+        assert restored.spec.coupler_model == SkewContour(0.05, 0.01, 1.0, seed=4)
+        assert restored.spec.coupler_correlation == 0.6
+        assert {e: n.p for e, n in restored.coupler_map.items()} == {
+            e: n.p for e, n in chip.coupler_map.items()
+        }
+        assert restored.has_independent_couplers
+
+    def test_spec_is_not_written_into_tag_metadata(self, chip):
+        chip.generate_uniform_noise(0.01)
+
+        data = to_dict(chip)
+
+        assert "noise_model" not in data["tag"]["metadata"]
+        assert data["spec"]["noise_model"] == {"name": "uniform homogeneous", "p": 0.01}
+
+    def test_pre_v4_chip_derives_couplers_with_its_migrated_mode(self, chip):
+        chip.generate_uniform_noise(0.01)
+        chip.derive_coupler_noise("max")
+        data = to_dict(chip)
+        # rewrite as a v3 export: record in metadata, no spec, no coupler map
+        data["format_version"] = 3
+        del data["spec"]
+        data["couplers"] = {}
+        data["tag"]["metadata"]["noise_model"] = {
+            "name": "uniform homogeneous",
+            "p": 0.01,
+        }
+        data["tag"]["metadata"]["coupler_model"] = {"name": "derived", "mode": "max"}
+
+        restored = from_dict(data)
+
+        assert restored.spec.coupler_mode == "max"
+        assert restored.has_independent_couplers is False
+
+
+class TestCouplerFormatVersioning:
+    FIXTURES = Path(__file__).parent / "fixtures"
+
+    def test_v4_golden_file_imports_with_its_spec(self):
+        chip = import_flake(self.FIXTURES / "chip_v4.flake")
+
+        assert chip.spec.noise_model == RandomGaussian(0.01, 0.002, seed=7)
+        assert chip.spec.coupler_mode == "max"
+        assert chip.coupler((0, 0), (1, 1)).noise.p == 0.2
+        assert chip.tag.metadata == {"note": "a human-only annotation"}
+
+    def test_v4_chip_has_no_coupler_model(self):
+        """v4 predates the coupler generator; its couplers were derived or hand-set."""
+        chip = import_flake(self.FIXTURES / "chip_v4.flake")
+
+        assert chip.spec.coupler_model is None
+
+    def test_v5_correlated_contour_migrates_to_a_skew_contour_with_a_correlation(self):
+        """v5 recorded the coupler generator as "correlated contour" with the
+        correlation inside its params; v6 is `SkewContour` plus `coupler_correlation`."""
+        chip = import_flake(self.FIXTURES / "chip_v5.flake")
+
+        assert chip.spec.noise_model == SkewContour(0.01, 0.003, 1.5, seed=3)
+        assert chip.spec.coupler_model == SkewContour(0.05, 0.01, 1.0, seed=4)
+        assert chip.spec.coupler_correlation == 0.6
+        assert chip.has_independent_couplers
+
+    def test_v5_uniform_random_record_renames_range_to_bounds(self, chip):
+        chip.generate_uniform_noise(0.01)
+        data = to_dict(chip)
+        data["format_version"] = 5
+        data["spec"]["noise_model"] = {
+            "name": "uniform random",
+            "range": [0.01, 0.05],
+            "seed": 1,
+        }
+        del data["spec"]["coupler_correlation"]
+
+        restored = from_dict(data)
+
+        assert restored.spec.noise_model == RandomUniform((0.01, 0.05), seed=1)
+        assert restored.spec.coupler_correlation is None
+
+    def test_v6_golden_file_imports_with_its_distributions(self):
+        chip = import_flake(self.FIXTURES / "chip_v6.flake")
+
+        assert chip.spec.noise_model == SkewContour(0.01, 0.003, 1.5, seed=3)
+        assert chip.spec.coupler_model == SkewContour(0.05, 0.01, 1.0, seed=4)
+        assert chip.spec.coupler_correlation == 0.6
+        assert chip.tag.metadata == {"note": "a human-only annotation"}
+        assert chip.has_independent_couplers
+
+    def test_v6_derived_contour_record_renames_to_normal_contour(self):
+        """v7 matched the record to its class: `NormalContour` was stored as
+        "derived contour", which read as a coupler derivation mode."""
+        chip = import_flake(self.FIXTURES / "chip_v6.flake")
+        data = to_dict(chip)
+        data["format_version"] = 6
+        data["spec"]["noise_model"] = {
+            "name": "derived contour",
+            "mean": 0.01,
+            "deviation": 0.003,
+            "slope": 5,
+            "seed": 3,
+        }
+
+        restored = from_dict(data)
+
+        assert restored.spec.noise_model == NormalContour(0.01, 0.003, seed=3)
+
+    def test_v6_derived_contour_coupler_record_migrates_too(self):
+        """The rename lands on whichever record held it, sites or couplers."""
+        chip = import_flake(self.FIXTURES / "chip_v6.flake")
+        data = to_dict(chip)
+        data["format_version"] = 6
+        data["spec"]["coupler_model"] = {
+            "name": "derived contour",
+            "mean": 0.05,
+            "deviation": 0.01,
+            "slope": 5,
+            "seed": 4,
+        }
+
+        restored = from_dict(data)
+
+        assert restored.spec.coupler_model == NormalContour(0.05, 0.01, seed=4)
+
+    def test_v7_golden_file_imports_with_its_distributions(self):
+        chip = import_flake(self.FIXTURES / "chip_v7.flake")
+
+        assert chip.spec.noise_model == NormalContour(0.01, 0.003, seed=3)
+        assert chip.spec.coupler_model == SkewContour(0.05, 0.01, 1.0, seed=4)
+        assert chip.spec.coupler_correlation == 0.6
+        assert chip.has_independent_couplers
+
+    def test_v3_chip_lifts_its_record_out_of_metadata(self):
+        """Pre-v4 exports recorded the noise model and coupler mode in `tag.metadata`;
+        the migration moves both onto `chip.spec` and leaves metadata free text."""
+        chip = import_flake(self.FIXTURES / "chip_v3.flake")
+
+        assert chip.spec.noise_model == Uniform(0.01)
+        assert chip.spec.coupler_mode == "mean"
+        assert "noise_model" not in chip.tag.metadata
+        assert "coupler_model" not in chip.tag.metadata
+
+    def test_v3_golden_file_imports_with_its_couplers(self):
+        chip = import_flake(self.FIXTURES / "chip_v3.flake")
+
+        assert chip.coupler((0, 0), (1, 1)).noise.p == 0.2
+        assert chip.coupler((2, 2), (3, 3)).noise.p == 0.01
+
+    def test_v2_chip_predates_couplers_and_derives_them_on_import(self):
+        """Pre-v3 exports carry no coupler rates, so they are derived from the restored
+        qubit noise - which reproduces the endpoint mean those chips were built under."""
+        chip = import_flake(self.FIXTURES / "chip_square_v2.flake")
+
+        # a 6x6 dense lattice: 2 * 6 * 5 cardinal links
+        assert len(chip.couplers) == 60
+        assert all(
+            c.noise.p == pytest.approx(mean([chip.loc(e).noise.p for e in c.ends]))
+            for c in chip.couplers
+        )
+
+    def test_v1_chip_migrates_through_to_couplers(self):
+        chip = import_flake(self.FIXTURES / "chip_v1.flake")
+
+        assert len(chip.couplers) == 81

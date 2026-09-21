@@ -23,7 +23,6 @@ from typing import List, Tuple
 
 import gurobipy as gp
 from gurobipy import GRB
-
 from packing_data import Coord, footprint_span, valid_placements
 
 
@@ -90,7 +89,9 @@ def _report(tau, distance, span, V, pairs, lp_bound, model, chosen) -> None:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Tile packing MILP (pairwise formulation).")
+    ap = argparse.ArgumentParser(
+        description="Tile packing MILP (pairwise formulation)."
+    )
     ap.add_argument("tau", type=float, help="LER validity threshold")
     ap.add_argument("--distance", type=int, default=3, help="code distance (default 3)")
     ap.add_argument(

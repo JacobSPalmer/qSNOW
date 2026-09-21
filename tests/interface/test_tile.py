@@ -80,9 +80,7 @@ class TestNoiseInjectionOrdering:
     ):
         ruleset = Ruleset(
             injection_rules=[
-                InjectionRule(
-                    "R", "any", before=[ChannelRule("X_ERROR", "all_qubits")]
-                )
+                InjectionRule("R", "any", before=[ChannelRule("X_ERROR", "all_qubits")])
             ]
         )
         tile = placed(
@@ -167,6 +165,26 @@ class TestNoiseInjectionOrdering:
         tile = placed(one_qubit_circuit, chip, ruleset, noise={(0, 0): 0.02})
 
         assert names(tile.circuit) == ["QUBIT_COORDS", "H", "DEPOLARIZE1"]
+
+    def test_exclusive_rule_whose_trigger_fails_does_not_block_lower_rules(
+        self, one_qubit_circuit, chip: Chip
+    ):
+        # regression: exclusivity broke the scan on an operation-name match even
+        # when the trigger failed, so lower-priority rules never fired
+        ruleset = Ruleset(
+            injection_rules=[
+                InjectionRule(
+                    "H",
+                    "data",  # the bare tile's qubit is untyped, so this fails
+                    after=[ChannelRule("DEPOLARIZE1", "all_qubits")],
+                    exclusive=True,
+                ),
+                InjectionRule("H", "any", after=[ChannelRule("Z_ERROR", "all_qubits")]),
+            ]
+        )
+        tile = placed(one_qubit_circuit, chip, ruleset, noise={(0, 0): 0.02})
+
+        assert names(tile.circuit) == ["QUBIT_COORDS", "H", "Z_ERROR"]
 
     def test_multiple_channel_rules_in_one_before_list_all_appear(
         self, one_qubit_circuit, chip: Chip
@@ -255,9 +273,7 @@ class TestShiftRewritesCircuitAndMetadata:
         assert chip.loc((2, 2)).is_active() is True
         assert chip.loc((2, 2)).type == CSSType.DATA
 
-    def test_shift_by_c2i_matches_recomputed_map(
-        self, two_qubit_circuit, chip: Chip
-    ):
+    def test_shift_by_c2i_matches_recomputed_map(self, two_qubit_circuit, chip: Chip):
         # shift_by builds _c2i by translating the existing map instead of
         # re-walking the circuit; it must equal the fully re-derived map.
         tile = placed(two_qubit_circuit, chip)
@@ -292,6 +308,40 @@ class TestShiftRewritesCircuitAndMetadata:
         # add_tile already rejects it, so shift_to must too.
         with pytest.raises(ValueError):
             tile.shift_to((3, 3))
+
+    def test_region_queries_follow_the_tile_after_a_shift(self, chip: Chip):
+        # regression: the tile's spatial index was built over its pre-shift qubits
+        # and never invalidated, so a query after shifting raised KeyError
+        tile = SCTile(3)
+        assert chip.add_tile(tile, (0, 0))
+        before = set(tile.select_rect(0, 0, 20, 20))
+
+        tile.shift_by(2, 2)
+
+        after = set(tile.select_rect(0, 0, 20, 20))
+        assert after == {(x + 2, y + 2) for x, y in before}
+        assert all(c in tile.grid for c in after)
+
+    def test_popped_tile_can_be_placed_again_somewhere_else(self, chip: Chip):
+        # regression: reset() restored the base circuit but kept the origin of the
+        # last placement, so the next add_tile shifted the circuit by a stale offset
+        tile = SCTile(3)
+        assert chip.add_tile(tile, (2, 2))
+        chip.pop_tile(0)
+
+        assert tile.origin == tile.circuit_origin
+        assert chip.add_tile(tile, (0, 0))
+        assert tile.origin == (0, 0)
+        assert all(c in chip.grid for c in tile.grid)
+
+    def test_reset_tile_holds_no_chip_qubits(self, chip: Chip):
+        tile = SCTile(3)
+        chip.add_tile(tile, (0, 0))
+
+        chip.pop_tile(0)
+
+        assert tile.grid == {}
+        assert tile.select_rect(0, 0, 20, 20) == {}
 
     def test_shift_by_rejects_out_of_bounds_shift(self, two_qubit_circuit, chip: Chip):
         tile = placed(two_qubit_circuit, chip)
@@ -371,6 +421,47 @@ class TestResetAndConstruction:
             LogicalTile(two_qubit_circuit, x_buffer=x_buffer, y_buffer=y_buffer)
 
 
+class TestCopyCarriesTheSameState:
+    """`LogicalTile.copy` and `SCTile.copy` build their new tile from different
+    constructors, so what a copy preserves lives in one shared `_carried_state`."""
+
+    @pytest.fixture(params=["generic", "sctile"])
+    def tile(self, request, two_qubit_circuit):
+        if request.param == "sctile":
+            return SCTile(distance=3)
+        return LogicalTile(two_qubit_circuit)
+
+    def test_copy_carries_the_ruleset(self, tile):
+        tile.ruleset.add_rule(InjectionRule("H", "any", name="marker"))
+
+        assert "marker" in {r.name for r in tile.copy().ruleset.rules}
+
+    def test_copy_carries_the_tag(self, tile):
+        tile.tag.metadata["note"] = "carried"
+
+        assert tile.copy().tag.metadata["note"] == "carried"
+
+    def test_copied_ruleset_is_not_shared(self, tile):
+        copied = tile.copy()
+
+        copied.ruleset.add_rule(InjectionRule("H", "any", name="only_on_the_copy"))
+
+        assert "only_on_the_copy" not in {r.name for r in tile.ruleset.rules}
+
+    def test_copied_tag_is_not_shared(self, tile):
+        copied = tile.copy()
+
+        copied.tag.metadata["note"] = "only_on_the_copy"
+
+        assert "note" not in tile.tag.metadata
+
+    def test_copy_is_uninitialized(self, tile):
+        assert tile.copy().initialized() is False
+
+    def test_copy_keeps_the_subclass(self, tile):
+        assert type(tile.copy()) is type(tile)
+
+
 class TestInjectionMatchesFlattened:
     """Noise injection now walks the circuit *without* flattening it, recursing
     into ``REPEAT`` blocks (see ``_process_circuit``) to save compute on codes
@@ -427,3 +518,147 @@ class TestInjectionMatchesFlattened:
             decoder="pymatching",
             json_metadata={},
         ).strong_id()
+
+
+@pytest.fixture
+def coupled_pair_circuit() -> stim.Circuit:
+    """A CX across two checkerboard-adjacent sites, so the pair has a real coupler."""
+    return stim.Circuit("""
+        QUBIT_COORDS(0, 0) 0
+        QUBIT_COORDS(1, 1) 1
+        R 0 1
+        CX 0 1
+        M 0 1
+    """)
+
+
+class TestCouplerSourcedInjection:
+    def test_coupler_source_prices_the_gate_off_the_edge(
+        self, coupled_pair_circuit, chip: Chip
+    ):
+        ruleset = Ruleset(
+            injection_rules=[
+                InjectionRule(
+                    "CX",
+                    "any",
+                    after=[ChannelRule("DEPOLARIZE2", "active", source="coupler")],
+                )
+            ]
+        )
+        tile = placed(
+            coupled_pair_circuit, chip, ruleset, noise={(0, 0): 0.01, (1, 1): 0.03}
+        )
+        chip.coupler((0, 0), (1, 1)).noise.p = 0.2
+
+        out = list(tile.circuit)
+        cx_idx = names(tile.circuit).index("CX")
+
+        # 0.2 from the coupler, not 0.02 from the endpoint mean
+        assert out[cx_idx + 1].gate_args_copy() == [pytest.approx(0.2)]
+
+    def test_coupler_source_still_honours_the_scalar(
+        self, coupled_pair_circuit, chip: Chip
+    ):
+        ruleset = Ruleset(
+            injection_rules=[
+                InjectionRule(
+                    "CX",
+                    "any",
+                    after=[
+                        ChannelRule(
+                            "DEPOLARIZE2", "active", scalar=1.5, source="coupler"
+                        )
+                    ],
+                )
+            ]
+        )
+        tile = placed(coupled_pair_circuit, chip, ruleset)
+        chip.coupler((0, 0), (1, 1)).noise.p = 0.2
+
+        out = list(tile.circuit)
+        cx_idx = names(tile.circuit).index("CX")
+
+        assert out[cx_idx + 1].gate_args_copy() == [pytest.approx(0.3)]
+
+    def test_derived_couplers_reproduce_the_endpoint_mean(
+        self, coupled_pair_circuit, chip: Chip
+    ):
+        """The migration guarantee: with couplers left at their derived default, a rule
+        on the coupler source emits exactly what the endpoint mean used to."""
+        chip.generate_uniform_noise(0.01)
+        chip.loc((0, 0)).noise.p = 0.01
+        chip.loc((1, 1)).noise.p = 0.03
+        chip.derive_coupler_noise()
+
+        rule = lambda source: Ruleset(
+            injection_rules=[
+                InjectionRule(
+                    "CX",
+                    "any",
+                    after=[ChannelRule("DEPOLARIZE2", "active", source=source)],
+                )
+            ]
+        )
+        tile = placed(coupled_pair_circuit, chip, rule("coupler"))
+        coupler_out = list(tile.circuit)[names(tile.circuit).index("CX") + 1]
+        chip.pop_tile(0)
+
+        tile = placed(coupled_pair_circuit, chip, rule("qubit_mean"))
+        mean_out = list(tile.circuit)[names(tile.circuit).index("CX") + 1]
+
+        assert coupler_out.gate_args_copy() == mean_out.gate_args_copy()
+
+    def test_gate_across_an_uncoupled_pair_raises(self, four_qubit_circuit, chip: Chip):
+        """(0,0) and (2,0) are both sites but two apart, so nothing couples them."""
+        ruleset = Ruleset(
+            injection_rules=[
+                InjectionRule(
+                    "CX",
+                    "any",
+                    after=[ChannelRule("DEPOLARIZE2", "active", source="coupler")],
+                )
+            ]
+        )
+        tile = placed(four_qubit_circuit, chip, ruleset)
+
+        with pytest.raises(ValueError, match="No coupler joins"):
+            tile.circuit
+
+
+class TestSurfaceCodeCouplerNoise:
+    def test_every_sc_gate_pair_is_lattice_coupled(self, chip: Chip):
+        """The SI1000 CX rule reads the coupler, so a d=3 patch only builds at all if
+        every CX in stim's generated circuit spans a physically coupled pair."""
+        chip.generate_uniform_noise(0.01)
+        tile = SCTile(distance=3)
+        assert chip.add_tile(tile, (2, 2))
+
+        depolarize2 = [i for i in tile.circuit.flattened() if i.name == "DEPOLARIZE2"]
+
+        assert depolarize2
+        assert all(i.gate_args_copy() == [pytest.approx(0.01)] for i in depolarize2)
+
+    def test_a_defective_coupler_changes_only_its_own_gate(self, chip: Chip):
+        chip.generate_uniform_noise(0.01)
+        tile = SCTile(distance=3)
+        assert chip.add_tile(tile, (2, 2))
+
+        before = [
+            i.gate_args_copy()[0]
+            for i in tile.circuit.flattened()
+            if i.name == "DEPOLARIZE2"
+        ]
+        # pick an edge a CX in the patch actually spans (data<->ancilla, never data<->data)
+        i2c = tile._circuit.get_final_qubit_coordinates()
+        cx = next(i for i in tile._circuit.flattened() if i.name == "CX")
+        a, b = ((i2c[t.value][0], i2c[t.value][1]) for t in cx.target_groups()[0])
+        chip.coupler(a, b).noise.p = 0.2
+        after = [
+            i.gate_args_copy()[0]
+            for i in tile.circuit.flattened()
+            if i.name == "DEPOLARIZE2"
+        ]
+
+        assert 0.2 in after
+        assert sorted(set(before)) == [pytest.approx(0.01)]
+        assert sorted(set(after)) == [pytest.approx(0.01), pytest.approx(0.2)]

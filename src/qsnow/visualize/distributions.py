@@ -1,0 +1,261 @@
+"""Matplotlib figures of the marginal distributions a chip carries.
+
+`profiling.py` draws the *outcome* of a sweep, read back from flakes. This module draws
+the sweep's *input*: the physical error rates (PER) sitting on a live chip's sites and
+couplers. The interactive heatmaps show *where* those rates sit; the figures here show
+their shape, which is what the landscape generators (`generate_gaussian_noise`,
+`generate_skewed_contour_noise`, ...) are chosen for.
+
+Matplotlib for the same reason as `profiling.py`: these are publication figures.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Dict, Literal, Optional, Tuple
+
+import numpy as np
+
+from ._captions import chip_headline, chip_suptitle
+
+if TYPE_CHECKING:
+    from matplotlib.axes import Axes
+    from matplotlib.figure import Figure
+
+    from qsnow.interface.chip import Chip
+
+__all__ = ["per_histogram"]
+
+Panel = Literal["sites", "couplers"]
+Which = Literal["sites", "couplers", "both"]
+# What the stats box shows, mirroring the calibration histogram tool's `--stats` modes:
+# sample moments of the plotted rates (`"raw"`) or log-domain moments on a log axis
+# (`"log"`).
+StatsMode = Literal["raw", "log"]
+
+_PANEL_ORDER: Tuple[Panel, ...] = ("sites", "couplers")
+_STATS_MODES: Tuple[StatsMode, ...] = ("raw", "log")
+
+# Calibration-tool styling: a translucent fill under a solid outline in the same colour,
+# so a single series reads as one shape rather than as fill-plus-edge. The colour is the
+# first of the active prop cycle so it follows the user's matplotlib style.
+_FILL_ALPHA = 0.35
+_OUTLINE_WIDTH = 1.2
+_GRID_ALPHA = 0.3
+_STATS_FONTSIZE = 7.5
+
+# Wide enough for the `PED(...)` caption line on a single-panel figure.
+_MIN_FIG_WIDTH = 7.0
+
+
+def _panels_for(which: Which) -> Tuple[Panel, ...]:
+    if which == "both":
+        return _PANEL_ORDER
+    if which in _PANEL_ORDER:
+        return (which,)
+    raise ValueError(f"which must be 'sites', 'couplers' or 'both', given {which!r}.")
+
+
+def _rates_for(chip: Chip, panel: Panel) -> np.ndarray:
+    profiles = chip.noise_map if panel == "sites" else chip.coupler_map
+    return np.array([n.p for n in profiles.values()], dtype=float)
+
+
+def _panel_title(chip: Chip, panel: Panel, n: int) -> str:
+    """`sites (n=…)`, or `couplers (n=…, derived: <mode>)` while the couplers still
+    equal the endpoint combination they were derived from - otherwise the panel would
+    present the site data back as if it were a second measurement."""
+    title = f"{panel} (n={n}"
+    if panel == "couplers" and not chip.has_independent_couplers:
+        title += f", derived: {chip.spec.coupler_mode}"
+    return title + ")"
+
+
+def _log_ticks(ax: Axes) -> None:
+    """Log x-axis with labels on the decades only.
+
+    Matplotlib labels only the decades while the axis spans more than one, then switches
+    to labelling every minor tick in `2x10^-3` notation once it spans less, and those
+    labels collide. The decade labels (`10^-3`, `10^-2`) are kept on every span and the
+    minor ticks stay as unlabelled marks.
+    """
+    from matplotlib.ticker import LogFormatterSciNotation, LogLocator, NullFormatter
+
+    ax.set_xscale("log")
+    ax.xaxis.set_major_locator(LogLocator(base=10, numticks=12))
+    ax.xaxis.set_major_formatter(LogFormatterSciNotation(base=10, labelOnlyBase=True))
+    ax.xaxis.set_minor_locator(LogLocator(base=10, subs=np.arange(2, 10), numticks=12))
+    ax.xaxis.set_minor_formatter(NullFormatter())
+
+
+def _series_color() -> str:
+    import matplotlib.pyplot as plt
+
+    return plt.rcParams["axes.prop_cycle"].by_key()["color"][0]
+
+
+def _draw_histogram(ax: Axes, values: np.ndarray, edges, color: str) -> None:
+    ax.hist(values, bins=edges, histtype="stepfilled", alpha=_FILL_ALPHA, color=color)
+    ax.hist(values, bins=edges, histtype="step", color=color, linewidth=_OUTLINE_WIDTH)
+
+
+def _sample_skew(values: np.ndarray) -> float:
+    """Pearson III sample skew (`G1`, the `bias=False` estimator); `nan` when the values
+    are all equal (a uniform landscape), where scipy would warn and return `nan` anyway."""
+    from scipy.stats import skew
+
+    if values.size < 3 or np.ptp(values) == 0:
+        return float("nan")
+    return float(skew(values, bias=False))
+
+
+def _sample_stats(values: np.ndarray) -> Dict[str, float]:
+    """Raw moments: mean, median, sample sd and Pearson III sample skew."""
+    return {
+        "mean": float(values.mean()),
+        "med": float(np.median(values)),
+        "sd": float(values.std(ddof=1)),
+        "skew": _sample_skew(values),
+    }
+
+
+def _log_sample_stats(values: np.ndarray) -> Dict[str, float]:
+    """Location in rate units, spread and skew of `log10(rate)` (spread in decades)."""
+    lx = np.log10(values)
+    return {
+        "mean": float(values.mean()),
+        "med": float(np.median(values)),
+        "log sd": float(lx.std(ddof=1)),
+        "log skew": _sample_skew(lx),
+    }
+
+
+def _stats_text(values: np.ndarray, logx: bool, mode: StatsMode) -> str:
+    """One monospace line, `mean 0.0122  med 0.00748  log sd 0.301  log skew 1.3`."""
+    if mode not in _STATS_MODES:
+        raise ValueError(f"stats must be 'raw', 'log' or None, given {mode!r}.")
+    stats = (
+        _log_sample_stats(values) if mode == "log" and logx else _sample_stats(values)
+    )
+    return "  ".join(f"{name} {value:.3g}" for name, value in stats.items())
+
+
+def _draw_stats_box(
+    ax: Axes, values: np.ndarray, logx: bool, mode: Optional[StatsMode], color: str
+) -> None:
+    if mode is None:
+        return
+    ax.text(
+        0.98,
+        0.97,
+        _stats_text(values, logx, mode),
+        transform=ax.transAxes,
+        ha="right",
+        va="top",
+        fontsize=_STATS_FONTSIZE,
+        family="monospace",
+        color=color,
+        bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.7),
+    )
+
+
+def _bin_edges(values: np.ndarray, bins: int, logx: bool):
+    """Histogram bins: a count for a linear axis, geometric edges for a log axis.
+
+    Equal-width bins on a log axis render as bars that widen to the right, so a log
+    histogram is binned in equal ratios instead. Rates are strictly positive by
+    construction (`p_bounds`), so a zero here is a genuine error, not a case to skip.
+    """
+    if not logx:
+        return bins
+    lo, hi = float(values.min()), float(values.max())
+    if lo <= 0:
+        raise ValueError(
+            "A log x-axis needs strictly positive rates; found a value <= 0."
+        )
+    if lo == hi:
+        return bins
+    return np.geomspace(lo, hi, bins + 1)
+
+
+def per_histogram(
+    chip: Chip,
+    *,
+    which: Which = "both",
+    stats: Optional[StatsMode] = "log",
+    limits: Tuple[Optional[float], Optional[float]] = (None, None),
+    sharex: bool = True,
+    logx: bool = False,
+    figsize: Optional[Tuple[float, float]] = None,
+    title: bool = True,
+    add_title: str = "",
+    bins: int = 25,
+    dpi: Optional[int] = None,
+    show: bool = True,
+) -> Optional[Figure]:
+    """Histogram(s) of a chip's physical error rates, per site and/or per coupler.
+
+    `which` picks the panels: `"sites"`, `"couplers"`, or `"both"` side by side. With
+    `sharex` (default) the panels share one x-axis so the two marginals compare
+    directly; pass `sharex=False` when the coupler rates sit on a very different scale
+    and each panel should fill its own range. `stats` picks what the box at the top
+    right of each panel reports, following the calibration histogram tool's modes:
+    `"log"` (default) prints the mean and median of the rates with the sd and skew of
+    `log10(rate)` on a log axis, and the raw mean/median/sd/skew on a linear one;
+    `"raw"` prints the raw moments on either axis; `None` draws no box. On a generated
+    chip the `"log"` line reads back the `LogSkewContour` arguments. `limits` is an `(low, high)` x-range applied to every panel. `logx` puts the x-axis
+    on a log scale and bins the rates geometrically, which suits the right-skewed,
+    order-of-magnitude spreads of measured devices.
+
+    A coupler panel is labelled `derived: <mode>` while the coupler rates are still the
+    endpoint combination `derive_coupler_noise` produced, since they then carry no
+    information the site panel does not.
+
+    `figsize` sets the overall figure size in inches, `(width, height)`, in place of the
+    computed default. `title` draws the chip caption over the panels; pass
+    `title=False` for a figure going into a paper, where the caption is set in the
+    surrounding text. `add_title` appends a note to it (ignored when `title=False`).
+
+    Shows the figure. Pass `show=False` to get the `Figure` back instead, to `savefig`
+    it or tweak it further.
+    """
+    import matplotlib.pyplot as plt
+
+    panels = _panels_for(which)
+    color = _series_color()
+
+    # One panel is narrower than the caption line, so it gets a floor width.
+    fig, axes = plt.subplots(
+        1,
+        len(panels),
+        figsize=figsize or (max(6 * len(panels), _MIN_FIG_WIDTH), 5),
+        dpi=dpi,
+        sharex=sharex,
+        squeeze=False,
+    )
+    for ax, panel in zip(axes.flatten(), panels):
+        values = _rates_for(chip, panel)
+        _draw_histogram(ax, values, _bin_edges(values, bins, logx), color)
+        if logx:
+            _log_ticks(ax)
+        _draw_stats_box(ax, values, logx, stats, color)
+        ax.set_ylabel("freq")
+        ax.set_xlabel("PER")
+        ax.grid(True, alpha=_GRID_ALPHA)
+        ax.set_title(_panel_title(chip, panel, values.size))
+        if limits != (None, None):
+            # set only on request: `set_xlim` switches autoscaling off, and on a shared
+            # axis that would freeze the range at the first panel's data
+            ax.set_xlim(limits[0], limits[1])
+
+    if title:
+        fig.suptitle(
+            chip_suptitle(chip_headline(chip, "PER by count"), chip, None, add_title)
+        )
+
+    fig.tight_layout()
+    if show:
+        plt.show()
+        # returning the figure too would draw it a second time: the notebook renders
+        # a returned Figure on top of what plt.show() already drew
+        return None
+    return fig

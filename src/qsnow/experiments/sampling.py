@@ -4,15 +4,16 @@ Sampling a large batch of circuits well takes more than one ``sinter.collect``
 call. This module owns that policy so experiments only have to supply tasks rather
 than worry about the nuances of optimizing the sampling process.
 """
+
 from __future__ import annotations
 
 import json
 import logging
 import os
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from time import perf_counter
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import sinter
 
@@ -67,7 +68,7 @@ class _TaskProgress:
         self._shots: Dict[str, int] = {}
         self._credited: Dict[str, float] = {}
 
-    def on_progress(self, update: "sinter.Progress") -> None:
+    def on_progress(self, update: sinter.Progress) -> None:
         """`progress_callback` for `sinter.collect`; new_stats are shot deltas."""
         for stat in update.new_stats:
             key = _metadata_key(stat.json_metadata)
@@ -257,7 +258,9 @@ class ErrorFloorSampler:
             return {}
 
         stats_by_key: Dict[str, sinter.TaskStats] = {}
-        with self._phase(progress, description, total=len(tasks), show_eta=show_eta) as phase:
+        with self._phase(
+            progress, description, total=len(tasks), show_eta=show_eta
+        ) as phase:
             tracker = _TaskProgress(phase, max_shots)
             for batch in _chunked(tasks, self.batch_size):
                 batch_stats = self.collect_fn(
@@ -268,7 +271,9 @@ class ErrorFloorSampler:
                     max_errors=max_errors,
                     # streams partial results so the bar moves *within* a batch,
                     # which may otherwise run for hours
-                    progress_callback=tracker.on_progress if phase is not None else None,
+                    progress_callback=tracker.on_progress
+                    if phase is not None
+                    else None,
                 )
                 for stat in batch_stats:
                     key = _metadata_key(stat.json_metadata)

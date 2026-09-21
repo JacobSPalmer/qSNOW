@@ -4,22 +4,23 @@ import pytest
 
 matplotlib.use("Agg")  # never open a window from the test suite
 
+import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib.figure import Figure  # noqa: E402
+from matplotlib.legend import Legend  # noqa: E402
+from PIL import Image  # noqa: E402
+
 from qsnow.experiments.squarepacking.game import SquarePackingExp  # noqa: E402
 from qsnow.helpers import serialize  # noqa: E402
 from qsnow.interface.chip import Chip  # noqa: E402
 from qsnow.interface.codes.rsc import SCTile  # noqa: E402
-import matplotlib.pyplot as plt  # noqa: E402
-from PIL import Image  # noqa: E402
-
-from matplotlib.figure import Figure  # noqa: E402
-from matplotlib.legend import Legend  # noqa: E402
-
+from qsnow.interface.noise import NormalContour, Uniform
 from qsnow.visualize import profiling  # noqa: E402
 from qsnow.visualize.profiling import (  # noqa: E402
     ProfileRun,
     _ecdf,
     ler_cdf,
     ler_histogram,
+    ler_table,
     load_profile_runs,
 )
 
@@ -74,15 +75,15 @@ def named_roots(tmp_path):
     """Two roots whose chips record a noise-model name, for label derivation."""
     roots = {}
     for key, model in [
-        ("primary", "derived contour"),
-        ("baseline", "uniform homogeneous"),
+        ("primary", NormalContour(0.01, 0.003, seed=1)),
+        ("baseline", Uniform(0.01)),
     ]:
         root = tmp_path / key
         serialize.set_data_dir(root)
         try:
             for d in DISTANCES:
                 exp = SquarePackingExp(chip=Chip(10, 10), tile=SCTile(d))
-                exp.chip.tag.metadata["noise_model"] = {"name": model}
+                exp.chip.spec.noise_model = model
                 exp.config["shots"] = 1_000
                 exp.results = {
                     loc: {"shots": 1_000, "errors": 2, "ler": 0.002}
@@ -188,6 +189,39 @@ class TestProfileRun:
         assert np.array_equal(run.values("ler"), run.lers)
         assert np.array_equal(run.values("errors"), run.error_counts)
 
+    def test_ler_intervals_bracket_the_point_estimates(self, data_root):
+        run = load_profile_runs([3], data_root)[3]
+
+        low, high = run.ler_intervals()
+
+        assert low.shape == high.shape == run.lers.shape
+        assert np.all(low < run.lers)
+        assert np.all(run.lers < high)
+
+    def test_ler_intervals_narrow_with_more_confidence_given_up(self, data_root):
+        run = load_profile_runs([3], data_root)[3]
+
+        low95, high95 = run.ler_intervals()
+        low68, high68 = run.ler_intervals(confidence=0.68)
+
+        assert np.all(low68 > low95)
+        assert np.all(high68 < high95)
+
+    def test_ler_intervals_of_a_zero_error_placement(self, tmp_path):
+        serialize.set_data_dir(tmp_path / "zeros")
+        try:
+            _save_sweep(3, [0.0, 0.002], shots=1_000)
+            run = load_profile_runs([3], tmp_path / "zeros")[3]
+        finally:
+            serialize.set_data_dir()
+
+        low, high = run.ler_intervals()
+        zero = np.flatnonzero(run.error_counts == 0)[0]
+
+        assert low[zero] == 0.0
+        # the rule of three: 0 events in N shots bounds the rate at ~3/N (95%)
+        assert high[zero] == pytest.approx(3 / 1_000, rel=0.3)
+
     def test_stats_spread(self, data_root):
         s = load_profile_runs([3], data_root)[3].stats()
 
@@ -270,7 +304,9 @@ class TestProfileRun:
 
         assert called == ["chip"]
 
-    def test_export_passes_the_results_alongside_the_experiment(self, data_root, tmp_path):
+    def test_export_passes_the_results_alongside_the_experiment(
+        self, data_root, tmp_path
+    ):
         run = load_profile_runs([3], data_root)[3]
         out = tmp_path / "exp.html"
 
@@ -319,6 +355,18 @@ def _labels_of(legend):
     return [t.get_text() for t in legend.get_texts()]
 
 
+def _cdf_legends(fig):
+    """`(distance legend, profiled/baseline key)` from the CDF panel, after a draw.
+
+    Placement is only resolved at draw time - `loc="best"` especially - so nothing can
+    be measured until the figure has been rendered once.
+    """
+    fig.canvas.draw()
+    ax = fig.axes[0]
+    by_kind = {_labels_of(lg)[0].startswith("d="): lg for lg in _legends(ax)}
+    return by_kind[True], by_kind[False]
+
+
 def _box_extent(patch):
     """`(centre, height)` of one boxplot patch, from its path vertices."""
     ys = patch.get_path().vertices[:, 1]
@@ -349,6 +397,102 @@ class TestLerCdf:
         assert lines[0].get_color() == lines[1].get_color()
         assert lines[1].get_alpha() == pytest.approx(profiling._BASELINE_STEP_ALPHA)
 
+    def test_band_adds_one_fill_per_distance(self, data_root):
+        fills = _cdf(data_root).axes[0].collections
+
+        assert len(fills) == len(DISTANCES)
+        assert all(f.get_alpha() == pytest.approx(profiling._BAND_ALPHA) for f in fills)
+
+    def test_linewidth_is_applied_to_every_step(self, data_root):
+        lines = _cdf(data_root, baseline_dir=data_root, linewidth=2.5).axes[0].lines
+
+        assert all(line.get_linewidth() == pytest.approx(2.5) for line in lines)
+
+    def test_box_scale_stretches_only_the_box_panel(self, data_root):
+        base = _cdf(data_root, baseline_dir=data_root)
+        big = _cdf(data_root, baseline_dir=data_root, box_scale=1.5)
+
+        def heights(fig):
+            return fig.axes[1].get_subplotspec().get_gridspec().get_height_ratios()
+
+        (cdf0, box0), (cdf1, box1) = heights(base), heights(big)
+        assert cdf1 == cdf0
+        assert box1 == pytest.approx(1.5 * box0)
+        # the height grows by exactly the extra panel height, so the CDF is not squeezed
+        w0, h0 = base.get_size_inches()
+        w1, h1 = big.get_size_inches()
+        assert h1 - h0 == pytest.approx(0.5 * box0)
+        # and the width grows by the same factor, so the aspect ratio is preserved
+        assert w1 / w0 == pytest.approx(h1 / h0)
+
+    def test_box_scale_leaves_the_boxes_in_data_units_alone(self, data_root):
+        base = _cdf(data_root, baseline_dir=data_root).axes[1]
+        big = _cdf(data_root, baseline_dir=data_root, box_scale=1.5).axes[1]
+
+        for b1, b2 in zip(base.patches, big.patches):
+            assert _box_extent(b2) == pytest.approx(_box_extent(b1))
+
+    def test_figsize_overrides_the_default_in_both_layouts(self, data_root):
+        for kwargs in ({}, {"whisker": False}):
+            fig = _cdf(data_root, figsize=(7, 5), **kwargs)
+
+            assert tuple(fig.get_size_inches()) == pytest.approx((7, 5))
+
+    def test_figsize_keeps_the_box_scale_split(self, data_root):
+        fig = _cdf(data_root, figsize=(7, 5), box_scale=2.0)
+        cdf_h, box_h = fig.axes[1].get_subplotspec().get_gridspec().get_height_ratios()
+
+        assert box_h / cdf_h == pytest.approx(2.0 * 3.0 / 9.0)
+
+    def test_box_scale_must_be_positive(self, data_root):
+        with pytest.raises(ValueError, match="box_scale"):
+            _cdf(data_root, box_scale=0)
+
+    def test_box_linewidth_is_applied_to_every_box_artist(self, data_root):
+        ax = _cdf(data_root, baseline_dir=data_root, box_linewidth=2.0).axes[1]
+
+        assert all(p.get_linewidth() == pytest.approx(2.0) for p in ax.patches)
+        # whiskers, caps and medians are the panel's Line2Ds (fliers are markers only)
+        assert all(
+            line.get_linewidth() == pytest.approx(2.0)
+            for line in ax.lines
+            if line.get_linestyle() != "None"
+        )
+
+    def test_band_alpha_is_applied(self, data_root):
+        fills = _cdf(data_root, band_alpha=0.4).axes[0].collections
+
+        assert all(f.get_alpha() == pytest.approx(0.4) for f in fills)
+
+    def test_band_can_be_turned_off(self, data_root):
+        assert len(_cdf(data_root, band=False).axes[0].collections) == 0
+
+    def test_baseline_adds_no_band(self, data_root):
+        fills = _cdf(data_root, baseline_dir=data_root).axes[0].collections
+
+        assert len(fills) == len(DISTANCES)
+
+    def test_band_matches_its_distance_color(self, data_root):
+        from matplotlib.colors import to_rgb
+
+        ax = _cdf(data_root).axes[0]
+
+        for line, fill in zip(ax.lines, ax.collections):
+            assert tuple(fill.get_facecolor()[0][:3]) == pytest.approx(
+                to_rgb(line.get_color())
+            )
+
+    def test_band_spans_the_interval_bounds(self, data_root):
+        run = load_profile_runs([3], data_root)[3]
+        low, high = run.ler_intervals()
+
+        fill = _cdf(data_root).axes[0].collections[0]
+        xs = np.concatenate([p.vertices[:, 0] for p in fill.get_paths()])
+        xs = xs[np.isfinite(xs)]
+
+        assert xs.min() == pytest.approx(low.min())
+        assert xs.max() == pytest.approx(high.max())
+
     def test_axes_are_log_scaled_and_bounded(self, data_root):
         ax = _cdf(data_root).axes[0]
 
@@ -362,6 +506,15 @@ class TestLerCdf:
         title = _cdf(data_root, add_title="NRS(type=SI1000)").axes[0].get_title()
 
         assert title.endswith("NRS(type=SI1000)")
+
+    def test_title_false_draws_no_caption(self, data_root):
+        """The print path: the caption is set in the paper's text instead."""
+        assert _cdf(data_root, title=False).axes[0].get_title() == ""
+
+    def test_add_title_is_ignored_when_the_title_is_off(self, data_root):
+        fig = _cdf(data_root, title=False, add_title="NRS(type=SI1000)")
+
+        assert fig.axes[0].get_title() == ""
 
     def test_dpi_is_applied(self, data_root):
         assert _cdf(data_root, dpi=200).dpi == 200
@@ -495,17 +648,27 @@ class TestBaselineLegend:
     def test_labels_come_from_the_chip_noise_model(self, named_roots):
         primary_root, baseline_root = named_roots
         ax_box = ler_cdf(
-            DISTANCES, primary_root, baseline_dir=baseline_root,
-            verbose=False, show=False,
+            DISTANCES,
+            primary_root,
+            baseline_dir=baseline_root,
+            verbose=False,
+            show=False,
         ).axes[1]
 
-        assert _labels_of(_legends(ax_box)[0]) == ["derived contour", "uniform homogeneous"]
+        assert _labels_of(_legends(ax_box)[0]) == [
+            "normal contour",
+            "uniform homogeneous",
+        ]
 
     def test_explicit_labels_override_the_noise_model(self, named_roots):
         primary_root, baseline_root = named_roots
         ax_box = ler_cdf(
-            DISTANCES, primary_root, baseline_dir=baseline_root,
-            labels=("contoured", "flat"), verbose=False, show=False,
+            DISTANCES,
+            primary_root,
+            baseline_dir=baseline_root,
+            labels=("contoured", "flat"),
+            verbose=False,
+            show=False,
         ).axes[1]
 
         assert _labels_of(_legends(ax_box)[0]) == ["contoured", "flat"]
@@ -521,6 +684,96 @@ class TestBaselineLegend:
 
         assert len(fig.axes) == 1
         assert len(_legends(fig.axes[0])) == 2
+
+    def test_cdf_legends_do_not_overlap(self, data_root):
+        # "best" cannot see another legend, so the distance legend used to land on top
+        # of the key in the lower-right corner the CDF steps leave free
+        fig = _cdf(data_root, baseline_dir=data_root)
+        distances, key = _cdf_legends(fig)
+
+        assert not distances.get_window_extent().overlaps(key.get_window_extent())
+
+    def test_stacked_key_stays_inside_the_axes(self, data_root):
+        fig = _cdf(data_root, baseline_dir=data_root)
+        ax = fig.axes[0]
+        _, key = _cdf_legends(fig)
+
+        panel, box = ax.get_window_extent(), key.get_window_extent()
+        assert panel.contains(*box.p0) and panel.contains(*box.p1)
+
+    def test_key_stacks_beneath_the_distance_legend(self, data_root):
+        # the corner the key used to be pinned to, forced: the distance legend is on the
+        # axes floor, so making room underneath means lifting it rather than flipping
+        fig = _cdf(data_root, baseline_dir=data_root, legend_loc="lower right")
+        ax = fig.axes[0]
+        distances, key = _cdf_legends(fig)
+        d_box, k_box = (
+            profiling._axes_frac(ax, distances),
+            profiling._axes_frac(ax, key),
+        )
+
+        assert d_box.x1 > 0.5 and d_box.y0 < 0.5
+        assert k_box.x1 == pytest.approx(d_box.x1, abs=0.01)  # share the right edge
+        assert k_box.y1 < d_box.y0  # key underneath
+        assert not distances.get_window_extent().overlaps(key.get_window_extent())
+
+    def test_key_stays_beneath_a_high_distance_legend(self, data_root):
+        # the other branch: room below, so the key drops and nothing is lifted
+        fig = _cdf(data_root, baseline_dir=data_root, legend_loc="upper right")
+        ax = fig.axes[0]
+        distances, key = _cdf_legends(fig)
+        d_box, k_box = (
+            profiling._axes_frac(ax, distances),
+            profiling._axes_frac(ax, key),
+        )
+
+        assert d_box.y1 == pytest.approx(1.0, abs=0.05)  # never moved
+        assert k_box.y1 < d_box.y0
+
+    def test_key_loc_decouples_the_two_legends(self, data_root):
+        fig = _cdf(
+            data_root,
+            baseline_dir=data_root,
+            legend_loc="upper left",
+            key_loc="lower right",
+        )
+        ax = fig.axes[0]
+        distances, key = _cdf_legends(fig)
+        d_box, k_box = (
+            profiling._axes_frac(ax, distances),
+            profiling._axes_frac(ax, key),
+        )
+
+        assert d_box.x0 < 0.5 and d_box.y1 > 0.5  # upper left
+        assert k_box.x1 > 0.5 and k_box.y0 < 0.5  # lower right, not stacked
+
+    def test_legend_placement_survives_a_redraw(self, data_root):
+        # the auto-placed legend is frozen once the key hangs off it; left live, "best"
+        # would re-resolve on the next draw and slide out from under the key
+        fig = _cdf(data_root, baseline_dir=data_root)
+        before = [lg.get_window_extent().bounds for lg in _cdf_legends(fig)]
+
+        fig.canvas.draw()
+
+        after = [lg.get_window_extent().bounds for lg in _cdf_legends(fig)]
+        assert after == pytest.approx(before)
+
+    def test_save_writes_the_figure(self, data_root, tmp_path):
+        out = tmp_path / "figs" / "cdf.png"  # parent does not exist yet
+
+        fig = _cdf(data_root, save=out)
+
+        assert out.is_file()
+        assert Image.open(out).size[0] > 0
+        assert isinstance(fig, Figure)  # show=False still hands the figure back
+
+    def test_save_uses_the_figure_dpi(self, data_root, tmp_path):
+        out = tmp_path / "cdf.png"
+
+        fig = _cdf(data_root, dpi=150, save=out)
+
+        width, _ = Image.open(out).size
+        assert width == pytest.approx(150 * fig.get_size_inches()[0], abs=2)
 
     def test_dpi_survives_to_savefig(self, data_root, tmp_path):
         fig = _cdf(data_root, dpi=200)
@@ -545,6 +798,13 @@ class TestBaselineLegend:
 
 
 class TestLerHistogram:
+    def test_save_writes_the_figure(self, data_root, tmp_path):
+        out = tmp_path / "histo.png"
+
+        _histo(data_root, save=out)
+
+        assert out.is_file()
+
     def test_one_axes_per_distance(self, data_root):
         assert len(_histo(data_root).axes) == len(DISTANCES)
 
@@ -554,7 +814,9 @@ class TestLerHistogram:
 
     def test_scope_switches_the_x_label(self, data_root):
         assert _histo(data_root).axes[0].get_xlabel() == "ler"
-        assert _histo(data_root, scope="errors").axes[0].get_xlabel() == "# logical errors"
+        assert (
+            _histo(data_root, scope="errors").axes[0].get_xlabel() == "# logical errors"
+        )
 
     def test_subplot_titles_report_count_and_zeros(self, data_root):
         assert _histo(data_root).axes[0].get_title() == "d3 (n=4, len(0)=0)"
@@ -566,6 +828,15 @@ class TestLerHistogram:
 
     def test_dpi_is_applied(self, data_root):
         assert _histo(data_root, dpi=300).dpi == 300
+
+    def test_suptitle_reports_the_chip(self, data_root):
+        assert "10x10 chip" in _histo(data_root)._suptitle.get_text()
+
+    def test_title_false_draws_no_suptitle(self, data_root):
+        """Matches `ler_cdf(title=False)`: the two figures suppress captions alike."""
+        fig = _histo(data_root, title=False)
+
+        assert fig._suptitle is None or fig._suptitle.get_text() == ""
 
 
 class TestShow:
@@ -593,3 +864,59 @@ class TestShow:
 
         assert shown == []
         assert isinstance(fig, Figure)
+
+
+class TestLerTable:
+    def _rows(self, root, baseline, **kw):
+        return ler_table(DISTANCES, root, baseline_dir=baseline, verbose=False, **kw)
+
+    def test_a_sweep_against_itself_reads_as_no_difference(self, data_root):
+        rows = self._rows(data_root, data_root)
+        for r in rows:
+            if r["distance"] == "all":
+                assert r["min ratio"] == r["max ratio"] == pytest.approx(1.0)
+            elif r["stat"] == "yield":
+                assert r["ratio"] == pytest.approx(0.0)
+            else:
+                assert r["ratio"] == pytest.approx(1.0)
+
+    def test_spread_out_profiled_against_a_constant_baseline(self, tmp_path):
+        """The uniform case: one LER for every placement on the baseline, so its spreads
+        are 1 while the profiled chip's exceed 1, with a better best and a worse worst."""
+        roots = {}
+        for key, lers in [
+            ("profiled", [0.001, 0.002, 0.004, 0.008]),
+            ("baseline", [0.003] * 4),
+        ]:
+            serialize.set_data_dir(tmp_path / key)
+            try:
+                for d in DISTANCES:
+                    _save_sweep(d, lers)
+            finally:
+                serialize.set_data_dir()
+            roots[key] = tmp_path / key
+        rows = {
+            (r["distance"], r["stat"]): r
+            for r in self._rows(roots["profiled"], roots["baseline"])
+        }
+        for d in DISTANCES:
+            assert rows[(d, "spread worst/best")]["baseline"] == pytest.approx(1.0)
+            assert rows[(d, "spread worst/best")]["profiled"] == pytest.approx(8.0)
+            assert rows[(d, "worst")]["ratio"] > 1 > rows[(d, "best")]["ratio"]
+        assert rows[("all", "worst")]["max ratio"] == pytest.approx(8 / 3)
+
+    def test_one_row_per_stat_per_distance_plus_summary_and_named_columns(
+        self, named_roots, capsys
+    ):
+        primary, baseline = named_roots
+        rows = ler_table(
+            DISTANCES, primary, baseline_dir=baseline, verbose=False, explain=True
+        )
+        per_distance = [r for r in rows if r["distance"] != "all"]
+        assert len(per_distance) == len(DISTANCES) * len(profiling._STAT_MEANINGS)
+        assert {r["stat"] for r in rows if r["distance"] == "all"} == set(
+            profiling._SUMMARISED
+        )
+        assert {"normal contour", "uniform homogeneous"} <= set(per_distance[0])
+        out = capsys.readouterr().out
+        assert all(stat in out for stat in profiling._STAT_MEANINGS)

@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import logging
 from copy import deepcopy
-from statistics import mean
 from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
-from stim import Circuit, CircuitRepeatBlock, CircuitInstruction
+from stim import Circuit, CircuitRepeatBlock
 
 from .grid import Grid
 from .lattice import CHECKERBOARD, Lattice
@@ -66,9 +65,7 @@ class LogicalTile(Grid):
             )
 
         if lattice == "auto":
-            lattice = Lattice.infer(
-                base_circuit.get_final_qubit_coordinates().values()
-            )
+            lattice = Lattice.infer(base_circuit.get_final_qubit_coordinates().values())
         # buffers are kept so copy()/serialization can rebuild an identical tile
         self._x_buffer, self._y_buffer = x_buffer, y_buffer
 
@@ -158,13 +155,18 @@ class LogicalTile(Grid):
         """
         return self._base_circuit
 
+    @staticmethod
+    def _origin_of(circuit: Circuit) -> Coord:
+        """The upper-leftmost qubit coordinate a circuit is expressed in."""
+        coords = list(circuit.get_final_qubit_coordinates().values())
+        return tuple(min(coord) for coord in zip(*coords))[:2]
+
     @property
     def circuit_origin(self) -> Coord:
         """
         The origin (upper leftmost) coordinate of the qubit coordiantes ~within~ the circuit.
         """
-        coords = list(self._circuit.get_final_qubit_coordinates().values())
-        return tuple(min(coord) for coord in zip(*coords))[:2]
+        return self._origin_of(self._circuit)
 
     @property
     def circuit_bound(self) -> Coord:
@@ -201,6 +203,10 @@ class LogicalTile(Grid):
     @property
     def ruleset(self) -> Ruleset:
         return self._ruleset
+
+    @ruleset.setter
+    def ruleset(self, rs: Ruleset):
+        self._ruleset = rs
 
     def summary(self) -> Dict[str, object]:
         return {
@@ -259,9 +265,12 @@ class LogicalTile(Grid):
         if new_circuit:
             self._circuit = new_circuit
             self._c2i = new_c2i if new_c2i is not None else self._extract_c2i_map()
-        # 2. If qubits changed, shift qubit references and update statuses
-        if new_qubits:
+        # 2. If qubits changed, swap the references and drop the spatial index built
+        # over the old ones; `select` would otherwise look up coordinates this tile no
+        # longer holds. `is not None` so an empty map (a reset tile) is a real update.
+        if new_qubits is not None:
             self._qubits = new_qubits
+            self._invalidate_index()
         # 3. Update the new origin
         if new_origin:
             self.origin = new_origin
@@ -314,7 +323,7 @@ class LogicalTile(Grid):
                             arg=list(shift_function(*instr.gate_args_copy())),  # type: ignore
                         )
                     )
-                case 'REPEAT':
+                case "REPEAT":
                     # TODO - probably handle this recursively (since it could be the case that a repeat in a repeat)
                     circ_arr.append(f"REPEAT {instr.repeat_count} {{")
                     circ_arr.extend([str(i) for i in instr.body_copy()])
@@ -339,25 +348,33 @@ class LogicalTile(Grid):
         self._init_tile_qubit_status()
         self._init_tile_qubit_types()
 
+    def _carried_state(self) -> Dict[str, object]:
+        return {"ruleset": deepcopy(self._ruleset), "tag": deepcopy(self.tag)}
+
     def copy(self) -> LogicalTile:
-        """Return a fresh uninitialized copy of the circuit."""
-        # deepcopy so the copy never shares mutable tag/spec state (dicts included)
+        """Return a fresh uninitialized copy: same circuit, ruleset, and annotations."""
         return LogicalTile(
             self.base_circuit,
             x_buffer=self._x_buffer,
             y_buffer=self._y_buffer,
-            tag=deepcopy(self.tag),
             spec=deepcopy(self.spec),
             lattice=self.lattice,
+            **self._carried_state(),
         )
 
     def reset(self) -> None:
         """Resets the tile back to uninitialized state, removing it from any active chip and housekeeping qubit statuses."""
-        self._circuit = self._base_circuit.copy()
         self._scrub_qubits()
+        # A reset tile holds no chip qubits, so the next placement starts clean rather
+        # than transferring statuses from sites on a chip it no longer belongs to.
         # TODO - remove _c2i as a property and just use extract_c2i_map when necessary. It could technically save time to not have to remake the map everytime but
         #       it's hardly being used as is except just to keep track of updating it when necessary so lil bit of a headache for no purpose as is
-        self._c2i = self._extract_c2i_map()
+        # The origin follows the circuit back too: `origin == circuit_origin` is the
+        # invariant every shift preserves, and a re-placement computes its shift from
+        # `origin`, so leaving it at the last placement would move the base circuit
+        # by a stale offset.
+        base = self._base_circuit.copy()
+        self._update(new_circuit=base, new_qubits={}, new_origin=self._origin_of(base))
         self._chip = None
 
     # ------------------------------------------------------------------
@@ -373,25 +390,17 @@ class LogicalTile(Grid):
         )
         new_origin, new_bound = new_footprint
 
-        # VALIDATION (differs slightly from parent chips internal _validate to exclude the consideration of qubits owned by the current tile in the empty subregion query)
-        if not self.chip._validate_lattice_origin(new_origin):
-            raise ValueError(
-                f"Invalid shift that lands off the chip's '{self.chip.lattice.name}' "
-                f"lattice: {self.chip.lattice.site_rule}, given x = {x}, y = {y}"
-            )
-
-        if not self.chip._validate_chip_bounds(new_footprint):
-            raise ValueError("Invalid shift that violates chip boundaries. ")
-
-        if not self.chip.is_empty_region_subset(
-            new_origin, new_bound, self.origin, self.bound
-        ):
+        # The chip's placement rules, discounting the region this tile already holds so
+        # it is not rejected for overlapping itself. A shift of a placed tile is always
+        # a programming error when rejected, so every rejection raises.
+        rejection = self.chip.placement_rejection(
+            self, new_origin, ignoring=(self.origin, self.bound)
+        )
+        if rejection is not None:
             logger.debug(
                 f"Current (O:{self.origin}, B:{self.bound}) ->  New (O:{new_origin}, B:{new_bound})"
             )
-            raise ValueError(
-                "Invalid shift operation that violates tile overlap constraints. This shift results in the tile overlapping an existing tile on chip."
-            )
+            raise ValueError(f"Invalid shift by ({x}, {y}). {rejection.reason}")
 
         new_qubits = self.chip.select_rect(
             self.origin[0] + x, self.origin[1] + y, self.bound[0] + x, self.bound[1] + y
@@ -436,13 +445,45 @@ class LogicalTile(Grid):
         return Circuit("\n".join(circ_arr))
 
     # TODO - the non-flattening of the circuit offers speedups but limits the power of the rulesets in determining rule exclusivity, which will need to be revisted
-    def _process_circuit(self, circuit, i2q, debug_tags = False) -> List[str]:
+    def _emit_channels(
+        self, channels, operation_targs, i2q, rule, debug_tags
+    ) -> List[str]:
+        """
+        The noise instructions for one side of an operation.
+
+        One instruction per group the channel's filter selects, priced by the ruleset -
+        which is what lets a channel read its rate from a `Coupler` rather than from the
+        qubits it lands on.
+        """
+        emitted: List[str] = []
+        for c in channels:
+            # debug tags spell out what fired; otherwise the rule's own name, which is
+            # None for an unnamed rule and so leaves the instruction untagged
+            tag = (
+                f"{rule.operation}:{rule.trigger} -> {c.channel}:{c.filter}"
+                if debug_tags
+                else rule.name
+            )
+            channel_targs = self._ruleset.apply_filter(c.filter, operation_targs, i2q)
+            for l in channel_targs:
+                emitted.append(
+                    self._format_instruction_to_str(
+                        name=c.channel,
+                        targets=l,
+                        arg=[self._ruleset.rate_for(c, l, i2q, self.chip.find_coupler)],
+                        tag=tag,
+                    )
+                )
+        return emitted
+
+    def _process_circuit(self, circuit, i2q, debug_tags=False) -> List[str]:
         circ_arr: List[str] = []
-        i2q = self._extract_i2q_map()
         for instr in self._yield_circuit_instructions(circuit, flatten=False):
             if isinstance(instr, CircuitRepeatBlock):
                 circ_arr.append(f"REPEAT {instr.repeat_count} {{")
-                circ_arr.extend(self._process_circuit(instr.body_copy(), i2q, debug_tags))
+                circ_arr.extend(
+                    self._process_circuit(instr.body_copy(), i2q, debug_tags)
+                )
                 circ_arr.append("}")
             else:
                 before = []
@@ -452,50 +493,24 @@ class LogicalTile(Grid):
                         operation_targs = [
                             [t.value for t in a] for a in instr.target_groups()
                         ]  # type: ignore
-                        if self._ruleset.check_trigger(rule.trigger, operation_targs, i2q):
-                            for c in rule.before:
-                                channel_targs = self._ruleset.apply_filter(
-                                    c.filter, operation_targs, i2q
+                        if self._ruleset.check_trigger(
+                            rule.trigger, operation_targs, i2q
+                        ):
+                            before.extend(
+                                self._emit_channels(
+                                    rule.before, operation_targs, i2q, rule, debug_tags
                                 )
-                                for l in channel_targs:
-                                    before.append(
-                                        self._format_instruction_to_str(
-                                            name=c.channel,
-                                            targets=[i for i in l],
-                                            # TODO - move the determination of noise value to be handled by ruleset to enable arbitrary granular control of scaling
-                                            arg=[
-                                                mean([i2q.get(i).noise.p for i in l])  # type: ignore
-                                                * c.scalar
-                                            ],
-                                            tag=f"{rule.operation}:{rule.trigger} -> {c.channel}:{c.filter}"
-                                            if debug_tags
-                                            else None
-                                            if rule.name is None
-                                            else rule.name,
-                                        )
-                                    )
-                            for c in rule.after:
-                                channel_targs = self._ruleset.apply_filter(
-                                    c.filter, operation_targs, i2q
+                            )
+                            after.extend(
+                                self._emit_channels(
+                                    rule.after, operation_targs, i2q, rule, debug_tags
                                 )
-                                for l in channel_targs:
-                                    after.append(
-                                        self._format_instruction_to_str(
-                                            name=c.channel,
-                                            targets=l,
-                                            arg=[
-                                                mean([i2q.get(i).noise.p for i in l])  # type: ignore
-                                                * c.scalar
-                                            ],  # type: ignore
-                                            tag=f"{rule.operation}:{rule.trigger} -> {c.channel}:{c.filter}"
-                                            if debug_tags
-                                            else None
-                                            if rule.name is None
-                                            else rule.name,
-                                        )
-                                    )
-                        if rule.exclusive:
-                            break
+                            )
+                            # Exclusivity is a property of a rule that *fired*: a rule
+                            # whose trigger failed has said nothing about this
+                            # instruction, so lower-priority rules still get their turn.
+                            if rule.exclusive:
+                                break
                 circ_arr.extend(before)
                 circ_arr.append(str(instr))
                 circ_arr.extend(after)

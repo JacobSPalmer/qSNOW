@@ -22,7 +22,9 @@ class Experiment:
       - `config`: general configuration values (including run parameters).
       - `results`: output of the latest `run()`.
       - `source`: path this experiment was last saved to / loaded from.
-      - `results_refs`: filenames of every results file this experiment generated.
+      - `results_refs`: every results file this experiment generated, each named
+        relative to the setup file's own directory (see `serialize.flake_ref`), so
+        the setup and its results stay linked when the data folder moves as a unit.
 
     Workflow: implement `run()` in the subclass, then use the inherited
     `save()` / `save_results()` to persist the setup and each run's results as
@@ -69,9 +71,34 @@ class Experiment:
         """Execute the experiment, populating and returning `self.results`.
 
         Implementations should record run parameters in `self.config` so they
-        ride along with the saved results record.
+        ride along with the saved results record, and should leave the setup
+        (chip, tiles) as they found it, so a second `run()` or a `save()` after
+        the run does not see sweep state.
         """
         raise NotImplementedError(f"{type(self).__name__} does not implement run().")
+
+    def _results_record(
+        self, results: Optional["ResultsLike"] = None
+    ) -> "ExperimentResults":
+        """
+        `results` as an `ExperimentResults` record, whichever form it arrived in: a
+        record already (returned as is), the bare dict `run()` returns, or (None)
+        this experiment's own latest results. A dict is paired with this
+        experiment's `config` as its run config, which is what a `save_results()`
+        of it would have written.
+
+        Every display surface reads results through here so that `exp.show()`,
+        `exp.show(exp.results)` and `exp.show(import_flake(results_path))` all mean
+        the same thing.
+        """
+        if isinstance(results, ExperimentResults):
+            return results
+        return ExperimentResults(
+            experiment_ref=self.source.name if self.source is not None else None,
+            run_config=self.config,
+            results=self.results if results is None else results,
+            desc=self.desc or "",
+        )
 
     def save(
         self,
@@ -81,7 +108,7 @@ class Experiment:
         desc: Optional[str] = None,
     ) -> Path:
         """
-        Export this experiment's setup as JSON (see `serialize.export_json`).
+        Export this experiment's setup as a flake (see `serialize.export_flake`).
         `desc` updates the experiment's freeform description before saving.
         """
         # deferred import: qsnow.helpers.serialize imports this module
@@ -104,7 +131,7 @@ class Experiment:
         from qsnow.helpers import serialize
 
         results_path = serialize.export_results(self, path, label=label)
-        self.results_refs.append(results_path.name)
+        self.results_refs.append(serialize.flake_ref(results_path, self.source))
         if self.source is not None:
             serialize.export_flake(self, self.source)
         return results_path
@@ -116,13 +143,15 @@ class Experiment:
 
     def show(
         self,
-        results,
+        results: Optional["ResultsLike"] = None,
         *,
         extra_styles: Optional[Mapping[str, VisualizationStyle]] = None,
     ):
         """Display an interactive visualization of a run's results. This must be called from the experiment
         in order to expose the underlying chip noise model to the visualization module.
 
+        `results` is a persisted `ExperimentResults` record or the dict `run()`
+        returns; with none given, the experiment's own latest results are shown.
         `extra_styles` (name -> VisualizationStyle) extends the views the
         subclass bundles by default.
         """
@@ -137,3 +166,8 @@ class ExperimentResults:
     run_config: Dict
     results: Dict
     desc: str = ""
+
+
+# What a display surface accepts as "the results": the persisted record, or the
+# live dict `Experiment.run()` returns and stores on `Experiment.results`.
+ResultsLike = Union[ExperimentResults, Dict]

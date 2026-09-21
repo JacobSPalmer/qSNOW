@@ -1,6 +1,15 @@
 import pytest
 
-from qsnow.interface.models import CSSType, NoiseProfile, Qubit, Status, Tag, TileSpec
+from qsnow.interface.models import (
+    Coupler,
+    CSSType,
+    NoiseProfile,
+    Qubit,
+    Status,
+    Tag,
+    TileSpec,
+    coupler_key,
+)
 
 
 class TestNoiseProfile:
@@ -15,6 +24,7 @@ class TestNoiseProfile:
     def test_rejects_value_outside_bounds(self, bad_p):
         with pytest.raises(ValueError):
             NoiseProfile(p=bad_p)
+
 
 class TestQubit:
     def test_defaults(self):
@@ -76,3 +86,50 @@ class TestTileSpec:
 
     def test_default_generator_args_not_shared_between_instances(self):
         assert TileSpec().generator_args is not TileSpec().generator_args
+
+
+class TestCouplerKey:
+    def test_key_is_order_independent(self):
+        assert coupler_key((1, 1), (0, 0)) == coupler_key((0, 0), (1, 1))
+
+    def test_key_is_sorted(self):
+        assert coupler_key((2, 2), (1, 1)) == ((1, 1), (2, 2))
+
+
+class TestCoupler:
+    def test_ends_are_canonical_regardless_of_construction_order(self):
+        assert Coupler(((2, 2), (1, 1))).ends == Coupler(((1, 1), (2, 2))).ends
+
+    def test_defaults_to_a_zero_noise_profile(self):
+        assert Coupler(((0, 0), (1, 1))).noise.p == 0.0
+
+    def test_accepts_a_noise_profile(self):
+        assert Coupler(((0, 0), (1, 1)), NoiseProfile(0.03)).noise.p == 0.03
+
+    def test_midpoint_sits_between_the_endpoints(self):
+        assert Coupler(((0, 0), (2, 2))).midpoint == (1.0, 1.0)
+
+    def test_other_returns_the_opposite_endpoint(self):
+        coupler = Coupler(((0, 0), (1, 1)))
+
+        assert coupler.other((0, 0)) == (1, 1)
+        assert coupler.other((1, 1)) == (0, 0)
+
+    def test_other_rejects_a_coordinate_it_does_not_join(self):
+        with pytest.raises(KeyError, match="not an endpoint"):
+            Coupler(((0, 0), (1, 1))).other((5, 5))
+
+    def test_contains_its_endpoints_only(self):
+        coupler = Coupler(((0, 0), (1, 1)))
+
+        assert (0, 0) in coupler
+        assert (1, 1) in coupler
+        assert (2, 2) not in coupler
+
+    def test_copy_is_independent(self):
+        original = Coupler(((0, 0), (1, 1)), NoiseProfile(0.04))
+        clone = original.copy()
+        clone.noise.p = 0.5
+
+        assert original.noise.p == 0.04
+        assert clone.ends == original.ends

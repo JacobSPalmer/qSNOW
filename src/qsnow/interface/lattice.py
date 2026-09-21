@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from typing import Dict, Iterable, Iterator, List, Tuple
+from typing import Dict, List, Tuple
 
 from .models import Coord
 
@@ -56,6 +57,52 @@ class Lattice:
             for y in range(height):
                 if self.is_site((x, y)):
                     yield (x, y)
+
+    # ------------------------------------------------------------------
+    # Adjacency
+    # ------------------------------------------------------------------
+
+    @property
+    def neighbor_offsets(self) -> Tuple[Tuple[int, int], ...]:
+        """
+        The minimal integer steps between two sites - one coupler per step.
+
+        Among the steps that preserve the site rule, the nearest by Euclidean distance
+        are the physically coupled pairs: `(+-1, 0), (0, +-1)` on a dense lattice, and the
+        four diagonals `(+-1, +-1)` on the checkerboard - where the cardinal `(+-2, 0)`
+        steps are sites too, but twice as far. Derived from `pitch` rather than hardcoded,
+        so a new pitch gets connectivity for free. Override for a lattice whose
+        connectivity a distance rule cannot express (heavy-hex, triangular).
+        """
+        candidates = [
+            (dx, dy)
+            for dx in range(-self.pitch, self.pitch + 1)
+            for dy in range(-self.pitch, self.pitch + 1)
+            if (dx, dy) != (0, 0) and dx % self.pitch == dy % self.pitch
+        ]
+        nearest = min(dx * dx + dy * dy for dx, dy in candidates)
+        return tuple(
+            sorted(o for o in candidates if o[0] * o[0] + o[1] * o[1] == nearest)
+        )
+
+    def neighbors(self, coord: Coord) -> Iterator[Coord]:
+        """Sites one coupler away from `coord`, unclipped by any grid extent."""
+        for dx, dy in self.neighbor_offsets:
+            yield (coord[0] + dx, coord[1] + dy)
+
+    def edges(self, length: int, height: int) -> Iterator[Tuple[Coord, Coord]]:
+        """
+        Every coupled site pair inside a `length x height` coordinate extent, once each.
+
+        Only the lexicographically-positive half of `neighbor_offsets` is walked, so the
+        edge `{a, b}` is emitted from `a` alone and never again from `b`.
+        """
+        forward = [o for o in self.neighbor_offsets if o > (0, 0)]
+        for x, y in self.positions(length, height):
+            for dx, dy in forward:
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < length and 0 <= ny < height:
+                    yield ((x, y), (nx, ny))
 
     # ------------------------------------------------------------------
     # Unit cells <-> coordinates
@@ -127,7 +174,9 @@ class Lattice:
                 "1D chain satisfies every lattice. Pass `lattice=` explicitly."
             )
 
-        return CHECKERBOARD if all(CHECKERBOARD.is_site(c) for c in distinct) else SQUARE
+        return (
+            CHECKERBOARD if all(CHECKERBOARD.is_site(c) for c in distinct) else SQUARE
+        )
 
 
 CHECKERBOARD = Lattice(name="checkerboard", pitch=2)
