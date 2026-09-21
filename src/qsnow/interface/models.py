@@ -197,7 +197,7 @@ class Qubit:
         self._status = _DEFAULT_STATUS
 
     def reset_type(self) -> None:
-        """Resets the qubit's type to the default typing, initially `UNAASSIGNED`"""
+        """Resets the qubit's type to the default typing, initially `UNASSIGNED`"""
         self._type = _DEFAULT_CSSTYPE
 
     def is_measure(self) -> bool:

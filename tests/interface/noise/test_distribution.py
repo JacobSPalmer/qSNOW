@@ -45,7 +45,7 @@ class TestRecipe:
 
     def test_record_names_match_the_historic_labels(self):
         assert RandomGaussian(0.01, 0.002).as_dict()["name"] == "gaussian"
-        assert NormalContour(0.01, 0.003).as_dict()["name"] == "derived contour"
+        assert NormalContour(0.01, 0.003).as_dict()["name"] == "normal contour"
         assert SkewContour(0.01, 0.003, 1.0).as_dict()["name"] == "skewed contour"
         assert RandomUniform((0.01, 0.05)).as_dict()["name"] == "uniform random"
         assert LogSkewContour(0.02, 0.3, 1.2).as_dict()["name"] == "log skewed contour"

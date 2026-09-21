@@ -444,7 +444,7 @@ def _series_labels(
     """Name the profiled and baseline series, preferring each chip's noise-model name.
 
     `override` wins outright. Otherwise the names come from the flake, the same source
-    `_captions.noise_caption` reads - "derived contour" vs "uniform homogeneous" on the DATE
+    `_captions.noise_caption` reads - "normal contour" vs "uniform homogeneous" on the DATE
     sweeps. A chip with no recorded model falls back to generic names: labelling the
     figure "custom vs custom" would say less than "profiled vs baseline".
     """
@@ -641,12 +641,13 @@ def ler_cdf(
     labels: Optional[Tuple[str, str]] = None,
     legend_loc: str = "best",
     key_loc: Optional[str] = None,
+    baseline_alpha: float = _BASELINE_STEP_ALPHA,
+    title: bool = True,
     add_title: str = "",
     dpi: Optional[int] = None,
     verbose: bool = True,
     save: Optional[PathLike] = None,
     show: bool = True,
-    **kwargs
 ) -> Optional["Figure"]:
     """Cumulative distribution of LER across every tile placement, one step per distance.
 
@@ -672,7 +673,12 @@ def ler_cdf(
     CDF, and a fainter, narrower, hatched box paired beneath the profiled one in the box
     panel. Both series are then named in a secondary key, taking their names from
     each chip's recorded noise model; pass `labels=(profiled, baseline)` to override.
+    `baseline_alpha` sets the opacity of that overlay's steps.
     `verbose` prints the per-distance spread and the chip's noise summary.
+
+    `title` draws the chip caption above the axes; pass `title=False` for a figure
+    going into a paper, where the caption is set in the surrounding text.
+    `add_title` appends a note to that caption (ignored when `title=False`).
 
     `legend_loc` places the distance legend (default `"best"`, matplotlib's auto
     placement). By default the profiled/baseline key then stacks directly against it,
@@ -719,7 +725,7 @@ def ler_cdf(
                 bx,
                 by,
                 color=color,
-                alpha=kwargs.get('baseline_alpha', _BASELINE_STEP_ALPHA),
+                alpha=baseline_alpha,
                 linestyle=_BASELINE_LINESTYLE,
                 linewidth=linewidth,
             )
@@ -765,7 +771,7 @@ def ler_cdf(
     if verbose:
         _print_chip_stats(first.chip)
 
-    if(kwargs.get('title', '')):
+    if title:
         ax_cdf.set_title(
             _suptitle(
                 _chip_headline(first, "Distribution of LER per distance=d tile profiling"),
@@ -817,6 +823,7 @@ def ler_histogram(
     *,
     scope: Literal["ler", "errors"] = "ler",
     limits: Tuple[Optional[float], Optional[float]] = (None, None),
+    title: bool = True,
     add_title: str = "",
     bins: int = 25,
     dpi: Optional[int] = None,
@@ -827,6 +834,9 @@ def ler_histogram(
 
     `scope` picks the quantity binned; `limits` is an `(low, high)` x-range applied to
     every subplot so distances stay directly comparable.
+
+    `title` draws the chip caption over the grid; pass `title=False` for a figure
+    going into a paper. `add_title` appends a note to it (ignored when `title=False`).
 
     `save` writes the figure to that path before showing it. Shows the figure; pass
     `show=False` to get the `Figure` back instead, to tweak it further.
@@ -861,10 +871,11 @@ def ler_histogram(
         ax.set_title(f"d{d} (n={values.size}, len(0)={zeros})")
         ax.set_xlim(limits[0], limits[1])
 
-    first = runs[distances[0]]
-    fig.suptitle(
-        _suptitle(_chip_headline(first, f"{xlabel} by count"), first, add_title)
-    )
+    if title:
+        first = runs[distances[0]]
+        fig.suptitle(
+            _suptitle(_chip_headline(first, f"{xlabel} by count"), first, add_title)
+        )
 
     fig.tight_layout()
     return _finish_figure(fig, save, show)

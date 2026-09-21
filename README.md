@@ -11,7 +11,7 @@ qSNOW is, at it's heart, meant to be used as an extendable toolbox for supportin
 The fundamental workflow of qSNOW is to place logical tiles on a abstract chip, like such:
 
 ```python
-from qsnow.interface import Chip, SCTile
+from qsnow.interface import Chip, SCTile, SkewContour
 
 ## Create chips and tiles
 chip = Chip(12, 12)

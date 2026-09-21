@@ -211,7 +211,7 @@ def scale_gaussian_contour(
     mean, with an exponential soft clip that keeps the lower tail above a fence of
     `alpha_ratio * mean` so no site reaches an absolute zero rate.
 
-    Kept verbatim from the original `generate_derived_contour_noise`, arithmetic and
+    Kept verbatim from the original `generate_normal_contour_noise`, arithmetic and
     order included, because its seeded output is part of the DATE record.
     """
     orig_values = np.array(values, dtype=float)

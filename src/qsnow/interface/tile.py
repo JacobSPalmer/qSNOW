@@ -350,17 +350,18 @@ class LogicalTile(Grid):
         self._init_tile_qubit_status()
         self._init_tile_qubit_types()
 
+    def _carried_state(self) -> Dict[str, object]:
+        return {"ruleset": deepcopy(self._ruleset), "tag": deepcopy(self.tag)}
+
     def copy(self) -> LogicalTile:
         """Return a fresh uninitialized copy: same circuit, ruleset, and annotations."""
-        # deepcopy so the copy never shares mutable tag/spec/ruleset state (dicts included)
         return LogicalTile(
             self.base_circuit,
             x_buffer=self._x_buffer,
             y_buffer=self._y_buffer,
-            ruleset=deepcopy(self._ruleset),
-            tag=deepcopy(self.tag),
             spec=deepcopy(self.spec),
             lattice=self.lattice,
+            **self._carried_state(),
         )
 
     def reset(self) -> None:
@@ -460,6 +461,13 @@ class LogicalTile(Grid):
         """
         emitted: List[str] = []
         for c in channels:
+            # debug tags spell out what fired; otherwise the rule's own name, which is
+            # None for an unnamed rule and so leaves the instruction untagged
+            tag = (
+                f"{rule.operation}:{rule.trigger} -> {c.channel}:{c.filter}"
+                if debug_tags
+                else rule.name
+            )
             channel_targs = self._ruleset.apply_filter(c.filter, operation_targs, i2q)
             for l in channel_targs:
                 emitted.append(
@@ -467,11 +475,7 @@ class LogicalTile(Grid):
                         name=c.channel,
                         targets=l,
                         arg=[self._ruleset.rate_for(c, l, i2q, self.chip.find_coupler)],
-                        tag=f"{rule.operation}:{rule.trigger} -> {c.channel}:{c.filter}"
-                        if debug_tags
-                        else None
-                        if rule.name is None
-                        else rule.name,
+                        tag=tag,
                     )
                 )
         return emitted
