@@ -13,6 +13,8 @@ _spec.loader.exec_module(run_experiment)
 
 DERIVED = run_experiment.DERIVED
 distribution_from_flags = run_experiment.distribution_from_flags
+resolve_model = run_experiment.resolve_model
+MODEL_CHOICES = run_experiment.MODEL_CHOICES
 main = run_experiment.main
 run_and_serialize_spp_experiment = run_experiment.run_and_serialize_spp_experiment
 save_configuration = run_experiment.save_configuration
@@ -40,7 +42,7 @@ class TestDistributionFromFlags:
         "model, expected",
         [
             ("gaussian", RandomGaussian(0.01, 0.003, seed=3)),
-            ("derived-contour", NormalContour(0.01, 0.003, seed=3)),
+            ("normal-contour", NormalContour(0.01, 0.003, seed=3)),
             ("skewed-contour", SkewContour(0.01, 0.003, 1.5, "median", seed=3)),
             ("uniform", Uniform(0.01)),
             ("log-skewed-contour", LogSkewContour(0.01, 0.003, 1.5, "median", seed=3)),
@@ -48,6 +50,18 @@ class TestDistributionFromFlags:
     )
     def test_maps_each_model_name_to_its_class(self, model, expected):
         assert distribution_from_flags(model, 0.01, 0.003, 1.5, "median", 3) == expected
+
+    def test_retired_model_name_still_resolves(self):
+        """`@config.txt` files written before the rename must keep running."""
+        assert resolve_model("derived-contour") == "normal-contour"
+
+    def test_retired_model_name_builds_the_same_distribution(self):
+        assert distribution_from_flags(
+            "derived-contour", 0.01, 0.003, seed=3
+        ) == NormalContour(0.01, 0.003, seed=3)
+
+    def test_canonical_names_pass_through_unchanged(self):
+        assert [resolve_model(m) for m in MODEL_CHOICES] == list(MODEL_CHOICES)
 
     @pytest.mark.parametrize("model, center", [("skewed-contour", "mean"), ("log-skewed-contour", "median")])
     def test_no_center_takes_the_class_default(self, model, center):

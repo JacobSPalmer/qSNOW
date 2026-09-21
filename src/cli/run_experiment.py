@@ -8,23 +8,20 @@ import argparse
 import logging
 
 logger = logging.getLogger(__name__)
-
-# The `--model` / `--coupler_model` vocabulary. One place, used for both the site and
-# the coupler landscape, so the two flag families can never drift apart.
-MODEL_CHOICES = ('gaussian', 'derived-contour', 'skewed-contour', 'log-skewed-contour', 'uniform')
+MODEL_CHOICES = ('gaussian', 'normal-contour', 'skewed-contour', 'log-skewed-contour', 'uniform')
+MODEL_ALIASES = {'derived-contour': 'normal-contour'}
 DERIVED = 'derived'  # couplers follow their endpoints; the default and the pre-flag behaviour
 
 
+def resolve_model(model: str) -> str:
+    return MODEL_ALIASES.get(model, model)
+
+
 def distribution_from_flags(model, location, deviation=0.0, skew=0.0, center=None, seed=None) -> NoiseDistribution:
-    """The distribution a `--model`-style flag set names. `location` is what `center`
-    pins (mean or median; a median rate for the log-skewed contour; the single rate for
-    uniform).
-    `center=None` takes the class's own default (mean for the skewed contour, median for
-    the log-skewed contour), so a model can be named without spelling its centre."""
-    match model:
+    match resolve_model(model):
         case 'gaussian':
             return RandomGaussian(location, deviation, seed=seed)
-        case 'derived-contour':
+        case 'normal-contour':
             return NormalContour(location, deviation, seed=seed)
         case 'skewed-contour':
             return SkewContour(location, deviation, skew, center or SkewContour.center, seed=seed)
@@ -126,7 +123,7 @@ def main():
     
     parser.add_argument("--name", type=str, required=False, default=None, help="Name of the experiment. This is appended to the beginning of the saved flake filenames.")
     parser.add_argument("--dimensions", nargs=2, type=int, required=False, default=(10,10), help="(Length x Height) of the chip in unit cells.")
-    parser.add_argument("--model", choices=list(MODEL_CHOICES), default='gaussian', help="The noise distribution of the chip's qubits.")
+    parser.add_argument("--model", choices=[*MODEL_CHOICES, *MODEL_ALIASES], default='gaussian', metavar=f"{{{','.join(MODEL_CHOICES)}}}", help="The noise distribution of the chip's qubits.")
     parser.add_argument("--location", "--mean", dest="location", type=float, required=True, help="Location of the PER distribution: the mean (or median, see --center) for gaussian/contour models; for log-skewed-contour the median rate; for uniform the single PER value. --mean is accepted as an alias for saved configs.")
     parser.add_argument("--deviation", type=float, required=False, default=0.0, help="Spread of the PER distribution: a standard deviation in rate units, or for log-skewed-contour the standard deviation of log10(rate) in decades.")
     parser.add_argument("--skew", type=float, required=False, default=0.0, help="Skewness of the PER distribution (skewed-contour), or of log10(rate) (log-skewed-contour). Positive is right-skewed; 0 is normal / log-normal.")
@@ -134,7 +131,7 @@ def main():
     parser.add_argument("--distances", nargs="+", type=int, required=True, help="Distance of tiles to sample for.")
     parser.add_argument("--directory", type=str, required=False, default=None,  help="Directory to use for saving the experiments and result.")
     parser.add_argument("--seed", type=int_or_none, required=False, default=None,  help="Seed for the qubit noise model. The same seed with identical model parameters reproduces the identical chip; None draws a fresh seed, which --save_config records.")
-    parser.add_argument("--coupler_model", choices=[DERIVED, *MODEL_CHOICES], default=DERIVED, help="The noise distribution of the chip's couplers. 'derived' (default) keeps each coupler at a function of its two qubits; any other choice gives the couplers a landscape of their own.")
+    parser.add_argument("--coupler_model", choices=[DERIVED, *MODEL_CHOICES, *MODEL_ALIASES], default=DERIVED, metavar=f"{{{','.join((DERIVED, *MODEL_CHOICES))}}}", help="The noise distribution of the chip's couplers. 'derived' (default) keeps each coupler at a function of its two qubits; any other choice gives the couplers a landscape of their own.")
     parser.add_argument("--coupler_location", "--coupler_mean", dest="coupler_location", type=float, required=False, default=None, help="Location of the coupler PER distribution, as --location is for the qubits. Required unless --coupler_model is derived.")
     parser.add_argument("--coupler_deviation", type=float, required=False, default=0.0, help="Spread of the coupler PER distribution, as --deviation is for the qubits.")
     parser.add_argument("--coupler_skew", type=float, required=False, default=0.0, help="Skewness of the coupler PER distribution, as --skew is for the qubits.")

@@ -425,6 +425,47 @@ class TestResetAndConstruction:
             LogicalTile(two_qubit_circuit, x_buffer=x_buffer, y_buffer=y_buffer)
 
 
+class TestCopyCarriesTheSameState:
+    """`LogicalTile.copy` and `SCTile.copy` build their new tile from different
+    constructors, so what a copy preserves lives in one shared `_carried_state`."""
+
+    @pytest.fixture(params=["generic", "sctile"])
+    def tile(self, request, two_qubit_circuit):
+        if request.param == "sctile":
+            return SCTile(distance=3)
+        return LogicalTile(two_qubit_circuit)
+
+    def test_copy_carries_the_ruleset(self, tile):
+        tile.ruleset.add_rule(InjectionRule("H", "any", name="marker"))
+
+        assert "marker" in {r.name for r in tile.copy().ruleset.rules}
+
+    def test_copy_carries_the_tag(self, tile):
+        tile.tag.metadata["note"] = "carried"
+
+        assert tile.copy().tag.metadata["note"] == "carried"
+
+    def test_copied_ruleset_is_not_shared(self, tile):
+        copied = tile.copy()
+
+        copied.ruleset.add_rule(InjectionRule("H", "any", name="only_on_the_copy"))
+
+        assert "only_on_the_copy" not in {r.name for r in tile.ruleset.rules}
+
+    def test_copied_tag_is_not_shared(self, tile):
+        copied = tile.copy()
+
+        copied.tag.metadata["note"] = "only_on_the_copy"
+
+        assert "note" not in tile.tag.metadata
+
+    def test_copy_is_uninitialized(self, tile):
+        assert tile.copy().initialized() is False
+
+    def test_copy_keeps_the_subclass(self, tile):
+        assert type(tile.copy()) is type(tile)
+
+
 class TestInjectionMatchesFlattened:
     """Noise injection now walks the circuit *without* flattening it, recursing
     into ``REPEAT`` blocks (see ``_process_circuit``) to save compute on codes

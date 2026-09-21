@@ -506,6 +506,15 @@ class TestLerCdf:
 
         assert title.endswith("NRS(type=SI1000)")
 
+    def test_title_false_draws_no_caption(self, data_root):
+        """The print path: the caption is set in the paper's text instead."""
+        assert _cdf(data_root, title=False).axes[0].get_title() == ""
+
+    def test_add_title_is_ignored_when_the_title_is_off(self, data_root):
+        fig = _cdf(data_root, title=False, add_title="NRS(type=SI1000)")
+
+        assert fig.axes[0].get_title() == ""
+
     def test_dpi_is_applied(self, data_root):
         assert _cdf(data_root, dpi=200).dpi == 200
 
@@ -642,7 +651,7 @@ class TestBaselineLegend:
             verbose=False, show=False,
         ).axes[1]
 
-        assert _labels_of(_legends(ax_box)[0]) == ["derived contour", "uniform homogeneous"]
+        assert _labels_of(_legends(ax_box)[0]) == ["normal contour", "uniform homogeneous"]
 
     def test_explicit_labels_override_the_noise_model(self, named_roots):
         primary_root, baseline_root = named_roots
@@ -798,6 +807,15 @@ class TestLerHistogram:
     def test_dpi_is_applied(self, data_root):
         assert _histo(data_root, dpi=300).dpi == 300
 
+    def test_suptitle_reports_the_chip(self, data_root):
+        assert "10x10 chip" in _histo(data_root)._suptitle.get_text()
+
+    def test_title_false_draws_no_suptitle(self, data_root):
+        """Matches `ler_cdf(title=False)`: the two figures suppress captions alike."""
+        fig = _histo(data_root, title=False)
+
+        assert fig._suptitle is None or fig._suptitle.get_text() == ""
+
 
 class TestShow:
     @pytest.fixture(params=["ler_cdf", "ler_histogram"])
@@ -865,6 +883,6 @@ class TestLerTable:
         per_distance = [r for r in rows if r["distance"] != "all"]
         assert len(per_distance) == len(DISTANCES) * len(profiling._STAT_MEANINGS)
         assert {r["stat"] for r in rows if r["distance"] == "all"} == set(profiling._SUMMARISED)
-        assert {"derived contour", "uniform homogeneous"} <= set(per_distance[0])
+        assert {"normal contour", "uniform homogeneous"} <= set(per_distance[0])
         out = capsys.readouterr().out
         assert all(stat in out for stat in profiling._STAT_MEANINGS)

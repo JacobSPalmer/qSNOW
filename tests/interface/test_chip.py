@@ -144,10 +144,10 @@ class TestNoiseGeneration:
         chip.generate_gaussian_noise(mean=0.01, deviation=0.005, seed=1)
         assert any(q.noise.p != 0.0 for q in chip.qubits)
 
-    def test_skewed_contour_shares_the_derived_contour_landscape(self, lg_chip: Chip):
+    def test_skewed_contour_shares_the_normal_contour_landscape(self, lg_chip: Chip):
         # Same seed and slope must give the same peaks and valleys: only the marginal
         # distribution differs, so the rank order of qubits is identical.
-        lg_chip.generate_derived_contour_noise(0.01, 0.003, seed=3)
+        lg_chip.generate_normal_contour_noise(0.01, 0.003, seed=3)
         gaussian = [q.noise.p for q in lg_chip.qubits]
         lg_chip.generate_skewed_contour_noise(0.01, 0.003, 1.5, seed=3)
         skewed = [q.noise.p for q in lg_chip.qubits]

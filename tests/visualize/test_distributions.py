@@ -114,6 +114,13 @@ class TestPanels:
         assert "PED(type=gaussian" in text
         assert text.endswith("extra")
 
+    def test_title_false_draws_no_suptitle(self, chip):
+        """Matches `ler_cdf(title=False)`: every figure suppresses captions alike."""
+        assert _histo(chip, title=False).get_suptitle() == ""
+
+    def test_figsize_overrides_the_computed_default(self, chip):
+        assert tuple(_histo(chip, figsize=(9.0, 4.0)).get_size_inches()) == (9.0, 4.0)
+
 
 class TestDerivedCouplerLabel:
     def test_derived_couplers_are_labelled_with_their_mode(self, chip):

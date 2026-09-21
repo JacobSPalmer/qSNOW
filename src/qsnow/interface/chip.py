@@ -5,7 +5,7 @@ from math import isclose
 from statistics import mean
 from dataclasses import dataclass
 from copy import deepcopy
-from typing import Dict, List, Optional, Tuple, Any, Union
+from typing import Dict, List, Optional, Tuple, Union
 from warnings import warn
 
 from qsnow.visualize import (
@@ -32,7 +32,9 @@ from .models import (
 )
 from .noise import (
     Center,
+    LogCenter,
     NoiseDistribution,
+    LogSkewContour,
     NormalContour,
     RandomGaussian,
     RandomUniform,
@@ -79,9 +81,10 @@ class Chip(Grid):
     Typical workflow:
       1. Instantiate Chip(L, H) and give it a landscape: `generate_noise(dist)` with a
          `NoiseDistribution` (`Uniform`, `RandomUniform`, `RandomGaussian`, `NormalContour`,
-         `SkewContour`, `Custom`), or one of the `generate_*_noise` conveniences that wrap
-         them. Couplers follow their endpoints until `generate_coupler_noise(dist, ...)`
-         gives them a landscape of their own.
+         `SkewContour`, `LogSkewContour`, `Custom`), or one of the `generate_*_noise`
+         conveniences that wrap them - one per distribution, `Custom` aside. Couplers
+         follow their endpoints until `generate_coupler_noise(dist, ...)` gives them a
+         landscape of their own.
       2. Build, place, and shift LogicalTiles within the chip by specifying origin points or movement shifts.
       3. Retrieve and modify noise-injected circuits by accessing `tile.circuit`.
     """
@@ -317,7 +320,7 @@ class Chip(Grid):
         """`generate_noise(RandomGaussian(mean, deviation, seed=seed))`."""
         self.generate_noise(RandomGaussian(mean, deviation, seed=seed))
 
-    def generate_derived_contour_noise(
+    def generate_normal_contour_noise(
         self, mean: float, deviation: float, seed: int | None = None, *, slope: int = 5
     ) -> None:
         """`generate_noise(NormalContour(mean, deviation, slope=slope, seed=seed))`."""
@@ -336,6 +339,26 @@ class Chip(Grid):
         """`generate_noise(SkewContour(location, deviation, skew, center, slope=slope, seed=seed))`."""
         self.generate_noise(
             SkewContour(location, deviation, skew, center, slope=slope, seed=seed)
+        )
+
+    def generate_log_skewed_contour_noise(
+        self,
+        location: float,
+        deviation: float,
+        skew: float = 0.0,
+        seed: int | None = None,
+        *,
+        center: LogCenter = "median",
+        slope: int = 5,
+    ) -> None:
+        """`generate_noise(LogSkewContour(location, deviation, skew, center, slope=slope, seed=seed))`.
+
+        Note `deviation` is in decades of log10(rate), not rate units - see
+        `LogSkewContour`, whose docstring covers how to read the three parameters off
+        calibration data.
+        """
+        self.generate_noise(
+            LogSkewContour(location, deviation, skew, center, slope=slope, seed=seed)
         )
 
     # ------------------------------------------------------------------

@@ -33,12 +33,13 @@ Notes:
     mode, and (v5/v6) the coupler distribution plus the correlation it was applied
     with, None while the couplers are derived or hand-set. Before v4 the first two
     lived in `tag.metadata`; the v3->v4 migration lifts them out. v6 replaced the
-    name-and-dict record with distribution objects (same flat shape on disk).
+    name-and-dict record with distribution objects (same flat shape on disk); v7
+    renamed the "derived contour" record to "normal contour" to match `NormalContour`.
   - Ruleset injection rules are fully serialized and restored on every tile type,
     code subclasses included. Custom triggers/filters/sources (beyond the built-in
     defaults) hold arbitrary callables and cannot be serialized; a warning is
     raised if any are present at export (the handling of serializing arbitrary
-    callables is a TODO feature down the line)
+    callables is a TODO feature down the line when i have time to circle back)
   - Code subclasses (e.g. `SCTile`) are rebuilt through their own constructor
     using the spec's `generator_args`; `tile_from_dict` then restores the stored
     tag and ruleset on top. Additional subclasses are registered with
@@ -86,7 +87,7 @@ from qsnow.interface.rules import (
 import logging
 logger = logging.getLogger(__name__)
 
-FORMAT_VERSION = 6
+FORMAT_VERSION = 7
 
 # ------------------------------------------------------------------
 # Format versioning / migrations
@@ -198,6 +199,25 @@ def _v5_to_v6(data: Dict) -> Dict:
         noise_model = spec.get("noise_model")
         if noise_model and noise_model.get("name") == "uniform random" and "range" in noise_model:
             noise_model["bounds"] = noise_model.pop("range")
+    return data
+
+
+@_migration(6)
+def _v6_to_v7(data: Dict) -> Dict:
+    """v7 renames the "derived contour" record to "normal contour", matching the
+    `NormalContour` class and its `normal-contour` CLI flag.
+
+    "Derived" already means "follows its endpoints" for couplers, so the old name read
+    as a coupler mode rather than as the normal-marginal member of the contour family
+    (`NormalContour`/`SkewContour`/`LogSkewContour`). Both the site and the coupler
+    record can hold it.
+    """
+    if data.get("__qsnow__") == "Chip":
+        spec = data.get("spec", {})
+        for key in ("noise_model", "coupler_model"):
+            record = spec.get(key)
+            if record and record.get("name") == "derived contour":
+                record["name"] = "normal contour"
     return data
 
 

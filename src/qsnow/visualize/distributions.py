@@ -179,11 +179,12 @@ def per_histogram(
     limits: Tuple[Optional[float], Optional[float]] = (None, None),
     sharex: bool = True,
     logx: bool = False,
+    figsize: Optional[Tuple[float, float]] = None,
+    title: bool = True,
     add_title: str = "",
     bins: int = 25,
     dpi: Optional[int] = None,
     show: bool = True,
-    **kwargs,
 ) -> Optional["Figure"]:
     """Histogram(s) of a chip's physical error rates, per site and/or per coupler.
 
@@ -203,6 +204,11 @@ def per_histogram(
     endpoint combination `derive_coupler_noise` produced, since they then carry no
     information the site panel does not.
 
+    `figsize` sets the overall figure size in inches, `(width, height)`, in place of the
+    computed default. `title` draws the chip caption over the panels; pass
+    `title=False` for a figure going into a paper, where the caption is set in the
+    surrounding text. `add_title` appends a note to it (ignored when `title=False`).
+
     Shows the figure. Pass `show=False` to get the `Figure` back instead, to `savefig`
     it or tweak it further.
     """
@@ -215,7 +221,7 @@ def per_histogram(
     fig, axes = plt.subplots(
         1,
         len(panels),
-        figsize=kwargs.get('figsize',(max(6 * len(panels), _MIN_FIG_WIDTH), 5)),
+        figsize=figsize or (max(6 * len(panels), _MIN_FIG_WIDTH), 5),
         dpi=dpi,
         sharex=sharex,
         squeeze=False,
@@ -235,7 +241,10 @@ def per_histogram(
             # axis that would freeze the range at the first panel's data
             ax.set_xlim(limits[0], limits[1])
 
-    fig.suptitle(chip_suptitle(chip_headline(chip, "PER by count"), chip, None, add_title))
+    if title:
+        fig.suptitle(
+            chip_suptitle(chip_headline(chip, "PER by count"), chip, None, add_title)
+        )
 
     fig.tight_layout()
     if show:

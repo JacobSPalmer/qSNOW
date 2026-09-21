@@ -16,7 +16,7 @@ Hierarchy:
         ├── RandomUniform                 iid draws, uniform marginal
         ├── RandomGaussian                iid draws, truncated-normal marginal
         └── ContourDistribution           adds `slope`; field = box-averaged white noise
-            ├── NormalContour             legacy soft-clip reshape
+            ├── NormalContour             normal marginal, soft-clip reshape
             ├── SkewContour               Pearson III reshape (raw moments)
             └── LogSkewContour            Pearson III on log10 (calibration-like)
 
@@ -429,7 +429,7 @@ class ContourDistribution(GaussianFieldDistribution):
 @register_distribution
 @dataclass(repr=False)
 class NormalContour(ContourDistribution):
-    """The original derived contour: a Gaussian-shaped correlated landscape.
+    """A correlated landscape with a normal marginal - the original contour model.
 
     Parameters
     ----------
@@ -441,7 +441,7 @@ class NormalContour(ContourDistribution):
         Correlation length in unit cells (the tile distance of the box filter); >= 3.
     """
 
-    name: ClassVar[str] = "derived contour"
+    name: ClassVar[str] = "normal contour"
     mean: float
     deviation: float
 

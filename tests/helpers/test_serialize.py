@@ -17,7 +17,13 @@ from qsnow.interface.chip import Chip, LogicalTile
 from qsnow.interface.codes.rsc import SCTile
 from qsnow.interface.rules import InjectionRule, Ruleset, Source
 from qsnow.interface.lattice import CHECKERBOARD, SQUARE
-from qsnow.interface.noise import RandomGaussian, RandomUniform, SkewContour, Uniform
+from qsnow.interface.noise import (
+    NormalContour,
+    RandomGaussian,
+    RandomUniform,
+    SkewContour,
+    Uniform,
+)
 
 
 @pytest.fixture
@@ -726,6 +732,41 @@ class TestCouplerFormatVersioning:
         assert chip.spec.coupler_model == SkewContour(0.05, 0.01, 1.0, seed=4)
         assert chip.spec.coupler_correlation == 0.6
         assert chip.tag.metadata == {"note": "a human-only annotation"}
+        assert chip.has_independent_couplers
+
+    def test_v6_derived_contour_record_renames_to_normal_contour(self):
+        """v7 matched the record to its class: `NormalContour` was stored as
+        "derived contour", which read as a coupler derivation mode."""
+        chip = import_flake(self.FIXTURES / "chip_v6.flake")
+        data = to_dict(chip)
+        data["format_version"] = 6
+        data["spec"]["noise_model"] = {
+            "name": "derived contour", "mean": 0.01, "deviation": 0.003, "slope": 5, "seed": 3
+        }
+
+        restored = from_dict(data)
+
+        assert restored.spec.noise_model == NormalContour(0.01, 0.003, seed=3)
+
+    def test_v6_derived_contour_coupler_record_migrates_too(self):
+        """The rename lands on whichever record held it, sites or couplers."""
+        chip = import_flake(self.FIXTURES / "chip_v6.flake")
+        data = to_dict(chip)
+        data["format_version"] = 6
+        data["spec"]["coupler_model"] = {
+            "name": "derived contour", "mean": 0.05, "deviation": 0.01, "slope": 5, "seed": 4
+        }
+
+        restored = from_dict(data)
+
+        assert restored.spec.coupler_model == NormalContour(0.05, 0.01, seed=4)
+
+    def test_v7_golden_file_imports_with_its_distributions(self):
+        chip = import_flake(self.FIXTURES / "chip_v7.flake")
+
+        assert chip.spec.noise_model == NormalContour(0.01, 0.003, seed=3)
+        assert chip.spec.coupler_model == SkewContour(0.05, 0.01, 1.0, seed=4)
+        assert chip.spec.coupler_correlation == 0.6
         assert chip.has_independent_couplers
 
     def test_v3_chip_lifts_its_record_out_of_metadata(self):
