@@ -187,6 +187,26 @@ class TestSaveConfiguration:
             "--max_errors" not in text
         )  # a None flag is omitted, not written as "None"
 
+    def test_list_flags_write_one_value_per_line(self, tmp_path):
+        """`--distances 3 5 7` must come back as one token per line: argparse reads an
+        `@config.txt` a line at a time, so a joined line would arrive as a single
+        malformed token."""
+        chip = _run(Chip(5, 5), tmp_path, seed=1)
+
+        save_configuration({"name": "cfg", "distances": [3, 5, 7]}, chip, "cfg")
+
+        lines = (serialize.get_data_dir() / "cfg.txt").read_text().splitlines()
+        at = lines.index("--distances")
+        assert lines[at + 1 : at + 4] == ["3", "5", "7"]
+
+    def test_scalar_flags_write_a_single_line(self, tmp_path):
+        chip = _run(Chip(5, 5), tmp_path, seed=1)
+
+        save_configuration({"name": "cfg", "shots": 200_000}, chip, "cfg")
+
+        lines = (serialize.get_data_dir() / "cfg.txt").read_text().splitlines()
+        assert lines[lines.index("--shots") + 1] == "200000"
+
 
 class TestMainValidation:
     def _main(self, monkeypatch, argv):
