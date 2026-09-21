@@ -190,6 +190,39 @@ class TestProfileRun:
         assert np.array_equal(run.values("ler"), run.lers)
         assert np.array_equal(run.values("errors"), run.error_counts)
 
+    def test_ler_intervals_bracket_the_point_estimates(self, data_root):
+        run = load_profile_runs([3], data_root)[3]
+
+        low, high = run.ler_intervals()
+
+        assert low.shape == high.shape == run.lers.shape
+        assert np.all(low < run.lers)
+        assert np.all(run.lers < high)
+
+    def test_ler_intervals_narrow_with_more_confidence_given_up(self, data_root):
+        run = load_profile_runs([3], data_root)[3]
+
+        low95, high95 = run.ler_intervals()
+        low68, high68 = run.ler_intervals(confidence=0.68)
+
+        assert np.all(low68 > low95)
+        assert np.all(high68 < high95)
+
+    def test_ler_intervals_of_a_zero_error_placement(self, tmp_path):
+        serialize.set_data_dir(tmp_path / "zeros")
+        try:
+            _save_sweep(3, [0.0, 0.002], shots=1_000)
+            run = load_profile_runs([3], tmp_path / "zeros")[3]
+        finally:
+            serialize.set_data_dir()
+
+        low, high = run.ler_intervals()
+        zero = np.flatnonzero(run.error_counts == 0)[0]
+
+        assert low[zero] == 0.0
+        # the rule of three: 0 events in N shots bounds the rate at ~3/N (95%)
+        assert high[zero] == pytest.approx(3 / 1_000, rel=0.3)
+
     def test_stats_spread(self, data_root):
         s = load_profile_runs([3], data_root)[3].stats()
 
@@ -362,6 +395,102 @@ class TestLerCdf:
 
         assert lines[0].get_color() == lines[1].get_color()
         assert lines[1].get_alpha() == pytest.approx(profiling._BASELINE_STEP_ALPHA)
+
+    def test_band_adds_one_fill_per_distance(self, data_root):
+        fills = _cdf(data_root).axes[0].collections
+
+        assert len(fills) == len(DISTANCES)
+        assert all(f.get_alpha() == pytest.approx(profiling._BAND_ALPHA) for f in fills)
+
+    def test_linewidth_is_applied_to_every_step(self, data_root):
+        lines = _cdf(data_root, baseline_dir=data_root, linewidth=2.5).axes[0].lines
+
+        assert all(line.get_linewidth() == pytest.approx(2.5) for line in lines)
+
+    def test_box_scale_stretches_only_the_box_panel(self, data_root):
+        base = _cdf(data_root, baseline_dir=data_root)
+        big = _cdf(data_root, baseline_dir=data_root, box_scale=1.5)
+
+        def heights(fig):
+            return fig.axes[1].get_subplotspec().get_gridspec().get_height_ratios()
+
+        (cdf0, box0), (cdf1, box1) = heights(base), heights(big)
+        assert cdf1 == cdf0
+        assert box1 == pytest.approx(1.5 * box0)
+        # the height grows by exactly the extra panel height, so the CDF is not squeezed
+        w0, h0 = base.get_size_inches()
+        w1, h1 = big.get_size_inches()
+        assert h1 - h0 == pytest.approx(0.5 * box0)
+        # and the width grows by the same factor, so the aspect ratio is preserved
+        assert w1 / w0 == pytest.approx(h1 / h0)
+
+    def test_box_scale_leaves_the_boxes_in_data_units_alone(self, data_root):
+        base = _cdf(data_root, baseline_dir=data_root).axes[1]
+        big = _cdf(data_root, baseline_dir=data_root, box_scale=1.5).axes[1]
+
+        for b1, b2 in zip(base.patches, big.patches):
+            assert _box_extent(b2) == pytest.approx(_box_extent(b1))
+
+    def test_figsize_overrides_the_default_in_both_layouts(self, data_root):
+        for kwargs in ({}, {"whisker": False}):
+            fig = _cdf(data_root, figsize=(7, 5), **kwargs)
+
+            assert tuple(fig.get_size_inches()) == pytest.approx((7, 5))
+
+    def test_figsize_keeps_the_box_scale_split(self, data_root):
+        fig = _cdf(data_root, figsize=(7, 5), box_scale=2.0)
+        cdf_h, box_h = fig.axes[1].get_subplotspec().get_gridspec().get_height_ratios()
+
+        assert box_h / cdf_h == pytest.approx(2.0 * 3.0 / 9.0)
+
+    def test_box_scale_must_be_positive(self, data_root):
+        with pytest.raises(ValueError, match="box_scale"):
+            _cdf(data_root, box_scale=0)
+
+    def test_box_linewidth_is_applied_to_every_box_artist(self, data_root):
+        ax = _cdf(data_root, baseline_dir=data_root, box_linewidth=2.0).axes[1]
+
+        assert all(p.get_linewidth() == pytest.approx(2.0) for p in ax.patches)
+        # whiskers, caps and medians are the panel's Line2Ds (fliers are markers only)
+        assert all(
+            line.get_linewidth() == pytest.approx(2.0)
+            for line in ax.lines
+            if line.get_linestyle() != "None"
+        )
+
+    def test_band_alpha_is_applied(self, data_root):
+        fills = _cdf(data_root, band_alpha=0.4).axes[0].collections
+
+        assert all(f.get_alpha() == pytest.approx(0.4) for f in fills)
+
+    def test_band_can_be_turned_off(self, data_root):
+        assert len(_cdf(data_root, band=False).axes[0].collections) == 0
+
+    def test_baseline_adds_no_band(self, data_root):
+        fills = _cdf(data_root, baseline_dir=data_root).axes[0].collections
+
+        assert len(fills) == len(DISTANCES)
+
+    def test_band_matches_its_distance_color(self, data_root):
+        from matplotlib.colors import to_rgb
+
+        ax = _cdf(data_root).axes[0]
+
+        for line, fill in zip(ax.lines, ax.collections):
+            assert tuple(fill.get_facecolor()[0][:3]) == pytest.approx(
+                to_rgb(line.get_color())
+            )
+
+    def test_band_spans_the_interval_bounds(self, data_root):
+        run = load_profile_runs([3], data_root)[3]
+        low, high = run.ler_intervals()
+
+        fill = _cdf(data_root).axes[0].collections[0]
+        xs = np.concatenate([p.vertices[:, 0] for p in fill.get_paths()])
+        xs = xs[np.isfinite(xs)]
+
+        assert xs.min() == pytest.approx(low.min())
+        assert xs.max() == pytest.approx(high.max())
 
     def test_axes_are_log_scaled_and_bounded(self, data_root):
         ax = _cdf(data_root).axes[0]
@@ -600,6 +729,23 @@ class TestBaselineLegend:
         after = [lg.get_window_extent().bounds for lg in _cdf_legends(fig)]
         assert after == pytest.approx(before)
 
+    def test_save_writes_the_figure(self, data_root, tmp_path):
+        out = tmp_path / "figs" / "cdf.png"  # parent does not exist yet
+
+        fig = _cdf(data_root, save=out)
+
+        assert out.is_file()
+        assert Image.open(out).size[0] > 0
+        assert isinstance(fig, Figure)  # show=False still hands the figure back
+
+    def test_save_uses_the_figure_dpi(self, data_root, tmp_path):
+        out = tmp_path / "cdf.png"
+
+        fig = _cdf(data_root, dpi=150, save=out)
+
+        width, _ = Image.open(out).size
+        assert width == pytest.approx(150 * fig.get_size_inches()[0], abs=2)
+
     def test_dpi_survives_to_savefig(self, data_root, tmp_path):
         fig = _cdf(data_root, dpi=200)
         out = tmp_path / "cdf.png"
@@ -623,6 +769,13 @@ class TestBaselineLegend:
 
 
 class TestLerHistogram:
+    def test_save_writes_the_figure(self, data_root, tmp_path):
+        out = tmp_path / "histo.png"
+
+        _histo(data_root, save=out)
+
+        assert out.is_file()
+
     def test_one_axes_per_distance(self, data_root):
         assert len(_histo(data_root).axes) == len(DISTANCES)
 
