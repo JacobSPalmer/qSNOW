@@ -154,7 +154,26 @@ class TestProducers:
 
 
 class TestSeededBaselines:
-    """Seeds recorded by the pre-class generators must reproduce identical chips."""
+    """Seeds recorded by the pre-class generators must reproduce identical chips.
+
+    Compared to a tolerance rather than bit-for-bit. The contour marginals are reached
+    through `scipy.stats.pearson3.ppf`, an inverse incomplete gamma whose final bits
+    track the scipy build and the platform's libm, so bitwise equality would assert the
+    machine a baseline was recorded on rather than the landscape it holds.
+    """
+
+    # The regressions these guard - a changed seed, parameter, centre or algorithm -
+    # move the landscape by 1e-3 or more; ppf noise across builds is many orders below.
+    _RATE_RTOL = 1e-6
+
+    def _assert_matches(self, actual, filename):
+        np.testing.assert_allclose(
+            np.asarray(actual),
+            np.load(BASELINES / filename),
+            rtol=self._RATE_RTOL,
+            atol=0.0,
+            err_msg=f"landscape drifted from {filename}",
+        )
 
     @pytest.mark.parametrize(
         "dist, filename",
@@ -172,8 +191,7 @@ class TestSeededBaselines:
     def test_sites_match_the_recorded_baseline(self, dist, filename):
         chip = Chip(6, 6)
         chip.generate_noise(dist)
-        expected = np.load(BASELINES / filename)
-        assert np.array_equal(np.array([q.noise.p for q in chip.qubits]), expected)
+        self._assert_matches([q.noise.p for q in chip.qubits], filename)
 
     def test_correlated_couplers_match_the_recorded_baseline(self):
         chip = Chip(6, 6)
@@ -181,8 +199,10 @@ class TestSeededBaselines:
         chip.generate_coupler_noise(
             SkewContour(0.05, 0.01, 1.0, seed=4), correlation=0.6
         )
-        expected = np.load(BASELINES / "skew_contour_couplers_6x6_seed4_rho0p6.npy")
-        assert np.array_equal(np.array([c.noise.p for c in chip.couplers]), expected)
+        self._assert_matches(
+            [c.noise.p for c in chip.couplers],
+            "skew_contour_couplers_6x6_seed4_rho0p6.npy",
+        )
 
 
 class TestRankMapping:
