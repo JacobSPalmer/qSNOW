@@ -91,7 +91,9 @@ class TestRegistry:
 
 
 class TestInference:
-    def test_infers_checkerboard_from_a_rotated_surface_code(self, surface_code_circuit):
+    def test_infers_checkerboard_from_a_rotated_surface_code(
+        self, surface_code_circuit
+    ):
         coords = surface_code_circuit.get_final_qubit_coordinates().values()
 
         assert Lattice.infer(coords) is CHECKERBOARD
@@ -134,7 +136,12 @@ class TestAdjacency:
             assert all(lattice.is_site(o) for o in lattice.neighbor_offsets)
 
     def test_neighbors_are_unclipped_by_any_extent(self):
-        assert set(CHECKERBOARD.neighbors((0, 0))) == {(-1, -1), (-1, 1), (1, -1), (1, 1)}
+        assert set(CHECKERBOARD.neighbors((0, 0))) == {
+            (-1, -1),
+            (-1, 1),
+            (1, -1),
+            (1, 1),
+        }
 
     def test_edges_yield_each_pair_exactly_once(self):
         edges = list(CHECKERBOARD.edges(10, 10))

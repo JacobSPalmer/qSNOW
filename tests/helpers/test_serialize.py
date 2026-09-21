@@ -15,7 +15,6 @@ from qsnow.helpers.serialize import (
 )
 from qsnow.interface.chip import Chip, LogicalTile
 from qsnow.interface.codes.rsc import SCTile
-from qsnow.interface.rules import InjectionRule, Ruleset, Source
 from qsnow.interface.lattice import CHECKERBOARD, SQUARE
 from qsnow.interface.noise import (
     NormalContour,
@@ -24,6 +23,7 @@ from qsnow.interface.noise import (
     SkewContour,
     Uniform,
 )
+from qsnow.interface.rules import InjectionRule, Ruleset, Source
 
 
 @pytest.fixture
@@ -287,7 +287,9 @@ class TestResultsFlow:
         exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
         # sourced from the sampler itself, so this breaks if run_config drops a key
         exp.config.update(
-            **ErrorFloorSampler(shots=1_000, min_errors=3, max_topup_shots=5_000).run_config()
+            **ErrorFloorSampler(
+                shots=1_000, min_errors=3, max_topup_shots=5_000
+            ).run_config()
         )
         exp.results = {(0, 0): {"ler": 0.001, "shots": 1000, "errors": 1}}
 
@@ -297,7 +299,11 @@ class TestResultsFlow:
         setup_config = json.loads(setup_path.read_text())["config"]
         results_config = json.loads(results_path.read_text())["run_config"]
 
-        for config in (setup_config, results_config, import_flake(results_path).run_config):
+        for config in (
+            setup_config,
+            results_config,
+            import_flake(results_path).run_config,
+        ):
             assert config["min_errors"] == 3
             assert config["max_topup_shots"] == 5_000
             assert config["shots"] == 1_000
@@ -409,7 +415,9 @@ class TestResultsLinkage:
         exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
         exp.results = {(0, 0): {"ler": 0.001}}
         setup_path = exp.save()
-        results_path = exp.save_results(path=data_dir / "experiments" / "runs" / "r.flake")
+        results_path = exp.save_results(
+            path=data_dir / "experiments" / "runs" / "r.flake"
+        )
 
         record = import_flake(results_path)
 
@@ -650,7 +658,9 @@ class TestChipSpecRoundTrip:
 
     def test_coupler_model_round_trips_with_its_rates(self, chip):
         chip.generate_noise(SkewContour(0.01, 0.003, 1.5, seed=3))
-        chip.generate_coupler_noise(SkewContour(0.05, 0.01, 1.0, seed=4), correlation=0.6)
+        chip.generate_coupler_noise(
+            SkewContour(0.05, 0.01, 1.0, seed=4), correlation=0.6
+        )
 
         restored = from_dict(to_dict(chip))
 
@@ -677,7 +687,10 @@ class TestChipSpecRoundTrip:
         data["format_version"] = 3
         del data["spec"]
         data["couplers"] = {}
-        data["tag"]["metadata"]["noise_model"] = {"name": "uniform homogeneous", "p": 0.01}
+        data["tag"]["metadata"]["noise_model"] = {
+            "name": "uniform homogeneous",
+            "p": 0.01,
+        }
         data["tag"]["metadata"]["coupler_model"] = {"name": "derived", "mode": "max"}
 
         restored = from_dict(data)
@@ -717,7 +730,11 @@ class TestCouplerFormatVersioning:
         chip.generate_uniform_noise(0.01)
         data = to_dict(chip)
         data["format_version"] = 5
-        data["spec"]["noise_model"] = {"name": "uniform random", "range": [0.01, 0.05], "seed": 1}
+        data["spec"]["noise_model"] = {
+            "name": "uniform random",
+            "range": [0.01, 0.05],
+            "seed": 1,
+        }
         del data["spec"]["coupler_correlation"]
 
         restored = from_dict(data)
@@ -741,7 +758,11 @@ class TestCouplerFormatVersioning:
         data = to_dict(chip)
         data["format_version"] = 6
         data["spec"]["noise_model"] = {
-            "name": "derived contour", "mean": 0.01, "deviation": 0.003, "slope": 5, "seed": 3
+            "name": "derived contour",
+            "mean": 0.01,
+            "deviation": 0.003,
+            "slope": 5,
+            "seed": 3,
         }
 
         restored = from_dict(data)
@@ -754,7 +775,11 @@ class TestCouplerFormatVersioning:
         data = to_dict(chip)
         data["format_version"] = 6
         data["spec"]["coupler_model"] = {
-            "name": "derived contour", "mean": 0.05, "deviation": 0.01, "slope": 5, "seed": 4
+            "name": "derived contour",
+            "mean": 0.05,
+            "deviation": 0.01,
+            "slope": 5,
+            "seed": 4,
         }
 
         restored = from_dict(data)

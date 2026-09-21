@@ -12,6 +12,7 @@ and `Figure.savefig` matter more than hover/zoom.
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,10 +21,8 @@ from typing import (
     Any,
     Dict,
     List,
-    Iterator,
     Literal,
     Optional,
-    Sequence,
     Tuple,
     Union,
 )
@@ -38,8 +37,8 @@ if TYPE_CHECKING:
     from matplotlib.figure import Figure
 
     from qsnow.experiments import Experiment, ExperimentResults
-    from qsnow.visualize.visualize import VisualizationStyle
     from qsnow.interface.chip import Chip
+    from qsnow.visualize.visualize import VisualizationStyle
 
 __all__ = [
     "ProfileRun",
@@ -135,11 +134,11 @@ class ProfileRun:
     """One distance's profiling sweep: the experiment setup plus its results flake."""
 
     distance: int
-    experiment: "Experiment"
-    results: "ExperimentResults"
+    experiment: Experiment
+    results: ExperimentResults
 
     @property
-    def chip(self) -> "Chip":
+    def chip(self) -> Chip:
         chip = getattr(self.experiment, "chip", None)
         if chip is None:
             raise AttributeError(
@@ -220,7 +219,7 @@ class ProfileRun:
         self,
         *,
         chip_only: bool = False,
-        extra_styles: Optional["Mapping[str, VisualizationStyle]"] = None,
+        extra_styles: Optional[Mapping[str, VisualizationStyle]] = None,
     ) -> None:
         """Open the interactive plotly view of the flakes behind this run.
 
@@ -238,7 +237,9 @@ class ProfileRun:
             # chip it ran on is still worth putting on screen
             self.chip.show(interactive=True, extra_styles=extra_styles)
 
-    def export(self, path: Optional[PathLike] = None, *, chip_only: bool = False, **kwargs):
+    def export(
+        self, path: Optional[PathLike] = None, *, chip_only: bool = False, **kwargs
+    ):
         """Write the same view to a standalone interactive HTML page, returning its path.
 
         Mirrors `show()`: the experiment's view by default, the chip's with `chip_only`.
@@ -311,11 +312,19 @@ def _draw_band(ax, run: ProfileRun, color, alpha: float) -> None:
     _, y = _ecdf(run.lers)
     # `_ecdf` prepends the (-inf, 0) run-in point for the step; a fill cannot use it
     ax.fill_betweenx(
-        y[1:], np.sort(low), np.sort(high), step="pre", color=color, alpha=alpha, linewidth=0
+        y[1:],
+        np.sort(low),
+        np.sort(high),
+        step="pre",
+        color=color,
+        alpha=alpha,
+        linewidth=0,
     )
 
 
-def _finish_figure(fig: "Figure", save: Optional[PathLike], show: bool) -> Optional["Figure"]:
+def _finish_figure(
+    fig: Figure, save: Optional[PathLike], show: bool
+) -> Optional[Figure]:
     """Save, show, and/or return `fig` - the one place the figure functions end.
 
     `save` writes the figure (parent directories created) before anything is shown, at
@@ -614,11 +623,9 @@ def _print_run_stats(run: ProfileRun) -> None:
     )
 
 
-def _print_chip_stats(chip: "Chip") -> None:
+def _print_chip_stats(chip: Chip) -> None:
     p = np.array([n.p for n in chip.noise_map.values()], dtype=float)
-    print(
-        f"\nChip(mean={p.mean()}, dev={p.std(ddof=1)}, min={p.min()}, max={p.max()})"
-    )
+    print(f"\nChip(mean={p.mean()}, dev={p.std(ddof=1)}, min={p.min()}, max={p.max()})")
 
 
 # ------------------------------------------------------------------
@@ -648,7 +655,7 @@ def ler_cdf(
     verbose: bool = True,
     save: Optional[PathLike] = None,
     show: bool = True,
-) -> Optional["Figure"]:
+) -> Optional[Figure]:
     """Cumulative distribution of LER across every tile placement, one step per distance.
 
     `whisker` adds a horizontal boxplot of the same data beneath the CDF.
@@ -715,7 +722,9 @@ def ler_cdf(
         lers = run.lers
         x, y = _ecdf(lers)
         color = palette(i % palette.N)
-        ax_cdf.step(x, y, color=color, label=f"d={d} (n={lers.size})", linewidth=linewidth)
+        ax_cdf.step(
+            x, y, color=color, label=f"d={d} (n={lers.size})", linewidth=linewidth
+        )
         if band:
             _draw_band(ax_cdf, run, color, band_alpha)
 
@@ -774,7 +783,9 @@ def ler_cdf(
     if title:
         ax_cdf.set_title(
             _suptitle(
-                _chip_headline(first, "Distribution of LER per distance=d tile profiling"),
+                _chip_headline(
+                    first, "Distribution of LER per distance=d tile profiling"
+                ),
                 first,
                 add_title,
             )
@@ -792,9 +803,7 @@ def ler_cdf(
         ax_box.set_xscale("log")
         # the boxes are drawn one call at a time above, so `tick_labels=` is not
         # available - label each distance's row (or pair of rows) explicitly
-        ax_box.set_yticks(
-            range(1, len(distances) + 1), [str(d) for d in distances]
-        )
+        ax_box.set_yticks(range(1, len(distances) + 1), [str(d) for d in distances])
         ax_box.set_ylim(0.4, len(distances) + 0.6)
         ax_box.set_ylabel("Distance")
         ax_box.set_xlabel("Logical Error Rate")
@@ -829,7 +838,7 @@ def ler_histogram(
     dpi: Optional[int] = None,
     save: Optional[PathLike] = None,
     show: bool = True,
-) -> Optional["Figure"]:
+) -> Optional[Figure]:
     """A grid of per-distance histograms of LER (or raw logical error count) by placement.
 
     `scope` picks the quantity binned; `limits` is an `(low, high)` x-range applied to
@@ -891,18 +900,18 @@ def ler_histogram(
 _STAT_MEANINGS: Dict[str, str] = {
     "n": "placements swept on each chip.",
     "best": "lowest LER over placements (the best spot on the chip); ratio < 1 means the "
-            "profiled chip offers better placements than the baseline ever does.",
+    "profiled chip offers better placements than the baseline ever does.",
     "p5": "5th percentile of LER: the good end of the chip without its single luckiest placement.",
     "median": "median LER: the typical placement.",
     "p95": "95th percentile of LER: the bad end without the single unluckiest placement.",
     "worst": "highest LER over placements (the worst spot); ratio > 1 is 'up to x times worse'.",
     "spread p95/p5": "within-chip variation, robust to one outlier; on a uniform chip this is "
-                     "only Monte-Carlo noise, so read the profiled value against it.",
+    "only Monte-Carlo noise, so read the profiled value against it.",
     "spread worst/best": "full within-chip range, best placement to worst; same reading.",
     "CV": "std / mean of LER over placements; on a uniform chip this is the sampling noise "
-          "of the LER estimates themselves.",
+    "of the LER estimates themselves.",
     "yield": "fraction of placements at or under the BAD threshold; 'ratio' holds the "
-             "difference in percentage points (profiled minus baseline).",
+    "difference in percentage points (profiled minus baseline).",
 }
 # The ratio rows that the across-distances block summarises with its min and max.
 _SUMMARISED = ("best", "median", "worst", "spread p95/p5", "spread worst/best")
@@ -973,11 +982,26 @@ def ler_table(
         b_stats = _placement_stats(baseline[d].lers, bad)
         for stat in _STAT_MEANINGS:
             ratio = _compare(stat, p_stats[stat], b_stats[stat])
-            rows.append({"distance": d, "stat": stat, p_label: p_stats[stat], b_label: b_stats[stat], "ratio": ratio})
+            rows.append(
+                {
+                    "distance": d,
+                    "stat": stat,
+                    p_label: p_stats[stat],
+                    b_label: b_stats[stat],
+                    "ratio": ratio,
+                }
+            )
             if stat in ratios:
                 ratios[stat].append(ratio)
     for stat in _SUMMARISED:
-        rows.append({"distance": "all", "stat": stat, "min ratio": min(ratios[stat]), "max ratio": max(ratios[stat])})
+        rows.append(
+            {
+                "distance": "all",
+                "stat": stat,
+                "min ratio": min(ratios[stat]),
+                "max ratio": max(ratios[stat]),
+            }
+        )
 
     if verbose:
         _print_ler_table(rows, p_label, b_label, distances)
@@ -985,19 +1009,25 @@ def ler_table(
         print("\nStats (ratio = profiled / baseline unless stated):")
         for stat, meaning in _STAT_MEANINGS.items():
             print(f"  {stat:<18} {meaning}")
-        print(f"  {'all':<18} min and max over distances of each ratio: the 'up to x times' and "
-              f"'at least y times' across the sweep.")
+        print(
+            f"  {'all':<18} min and max over distances of each ratio: the 'up to x times' and "
+            f"'at least y times' across the sweep."
+        )
     return rows
 
 
-def _print_ler_table(rows: List[Dict[str, Any]], p_label: str, b_label: str, distances: Sequence[int]) -> None:
+def _print_ler_table(
+    rows: List[Dict[str, Any]], p_label: str, b_label: str, distances: Sequence[int]
+) -> None:
     w = max(len(p_label), len(b_label), 10)
     for d in distances:
         print(f"\nDistance {d}")
         print(f"  {'stat':<18} {p_label:>{w}} {b_label:>{w}} {'ratio':>10}")
         for r in rows:
             if r["distance"] == d:
-                print(f"  {r['stat']:<18} {r[p_label]:>{w}.4g} {r[b_label]:>{w}.4g} {r['ratio']:>10.4g}")
+                print(
+                    f"  {r['stat']:<18} {r[p_label]:>{w}.4g} {r[b_label]:>{w}.4g} {r['ratio']:>10.4g}"
+                )
     print("\nAcross distances")
     print(f"  {'stat':<18} {'min ratio':>10} {'max ratio':>10}")
     for r in rows:

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
-from stim import Circuit, CircuitRepeatBlock, CircuitInstruction
+from stim import Circuit, CircuitRepeatBlock
 
 from .grid import Grid
 from .lattice import CHECKERBOARD, Lattice
@@ -65,9 +65,7 @@ class LogicalTile(Grid):
             )
 
         if lattice == "auto":
-            lattice = Lattice.infer(
-                base_circuit.get_final_qubit_coordinates().values()
-            )
+            lattice = Lattice.infer(base_circuit.get_final_qubit_coordinates().values())
         # buffers are kept so copy()/serialization can rebuild an identical tile
         self._x_buffer, self._y_buffer = x_buffer, y_buffer
 
@@ -325,7 +323,7 @@ class LogicalTile(Grid):
                             arg=list(shift_function(*instr.gate_args_copy())),  # type: ignore
                         )
                     )
-                case 'REPEAT':
+                case "REPEAT":
                     # TODO - probably handle this recursively (since it could be the case that a repeat in a repeat)
                     circ_arr.append(f"REPEAT {instr.repeat_count} {{")
                     circ_arr.extend([str(i) for i in instr.body_copy()])
@@ -376,9 +374,7 @@ class LogicalTile(Grid):
         # `origin`, so leaving it at the last placement would move the base circuit
         # by a stale offset.
         base = self._base_circuit.copy()
-        self._update(
-            new_circuit=base, new_qubits={}, new_origin=self._origin_of(base)
-        )
+        self._update(new_circuit=base, new_qubits={}, new_origin=self._origin_of(base))
         self._chip = None
 
     # ------------------------------------------------------------------
@@ -480,12 +476,14 @@ class LogicalTile(Grid):
                 )
         return emitted
 
-    def _process_circuit(self, circuit, i2q, debug_tags = False) -> List[str]:
+    def _process_circuit(self, circuit, i2q, debug_tags=False) -> List[str]:
         circ_arr: List[str] = []
         for instr in self._yield_circuit_instructions(circuit, flatten=False):
             if isinstance(instr, CircuitRepeatBlock):
                 circ_arr.append(f"REPEAT {instr.repeat_count} {{")
-                circ_arr.extend(self._process_circuit(instr.body_copy(), i2q, debug_tags))
+                circ_arr.extend(
+                    self._process_circuit(instr.body_copy(), i2q, debug_tags)
+                )
                 circ_arr.append("}")
             else:
                 before = []
@@ -495,7 +493,9 @@ class LogicalTile(Grid):
                         operation_targs = [
                             [t.value for t in a] for a in instr.target_groups()
                         ]  # type: ignore
-                        if self._ruleset.check_trigger(rule.trigger, operation_targs, i2q):
+                        if self._ruleset.check_trigger(
+                            rule.trigger, operation_targs, i2q
+                        ):
                             before.extend(
                                 self._emit_channels(
                                     rule.before, operation_targs, i2q, rule, debug_tags

@@ -68,6 +68,8 @@ from stim import Circuit
 
 logger = getLogger(__name__)
 
+import logging
+
 from qsnow.experiments.experiment import Experiment, ExperimentResults
 from qsnow.experiments.squarepacking.game import SquarePackingExp
 from qsnow.interface.chip import Chip, LogicalTile
@@ -84,7 +86,6 @@ from qsnow.interface.rules import (
     Ruleset,
 )
 
-import logging
 logger = logging.getLogger(__name__)
 
 FORMAT_VERSION = 7
@@ -113,6 +114,7 @@ def _migration(from_version: int):
         return fn
 
     return register
+
 
 # TODO - migrate to add date to each file as a 'created' attr
 
@@ -197,7 +199,11 @@ def _v5_to_v6(data: Dict) -> Dict:
             coupler_model["name"] = "skewed contour"
             spec["coupler_correlation"] = coupler_model.pop("correlation", None)
         noise_model = spec.get("noise_model")
-        if noise_model and noise_model.get("name") == "uniform random" and "range" in noise_model:
+        if (
+            noise_model
+            and noise_model.get("name") == "uniform random"
+            and "range" in noise_model
+        ):
             noise_model["bounds"] = noise_model.pop("range")
     return data
 
@@ -254,8 +260,10 @@ _DATA_DIR = _DEFAULT_DATA_DIR
 
 _TIMESTAMP_FORMAT = "%Y-%m-%d_%H-%M-%S"
 
+
 def get_timestamp(format: str = _TIMESTAMP_FORMAT) -> str:
     return datetime.now().strftime(format)
+
 
 def set_data_dir(path: Optional[Union[str, Path]] = None) -> None:
     """
@@ -465,7 +473,9 @@ def chip_spec_from_dict(data: Dict) -> ChipSpec:
     return ChipSpec(
         noise_model=NoiseDistribution.from_dict(noise_model) if noise_model else None,
         coupler_mode=data.get("coupler_mode", "mean"),
-        coupler_model=NoiseDistribution.from_dict(coupler_model) if coupler_model else None,
+        coupler_model=NoiseDistribution.from_dict(coupler_model)
+        if coupler_model
+        else None,
         coupler_correlation=data.get("coupler_correlation"),
     )
 
@@ -752,7 +762,7 @@ def export_results(
     """
     if path is None:
         stamp = get_timestamp()
-        path = ( 
+        path = (
             _DATA_DIR
             / _subfolder(exp)
             / f"results_{label or _label(exp)}_{stamp}.flake"
@@ -898,7 +908,9 @@ def summarize_exports(
     return summary
 
 
-def import_latest(pattern: str = "*", kind: Optional[str] = None, *, silent: bool = False) -> Any:
+def import_latest(
+    pattern: str = "*", kind: Optional[str] = None, *, silent: bool = False
+) -> Any:
     """
     Import the most recent export whose filename matches `pattern`. If `silent` is true, no print message will be shown (useful for
     internal operations that rely on this method to not overwhelm.)

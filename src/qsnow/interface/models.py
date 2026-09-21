@@ -1,10 +1,19 @@
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, Literal, Optional, Self, Tuple, overload, TypeAlias
-
 from functools import total_ordering
 from numbers import Number
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    Literal,
+    Optional,
+    Self,
+    Tuple,
+    TypeAlias,
+    overload,
+)
 
 if TYPE_CHECKING:
     from .noise.distribution import NoiseDistribution
@@ -86,6 +95,7 @@ class CSSType(Enum):
 _DEFAULT_STATUS = Status.INACTIVE
 _DEFAULT_CSSTYPE = CSSType.UNASSIGNED
 
+
 class BoundedFloat:
     """Descriptor class enforcing min_value <= value <= max_value on assignment."""
 
@@ -115,6 +125,7 @@ class BoundedFloat:
             )
         setattr(obj, self.private_name, value)
 
+
 @total_ordering
 class NoiseProfile:
     # TODO - start with seperating all operations into 3 buckets: 2-qubit (CNOT, SWAP, etc.), 1-qubit (H, Pauli's (X, Y, Z)), Idle/Measurement (M, MX, R, RX)
@@ -126,7 +137,7 @@ class NoiseProfile:
 
     def __repr__(self):
         return f"{self.__class__.__name__}(p={self.p})"
-    
+
     def __eq__(self, value) -> bool:
         if isinstance(value, Number):
             return self.p == value
@@ -164,13 +175,13 @@ class Qubit:
     @property
     def loc(self) -> Coord:
         if not self._loc:
-            raise AttributeError('Qubit location not initialized.')
+            raise AttributeError("Qubit location not initialized.")
         return self._loc
-    
+
     @loc.setter
     def loc(self, new_loc) -> None:
         self._loc = new_loc
-        
+
     @property
     def status(self) -> Status:
         return self._status

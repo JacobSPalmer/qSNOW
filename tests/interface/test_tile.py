@@ -80,9 +80,7 @@ class TestNoiseInjectionOrdering:
     ):
         ruleset = Ruleset(
             injection_rules=[
-                InjectionRule(
-                    "R", "any", before=[ChannelRule("X_ERROR", "all_qubits")]
-                )
+                InjectionRule("R", "any", before=[ChannelRule("X_ERROR", "all_qubits")])
             ]
         )
         tile = placed(
@@ -275,9 +273,7 @@ class TestShiftRewritesCircuitAndMetadata:
         assert chip.loc((2, 2)).is_active() is True
         assert chip.loc((2, 2)).type == CSSType.DATA
 
-    def test_shift_by_c2i_matches_recomputed_map(
-        self, two_qubit_circuit, chip: Chip
-    ):
+    def test_shift_by_c2i_matches_recomputed_map(self, two_qubit_circuit, chip: Chip):
         # shift_by builds _c2i by translating the existing map instead of
         # re-walking the circuit; it must equal the fully re-derived map.
         tile = placed(two_qubit_circuit, chip)

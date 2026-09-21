@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from qsnow.interface.chip import Chip
 
 
-def noise_caption(chip: "Chip", shots: Optional[int]) -> str:
+def noise_caption(chip: Chip, shots: Optional[int]) -> str:
     """The `PED(type=..., mean=..., dev=..., shots=...)` line under a figure title.
 
     `shots` is omitted when None: a chip-only figure has no sampling to report.
@@ -30,14 +30,14 @@ def noise_caption(chip: "Chip", shots: Optional[int]) -> str:
     return f"PED({', '.join(fields)})"
 
 
-def chip_headline(chip: "Chip", subject: str) -> str:
+def chip_headline(chip: Chip, subject: str) -> str:
     """`<subject> across LxH chip`, with the size in unit cells rather than coordinates."""
     length, height = chip.unit_dims
     return f"{subject} across {length}x{height} chip"
 
 
 def chip_suptitle(
-    headline: str, chip: "Chip", shots: Optional[int], add_title: str = ""
+    headline: str, chip: Chip, shots: Optional[int], add_title: str = ""
 ) -> str:
     """Headline, noise caption, and caller suffix, one per line, blanks dropped."""
     return "\n".join(

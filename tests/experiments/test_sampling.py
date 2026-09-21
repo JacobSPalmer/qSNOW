@@ -4,6 +4,7 @@ The two-pass logic is exercised through an injected ``collect_fn`` so the
 behaviour under test (which tasks get resampled, how stats merge) is decided by
 the sampler rather than by stochastic sampling, and no worker processes are spawned.
 """
+
 import pytest
 import sinter
 import stim
@@ -380,10 +381,14 @@ def test_phase_count_reflects_whether_a_topup_runs():
 
 
 def test_run_config_records_the_resolved_topup_ceiling():
-    assert ErrorFloorSampler(shots=100, min_errors=1).run_config()[
-        "max_topup_shots"
-    ] == 100 * DEFAULT_TOPUP_SHOT_MULTIPLIER
-    assert ErrorFloorSampler(shots=100, min_errors=0).run_config()["max_topup_shots"] is None
+    assert (
+        ErrorFloorSampler(shots=100, min_errors=1).run_config()["max_topup_shots"]
+        == 100 * DEFAULT_TOPUP_SHOT_MULTIPLIER
+    )
+    assert (
+        ErrorFloorSampler(shots=100, min_errors=0).run_config()["max_topup_shots"]
+        is None
+    )
 
 
 def test_metadata_key_is_stable_across_the_tuple_list_round_trip():

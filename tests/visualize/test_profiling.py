@@ -4,17 +4,16 @@ import pytest
 
 matplotlib.use("Agg")  # never open a window from the test suite
 
-from qsnow.interface.noise import NormalContour, Uniform
+import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib.figure import Figure  # noqa: E402
+from matplotlib.legend import Legend  # noqa: E402
+from PIL import Image  # noqa: E402
+
 from qsnow.experiments.squarepacking.game import SquarePackingExp  # noqa: E402
 from qsnow.helpers import serialize  # noqa: E402
 from qsnow.interface.chip import Chip  # noqa: E402
 from qsnow.interface.codes.rsc import SCTile  # noqa: E402
-import matplotlib.pyplot as plt  # noqa: E402
-from PIL import Image  # noqa: E402
-
-from matplotlib.figure import Figure  # noqa: E402
-from matplotlib.legend import Legend  # noqa: E402
-
+from qsnow.interface.noise import NormalContour, Uniform
 from qsnow.visualize import profiling  # noqa: E402
 from qsnow.visualize.profiling import (  # noqa: E402
     ProfileRun,
@@ -305,7 +304,9 @@ class TestProfileRun:
 
         assert called == ["chip"]
 
-    def test_export_passes_the_results_alongside_the_experiment(self, data_root, tmp_path):
+    def test_export_passes_the_results_alongside_the_experiment(
+        self, data_root, tmp_path
+    ):
         run = load_profile_runs([3], data_root)[3]
         out = tmp_path / "exp.html"
 
@@ -647,17 +648,27 @@ class TestBaselineLegend:
     def test_labels_come_from_the_chip_noise_model(self, named_roots):
         primary_root, baseline_root = named_roots
         ax_box = ler_cdf(
-            DISTANCES, primary_root, baseline_dir=baseline_root,
-            verbose=False, show=False,
+            DISTANCES,
+            primary_root,
+            baseline_dir=baseline_root,
+            verbose=False,
+            show=False,
         ).axes[1]
 
-        assert _labels_of(_legends(ax_box)[0]) == ["normal contour", "uniform homogeneous"]
+        assert _labels_of(_legends(ax_box)[0]) == [
+            "normal contour",
+            "uniform homogeneous",
+        ]
 
     def test_explicit_labels_override_the_noise_model(self, named_roots):
         primary_root, baseline_root = named_roots
         ax_box = ler_cdf(
-            DISTANCES, primary_root, baseline_dir=baseline_root,
-            labels=("contoured", "flat"), verbose=False, show=False,
+            DISTANCES,
+            primary_root,
+            baseline_dir=baseline_root,
+            labels=("contoured", "flat"),
+            verbose=False,
+            show=False,
         ).axes[1]
 
         assert _labels_of(_legends(ax_box)[0]) == ["contoured", "flat"]
@@ -696,7 +707,10 @@ class TestBaselineLegend:
         fig = _cdf(data_root, baseline_dir=data_root, legend_loc="lower right")
         ax = fig.axes[0]
         distances, key = _cdf_legends(fig)
-        d_box, k_box = profiling._axes_frac(ax, distances), profiling._axes_frac(ax, key)
+        d_box, k_box = (
+            profiling._axes_frac(ax, distances),
+            profiling._axes_frac(ax, key),
+        )
 
         assert d_box.x1 > 0.5 and d_box.y0 < 0.5
         assert k_box.x1 == pytest.approx(d_box.x1, abs=0.01)  # share the right edge
@@ -708,7 +722,10 @@ class TestBaselineLegend:
         fig = _cdf(data_root, baseline_dir=data_root, legend_loc="upper right")
         ax = fig.axes[0]
         distances, key = _cdf_legends(fig)
-        d_box, k_box = profiling._axes_frac(ax, distances), profiling._axes_frac(ax, key)
+        d_box, k_box = (
+            profiling._axes_frac(ax, distances),
+            profiling._axes_frac(ax, key),
+        )
 
         assert d_box.y1 == pytest.approx(1.0, abs=0.05)  # never moved
         assert k_box.y1 < d_box.y0
@@ -722,7 +739,10 @@ class TestBaselineLegend:
         )
         ax = fig.axes[0]
         distances, key = _cdf_legends(fig)
-        d_box, k_box = profiling._axes_frac(ax, distances), profiling._axes_frac(ax, key)
+        d_box, k_box = (
+            profiling._axes_frac(ax, distances),
+            profiling._axes_frac(ax, key),
+        )
 
         assert d_box.x0 < 0.5 and d_box.y1 > 0.5  # upper left
         assert k_box.x1 > 0.5 and k_box.y0 < 0.5  # lower right, not stacked
@@ -794,7 +814,9 @@ class TestLerHistogram:
 
     def test_scope_switches_the_x_label(self, data_root):
         assert _histo(data_root).axes[0].get_xlabel() == "ler"
-        assert _histo(data_root, scope="errors").axes[0].get_xlabel() == "# logical errors"
+        assert (
+            _histo(data_root, scope="errors").axes[0].get_xlabel() == "# logical errors"
+        )
 
     def test_subplot_titles_report_count_and_zeros(self, data_root):
         assert _histo(data_root).axes[0].get_title() == "d3 (n=4, len(0)=0)"
@@ -862,7 +884,10 @@ class TestLerTable:
         """The uniform case: one LER for every placement on the baseline, so its spreads
         are 1 while the profiled chip's exceed 1, with a better best and a worse worst."""
         roots = {}
-        for key, lers in [("profiled", [0.001, 0.002, 0.004, 0.008]), ("baseline", [0.003] * 4)]:
+        for key, lers in [
+            ("profiled", [0.001, 0.002, 0.004, 0.008]),
+            ("baseline", [0.003] * 4),
+        ]:
             serialize.set_data_dir(tmp_path / key)
             try:
                 for d in DISTANCES:
@@ -870,19 +895,28 @@ class TestLerTable:
             finally:
                 serialize.set_data_dir()
             roots[key] = tmp_path / key
-        rows = {(r["distance"], r["stat"]): r for r in self._rows(roots["profiled"], roots["baseline"])}
+        rows = {
+            (r["distance"], r["stat"]): r
+            for r in self._rows(roots["profiled"], roots["baseline"])
+        }
         for d in DISTANCES:
             assert rows[(d, "spread worst/best")]["baseline"] == pytest.approx(1.0)
             assert rows[(d, "spread worst/best")]["profiled"] == pytest.approx(8.0)
             assert rows[(d, "worst")]["ratio"] > 1 > rows[(d, "best")]["ratio"]
         assert rows[("all", "worst")]["max ratio"] == pytest.approx(8 / 3)
 
-    def test_one_row_per_stat_per_distance_plus_summary_and_named_columns(self, named_roots, capsys):
+    def test_one_row_per_stat_per_distance_plus_summary_and_named_columns(
+        self, named_roots, capsys
+    ):
         primary, baseline = named_roots
-        rows = ler_table(DISTANCES, primary, baseline_dir=baseline, verbose=False, explain=True)
+        rows = ler_table(
+            DISTANCES, primary, baseline_dir=baseline, verbose=False, explain=True
+        )
         per_distance = [r for r in rows if r["distance"] != "all"]
         assert len(per_distance) == len(DISTANCES) * len(profiling._STAT_MEANINGS)
-        assert {r["stat"] for r in rows if r["distance"] == "all"} == set(profiling._SUMMARISED)
+        assert {r["stat"] for r in rows if r["distance"] == "all"} == set(
+            profiling._SUMMARISED
+        )
         assert {"normal contour", "uniform homogeneous"} <= set(per_distance[0])
         out = capsys.readouterr().out
         assert all(stat in out for stat in profiling._STAT_MEANINGS)

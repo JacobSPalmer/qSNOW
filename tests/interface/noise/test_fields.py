@@ -4,13 +4,13 @@ from scipy.stats import lognorm, norm
 
 from qsnow.interface.models import NoiseProfile
 from qsnow.interface.noise.fields import (
-    log_skewed_target,
     P_FLOOR,
     blend_latents,
+    log_skewed_target,
     normal_scores,
-    rank_percentiles,
     p_bounds,
     quantile_map,
+    rank_percentiles,
     skewed_target,
     standardize,
 )
@@ -72,17 +72,25 @@ class TestQuantileMap:
 
     def test_depends_on_the_field_only_through_its_ranks(self, field):
         target = skewed_target(0.01, 0.003, 1.5)
-        assert np.array_equal(quantile_map(field, target), quantile_map(np.exp(field), target))
-        assert np.array_equal(quantile_map(field, target), quantile_map(3.0 * field + 1.0, target))
+        assert np.array_equal(
+            quantile_map(field, target), quantile_map(np.exp(field), target)
+        )
+        assert np.array_equal(
+            quantile_map(field, target), quantile_map(3.0 * field + 1.0, target)
+        )
 
     def test_explicit_bounds_override_the_default(self, field):
-        mapped = quantile_map(field, skewed_target(0.01, 0.003, 1.5), bounds=(0.008, 0.012))
+        mapped = quantile_map(
+            field, skewed_target(0.01, 0.003, 1.5), bounds=(0.008, 0.012)
+        )
         assert mapped.min() >= 0.008 and mapped.max() <= 0.012
 
 
 class TestRankPercentiles:
     def test_are_the_shifted_ranks_over_n(self):
-        assert rank_percentiles([0.3, 0.1, 0.2, 0.4]) == pytest.approx([0.625, 0.125, 0.375, 0.875])
+        assert rank_percentiles([0.3, 0.1, 0.2, 0.4]) == pytest.approx(
+            [0.625, 0.125, 0.375, 0.875]
+        )
 
     def test_stay_strictly_inside_the_unit_interval(self):
         u = rank_percentiles(np.random.default_rng(0).normal(size=1000))
@@ -143,21 +151,28 @@ class TestLogSkewedTarget:
 
     def test_geometric_centre_pins_the_geometric_mean(self):
         target = log_skewed_target(0.02, 0.3, 0.0, center="geometric")
-        assert target.ppf(0.5) == pytest.approx(0.02)  # symmetric in log space: median == geometric mean
+        assert target.ppf(0.5) == pytest.approx(
+            0.02
+        )  # symmetric in log space: median == geometric mean
 
     def test_zero_skew_is_log_normal(self):
         target = log_skewed_target(0.02, 0.3, 0.0, center="geometric")
         q = np.linspace(0.05, 0.95, 7)
-        assert target.ppf(q) == pytest.approx(lognorm(s=0.3 * np.log(10), scale=0.02).ppf(q))
+        assert target.ppf(q) == pytest.approx(
+            lognorm(s=0.3 * np.log(10), scale=0.02).ppf(q)
+        )
 
     def test_cdf_and_ppf_are_inverse(self):
         target = log_skewed_target(0.02, 0.3, 1.5)
         u = np.linspace(0.01, 0.99, 9)
         assert target.cdf(target.ppf(u)) == pytest.approx(u)
 
-    @pytest.mark.parametrize("kwargs", [dict(location=0.0), dict(location=-0.01), dict(deviation=0.0)])
+    @pytest.mark.parametrize(
+        "kwargs", [dict(location=0.0), dict(location=-0.01), dict(deviation=0.0)]
+    )
     def test_rejects_non_positive_inputs(self, kwargs):
-        params = dict(location=0.02, deviation=0.3, skew=1.0); params.update(kwargs)
+        params = dict(location=0.02, deviation=0.3, skew=1.0)
+        params.update(kwargs)
         with pytest.raises(ValueError):
             log_skewed_target(**params)
 

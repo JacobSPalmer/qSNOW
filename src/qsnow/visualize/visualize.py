@@ -1,18 +1,19 @@
 """Core visualization library for qSNOW objects."""
+
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass, replace
 import re
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, replace
 from math import ceil, floor, log10
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
-from qsnow.interface.models import CSSType, Coupler, Qubit, Status, Tag, Coord
+from qsnow.interface.models import Coord, Coupler, CSSType, Qubit, Status, Tag
 
 if TYPE_CHECKING:
     from plotly.graph_objs._figure import Figure
+
     from qsnow.interface.chip import Chip
-    from qsnow.interface.tile import LogicalTile
 
 # ------------------------------------------------------------------
 # Visualization style classes/types
@@ -26,7 +27,9 @@ ColorLike = Union[str, float]
 # does not have). `_colorbar_strip_px` composes these.
 _COLORBAR_BAR_PX = 40  # plotly's 30 px bar plus its outside ticks and label gap
 _COLORBAR_PAD_PX = 16  # clearance after the widest text
-_PX_PER_PT_PER_CHAR = 0.62  # sans text width per point per character (DejaVu Sans: 0.58-0.64)
+_PX_PER_PT_PER_CHAR = (
+    0.62  # sans text width per point per character (DejaVu Sans: 0.58-0.64)
+)
 _BOLD_FACTOR = 1.1
 _DEFAULT_FONT_PX = 12  # plotly's own default when no template sets one
 _AUTO_TICK_CHARS = 6  # e.g. "0.0004": width budget for ticks plotly chooses itself
@@ -61,6 +64,7 @@ class QubitStyle:
     edgecolor: str = "black"
     linewidths: float = 0.75
     custom_hovertext: Optional[str] = None
+
 
 @dataclass
 class ColorbarSpec:
@@ -231,7 +235,9 @@ def with_couplers(
     return replace(style, coupler_style=coupler_style)
 
 
-def _floored_colorscale(name: str, floor: float = 0.25, steps: int = 9) -> List[List[Any]]:
+def _floored_colorscale(
+    name: str, floor: float = 0.25, steps: int = 9
+) -> List[List[Any]]:
     """`name` with its palest end trimmed off.
 
     Couplers are drawn as bare lines with no outline, so a near-white low end - which
@@ -255,7 +261,9 @@ def _label_color(fill: ColorLike) -> str:
     if not isinstance(fill, str) or not fill.startswith("rgb"):
         return "white"
     try:
-        r, g, b = (float(v) for v in fill[fill.index("(") + 1 : fill.index(")")].split(",")[:3])
+        r, g, b = (
+            float(v) for v in fill[fill.index("(") + 1 : fill.index(")")].split(",")[:3]
+        )
     except (ValueError, IndexError):
         return "white"
     return "black" if (0.299 * r + 0.587 * g + 0.114 * b) > 140 else "white"
@@ -337,7 +345,9 @@ def _log_tick_label(mantissa: int, exponent: int) -> str:
     return ("" if mantissa == 1 else f"{mantissa}×") + f"10<sup>{exponent}</sup>"
 
 
-def _log_ticks(lo: float, hi: float, *, labelled: Tuple[int, ...] = (1,)) -> Tuple[List[float], List[str]]:
+def _log_ticks(
+    lo: float, hi: float, *, labelled: Tuple[int, ...] = (1,)
+) -> Tuple[List[float], List[str]]:
     """Colorbar ticks for a log10-scaled range, one at every mantissa 1..9 per decade.
 
     Returns positions in log10 space (what the colors are keyed on) paired with labels:
@@ -358,7 +368,12 @@ def _log_ticks(lo: float, hi: float, *, labelled: Tuple[int, ...] = (1,)) -> Tup
 
 
 def _log_colorbar(
-    lo: float, hi: float, colorscale: Any, label: str, *, labelled: Optional[Tuple[int, ...]] = None
+    lo: float,
+    hi: float,
+    colorscale: Any,
+    label: str,
+    *,
+    labelled: Optional[Tuple[int, ...]] = None,
 ) -> Tuple[ColorbarSpec, Callable[[float], float]]:
     """A log10 colorbar over `[lo, hi]` (already in log10), plus the transform to apply to
     each raw value.
@@ -369,7 +384,9 @@ def _log_colorbar(
     """
     if lo == hi:
         lo, hi = lo - 0.5, hi + 0.5
-    tickvals, ticktext = _log_ticks(lo, hi, labelled=labelled or _labelled_mantissas(hi - lo))
+    tickvals, ticktext = _log_ticks(
+        lo, hi, labelled=labelled or _labelled_mantissas(hi - lo)
+    )
     spec = ColorbarSpec(
         colorscale=colorscale,
         cmin=lo,
@@ -382,7 +399,9 @@ def _log_colorbar(
     return spec, (lambda v: log10(v) if v > 0 else lo)
 
 
-def _log_range(values: List[float], limits: Optional[Tuple[float, float]]) -> Tuple[float, float]:
+def _log_range(
+    values: List[float], limits: Optional[Tuple[float, float]]
+) -> Tuple[float, float]:
     """`(log10 lo, log10 hi)` of `limits`, else of the positive `values`."""
     if limits:
         return log10(limits[0]), log10(limits[1])
@@ -424,6 +443,7 @@ _DEVICE_PRESETS: Dict[str, Dict[str, Any]] = {
         log=True,
     ),
 }
+
 
 # TODO - allow for custom device stylings (i.e., manually override each individual attr above via a helper function that can be passed into preset such that preset is ultimately a dict)
 def device_heatmap_style(
@@ -482,9 +502,15 @@ def device_heatmap_style(
         q_range = _log_range(qubit_p, limits)
         c_range = _log_range(coupler_p, coupler_limits)
         # one tick rule for both bars, set by the narrower one, so their labels agree
-        labelled = _labelled_mantissas(min(q_range[1] - q_range[0], c_range[1] - c_range[0]))
-        qubit_bar, qubit_tx = _log_colorbar(*q_range, qubit_colorscale, qubit_label, labelled=labelled)
-        coupler_bar, coupler_tx = _log_colorbar(*c_range, coupler_colorscale, coupler_label, labelled=labelled)
+        labelled = _labelled_mantissas(
+            min(q_range[1] - q_range[0], c_range[1] - c_range[0])
+        )
+        qubit_bar, qubit_tx = _log_colorbar(
+            *q_range, qubit_colorscale, qubit_label, labelled=labelled
+        )
+        coupler_bar, coupler_tx = _log_colorbar(
+            *c_range, coupler_colorscale, coupler_label, labelled=labelled
+        )
     else:
         qubit_tx = coupler_tx = lambda v: v
         qubit_bar = ColorbarSpec(
@@ -593,7 +619,9 @@ def packing_profile_style(
         return QubitStyle(
             color="pink" if valid else "lightgray",
             custom_hovertext=_hovertext_format(
-                base=f"{(qubit.loc[0], qubit.loc[1])} -> {profile.get('bound')}" if valid else f"{(qubit.loc[0], qubit.loc[1])}",
+                base=f"{(qubit.loc[0], qubit.loc[1])} -> {profile.get('bound')}"
+                if valid
+                else f"{(qubit.loc[0], qubit.loc[1])}",
                 valid=valid,
                 ler=profile.get("ler", None),
             ),
@@ -611,7 +639,7 @@ def custom_heatmap_style(
     limits: Optional[Tuple[float, float]] = None,
     colorbar_label: Optional[str] = None,
     additional_hovertext: Optional[Dict[str, Dict[Coord, Any]]] = None,
-    desc: Optional[str] = None
+    desc: Optional[str] = None,
 ) -> VisualizationStyle:
     if limits:
         cmin, cmax = limits
@@ -626,30 +654,40 @@ def custom_heatmap_style(
         # raw value; the colorscale mapping is applied trace-wide by `visualize()`
         if qubit.loc:
             heatmap_val = float_map.get(qubit.loc)
-            hovertext_dict = {float_label: f"{heatmap_val:.4f}" if heatmap_val is not None else None}
+            hovertext_dict = {
+                float_label: f"{heatmap_val:.4f}" if heatmap_val is not None else None
+            }
 
-            if additional_hovertext: 
+            if additional_hovertext:
                 for attr_title, attr_map in additional_hovertext.items():
                     attr_val = attr_map.get(qubit.loc, None)
                     if attr_val:
-                        attr_val = f"{attr_val:.4f}" if isinstance(attr_val, float) else attr_val
+                        attr_val = (
+                            f"{attr_val:.4f}"
+                            if isinstance(attr_val, float)
+                            else attr_val
+                        )
                     hovertext_dict |= {attr_title: attr_val}
 
-            base = hovertext_dict.pop('base', None) or f"({qubit.loc[0]}, {qubit.loc[1]})"
+            base = (
+                hovertext_dict.pop("base", None) or f"({qubit.loc[0]}, {qubit.loc[1]})"
+            )
 
             return QubitStyle(
                 color=heatmap_val if heatmap_val is not None else "lightgray",
-                custom_hovertext=_hovertext_format(
-                    base = base,
-                    **hovertext_dict
-                ),
+                custom_hovertext=_hovertext_format(base=base, **hovertext_dict),
             )
         else:
-            raise AttributeError('Qubit must have location in order to be visualized.')
+            raise AttributeError("Qubit must have location in order to be visualized.")
 
     return VisualizationStyle(
         style_fn=qubit_style_fn,
-        colorbar=ColorbarSpec(colorscale=colorscale, cmin=cmin, cmax=cmax, label=colorbar_label or float_label),
+        colorbar=ColorbarSpec(
+            colorscale=colorscale,
+            cmin=cmin,
+            cmax=cmax,
+            label=colorbar_label or float_label,
+        ),
         logical_style=None,
         desc=desc,
     )
@@ -758,7 +796,9 @@ def _font_px() -> int:
 def _text_px(text: str, font_px: int, *, bold: bool = False) -> int:
     """Estimated rendered width of `text` (HTML tags stripped) at `font_px`."""
     plain = re.sub(r"<[^>]+>", "", text)
-    return ceil(_PX_PER_PT_PER_CHAR * font_px * len(plain) * (_BOLD_FACTOR if bold else 1.0))
+    return ceil(
+        _PX_PER_PT_PER_CHAR * font_px * len(plain) * (_BOLD_FACTOR if bold else 1.0)
+    )
 
 
 def _colorbar_strip_px(bar: ColorbarSpec, font_px: int) -> int:
@@ -768,7 +808,10 @@ def _colorbar_strip_px(bar: ColorbarSpec, font_px: int) -> int:
     edge, so the strip must be at least as wide as the title; a side title is rotated and
     adds one line height to the right of the labels.
     """
-    label_chars = max((len(re.sub(r"<[^>]+>", "", t)) for t in bar.ticktext or []), default=_AUTO_TICK_CHARS)
+    label_chars = max(
+        (len(re.sub(r"<[^>]+>", "", t)) for t in bar.ticktext or []),
+        default=_AUTO_TICK_CHARS,
+    )
     labels_px = _COLORBAR_BAR_PX + ceil(_PX_PER_PT_PER_CHAR * font_px * label_chars)
     title_px = _text_px(bar.label, font_px, bold="<b>" in bar.label)
     if bar.title_side == "bottom":
@@ -778,7 +821,11 @@ def _colorbar_strip_px(bar: ColorbarSpec, font_px: int) -> int:
 
 def _style_strips(style: VisualizationStyle, font_px: int) -> List[int]:
     """The strip widths a style's colorbars need, qubit bar first."""
-    return [_colorbar_strip_px(b, font_px) for b in (style.colorbar, style.coupler_colorbar) if b is not None]
+    return [
+        _colorbar_strip_px(b, font_px)
+        for b in (style.colorbar, style.coupler_colorbar)
+        if b is not None
+    ]
 
 
 def _compute_geometry(
@@ -956,7 +1003,9 @@ def _build_style_layer(
         fillcolors.append(fillcolor)
         hovertext.append(s.custom_hovertext)
 
-    def hover_marker_for(bar: Optional[ColorbarSpec], values, slot: int) -> Dict[str, object]:
+    def hover_marker_for(
+        bar: Optional[ColorbarSpec], values, slot: int
+    ) -> Dict[str, object]:
         """An invisible marker spec that renders colorbar `slot` for `bar`, if any."""
         marker: Dict[str, object] = dict(size=20, opacity=0)
         if bar is None:
@@ -972,7 +1021,12 @@ def _build_style_layer(
         if bar.tickvals is not None:
             # `ticks="outside"`: plotly's colorbar default draws no tick marks, and the
             # unlabelled sub-decade positions would then be invisible
-            colorbar.update(tickmode="array", tickvals=bar.tickvals, ticktext=bar.ticktext, ticks="outside")
+            colorbar.update(
+                tickmode="array",
+                tickvals=bar.tickvals,
+                ticktext=bar.ticktext,
+                ticks="outside",
+            )
         marker.update(
             color=values,
             colorscale=bar.colorscale,
@@ -1077,7 +1131,9 @@ def _build_style_layer(
                     xanchor="right",
                     yanchor="top",
                     font=dict(
-                        color=ls.edgecolor, size=ls.label_size, family="Andale Mono, monospace"
+                        color=ls.edgecolor,
+                        size=ls.label_size,
+                        family="Andale Mono, monospace",
                     ),
                     bgcolor="rgba(128,128,128,0.25)",
                 )

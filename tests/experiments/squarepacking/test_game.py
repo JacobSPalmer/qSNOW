@@ -218,7 +218,9 @@ class TestShowAcceptsEitherResultsShape:
 
         assert shown["chip"] is exp.chip
 
-    def test_html_export_accepts_the_dict_run_returns(self, tmp_path, chip, logical_tile):
+    def test_html_export_accepts_the_dict_run_returns(
+        self, tmp_path, chip, logical_tile
+    ):
         from qsnow.visualize.interactive import export_square_packing
 
         exp = SquarePackingExp(chip=chip, tile=logical_tile)

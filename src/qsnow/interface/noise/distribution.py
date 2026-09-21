@@ -29,9 +29,20 @@ subtitles and flakes read unchanged.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field, fields as dataclass_fields
+from collections.abc import Iterable
+from dataclasses import dataclass, field
+from dataclasses import fields as dataclass_fields
 from statistics import mean
-from typing import TYPE_CHECKING, Any, ClassVar, Dict, Iterable, Optional, Tuple, Type, TypeVar
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    ClassVar,
+    Dict,
+    Optional,
+    Tuple,
+    Type,
+    TypeVar,
+)
 
 import numpy as np
 from numpy.random import SeedSequence, default_rng
@@ -72,7 +83,7 @@ __all__ = [
     "profiles",
 ]
 
-_REGISTRY: Dict[str, Type["NoiseDistribution"]] = {}
+_REGISTRY: Dict[str, Type[NoiseDistribution]] = {}
 
 # Generic so a decorated class keeps its own type: annotating the decorator as returning
 # `Type[NoiseDistribution]` would make static checkers see every subclass as the base,
@@ -86,7 +97,7 @@ def register_distribution(cls: _D) -> _D:
     return cls
 
 
-def distribution_from_dict(data: Dict[str, Any]) -> "NoiseDistribution":
+def distribution_from_dict(data: Dict[str, Any]) -> NoiseDistribution:
     """Rebuild a distribution from its `as_dict()` record."""
     name = data.get("name")
     cls = _REGISTRY.get(name)
@@ -103,7 +114,9 @@ def as_profile(value: NoiseProfile | float) -> NoiseProfile:
     Copies the whole profile rather than rebuilding it from `p`, so a field added to
     `NoiseProfile` later is never silently dropped on the way onto a chip.
     """
-    return value.copy() if isinstance(value, NoiseProfile) else NoiseProfile(float(value))
+    return (
+        value.copy() if isinstance(value, NoiseProfile) else NoiseProfile(float(value))
+    )
 
 
 def profiles(keys: Iterable, rates: Iterable[float]) -> Dict[Any, NoiseProfile]:
@@ -144,7 +157,9 @@ class NoiseDistribution(ABC):
     def params(self) -> Dict[str, Any]:
         """Every field except `seed`, positional ones first."""
         declared = [f for f in dataclass_fields(self) if f.name != "seed"]
-        ordered = [f for f in declared if not f.kw_only] + [f for f in declared if f.kw_only]
+        ordered = [f for f in declared if not f.kw_only] + [
+            f for f in declared if f.kw_only
+        ]
         return {f.name: getattr(self, f.name) for f in ordered}
 
     def as_dict(self) -> Dict[str, Any]:
@@ -155,7 +170,7 @@ class NoiseDistribution(ABC):
         return flat
 
     @staticmethod
-    def from_dict(data: Dict[str, Any]) -> "NoiseDistribution":
+    def from_dict(data: Dict[str, Any]) -> NoiseDistribution:
         return distribution_from_dict(data)
 
     @classmethod
@@ -167,12 +182,12 @@ class NoiseDistribution(ABC):
     # Production
     # ------------------------------------------------------------------
     @abstractmethod
-    def sites(self, chip: "Chip") -> Dict[Coord, NoiseProfile]:
+    def sites(self, chip: Chip) -> Dict[Coord, NoiseProfile]:
         """A noise profile for every site of `chip`."""
 
     @abstractmethod
     def couplers(
-        self, chip: "Chip", *, correlation: Optional[float] = None
+        self, chip: Chip, *, correlation: Optional[float] = None
     ) -> Dict[CouplerKey, NoiseProfile]:
         """A profile for every coupler of `chip`.
 
@@ -208,12 +223,12 @@ class Uniform(NoiseDistribution):
     randomized: ClassVar[bool] = False
     p: float
 
-    def sites(self, chip: "Chip") -> Dict[Coord, NoiseProfile]:
+    def sites(self, chip: Chip) -> Dict[Coord, NoiseProfile]:
         keys = list(chip.noise_map.keys())
         return profiles(keys, [self.p] * len(keys))
 
     def couplers(
-        self, chip: "Chip", *, correlation: Optional[float] = None
+        self, chip: Chip, *, correlation: Optional[float] = None
     ) -> Dict[CouplerKey, NoiseProfile]:
         self._reject_correlation(correlation)
         keys = list(chip.coupler_map.keys())
@@ -240,7 +255,9 @@ class Custom(NoiseDistribution):
 
     name: ClassVar[str] = "custom"
     randomized: ClassVar[bool] = False
-    noise_map: Optional[Dict[Coord, Any]] = field(default=None, compare=False, repr=False)
+    noise_map: Optional[Dict[Coord, Any]] = field(
+        default=None, compare=False, repr=False
+    )
     coupler_map: Optional[Dict[CouplerKey, Any]] = field(
         default=None, compare=False, repr=False
     )
@@ -249,13 +266,13 @@ class Custom(NoiseDistribution):
     def params(self) -> Dict[str, Any]:
         return {}
 
-    def sites(self, chip: "Chip") -> Dict[Coord, NoiseProfile]:
+    def sites(self, chip: Chip) -> Dict[Coord, NoiseProfile]:
         if self.noise_map is None:
             raise ValueError("This Custom distribution carries no site map.")
         return {c: as_profile(n) for c, n in self.noise_map.items()}
 
     def couplers(
-        self, chip: "Chip", *, correlation: Optional[float] = None
+        self, chip: Chip, *, correlation: Optional[float] = None
     ) -> Dict[CouplerKey, NoiseProfile]:
         self._reject_correlation(correlation)
         if self.coupler_map is None:
@@ -285,18 +302,20 @@ class GaussianFieldDistribution(NoiseDistribution):
     """
 
     @abstractmethod
-    def _gaussian_field(self, chip: "Chip") -> Dict[Coord, float]:
+    def _gaussian_field(self, chip: Chip) -> Dict[Coord, float]:
         """One Gaussian number per site, carrying only spatial structure."""
 
     @abstractmethod
     def _to_rates(self, values: np.ndarray) -> np.ndarray:
         """Gaussian numbers -> error rates with the requested marginal, order preserved."""
 
-    def sites(self, chip: "Chip") -> Dict[Coord, NoiseProfile]:
+    def sites(self, chip: Chip) -> Dict[Coord, NoiseProfile]:
         field_ = self._gaussian_field(chip)
-        return profiles(field_.keys(), self._to_rates(np.fromiter(field_.values(), float)))
+        return profiles(
+            field_.keys(), self._to_rates(np.fromiter(field_.values(), float))
+        )
 
-    def _uncorrelated_couplers(self, chip: "Chip") -> Dict[CouplerKey, NoiseProfile]:
+    def _uncorrelated_couplers(self, chip: Chip) -> Dict[CouplerKey, NoiseProfile]:
         """Couplers from the field alone; the branch taken when no correlation is asked."""
         field_ = self._gaussian_field(chip)
         couplers = chip.couplers
@@ -304,7 +323,7 @@ class GaussianFieldDistribution(NoiseDistribution):
         return profiles([c.ends for c in couplers], self._to_rates(np.asarray(own)))
 
     def couplers(
-        self, chip: "Chip", *, correlation: Optional[float] = None
+        self, chip: Chip, *, correlation: Optional[float] = None
     ) -> Dict[CouplerKey, NoiseProfile]:
         if correlation is None:
             return self._uncorrelated_couplers(chip)
@@ -338,15 +357,15 @@ class _IIDDistribution(GaussianFieldDistribution):
         dist = self._target()
         return [round(dist.rvs(1, random_state=rng)[0], 5) for _ in range(n)]
 
-    def sites(self, chip: "Chip") -> Dict[Coord, NoiseProfile]:
+    def sites(self, chip: Chip) -> Dict[Coord, NoiseProfile]:
         keys = list(chip.noise_map.keys())
         return profiles(keys, self._draw(len(keys)))
 
-    def _uncorrelated_couplers(self, chip: "Chip") -> Dict[CouplerKey, NoiseProfile]:
+    def _uncorrelated_couplers(self, chip: Chip) -> Dict[CouplerKey, NoiseProfile]:
         keys = list(chip.coupler_map.keys())
         return profiles(keys, self._draw(len(keys)))
 
-    def _gaussian_field(self, chip: "Chip") -> Dict[Coord, float]:
+    def _gaussian_field(self, chip: Chip) -> Dict[Coord, float]:
         return iid_gaussian_field(chip, self.seed)
 
     def _to_rates(self, values: np.ndarray) -> np.ndarray:
@@ -421,7 +440,7 @@ class ContourDistribution(GaussianFieldDistribution):
     def _white_noise(self) -> Tuple[float, float]:
         """`(mean, deviation)` of the white noise the field is averaged from."""
 
-    def _gaussian_field(self, chip: "Chip") -> Dict[Coord, float]:
+    def _gaussian_field(self, chip: Chip) -> Dict[Coord, float]:
         mean_, deviation = self._white_noise()
         return correlated_gaussian_field(chip, mean_, deviation, self.seed, self.slope)
 
@@ -495,7 +514,8 @@ class SkewContour(ContourDistribution):
 
     def _to_rates(self, values: np.ndarray) -> np.ndarray:
         return quantile_map(
-            values, skewed_target(self.location, self.deviation, self.skew, center=self.center)
+            values,
+            skewed_target(self.location, self.deviation, self.skew, center=self.center),
         )
 
 
@@ -555,5 +575,7 @@ class LogSkewContour(ContourDistribution):
     def _to_rates(self, values: np.ndarray) -> np.ndarray:
         return quantile_map(
             values,
-            log_skewed_target(self.location, self.deviation, self.skew, center=self.center),
+            log_skewed_target(
+                self.location, self.deviation, self.skew, center=self.center
+            ),
         )
