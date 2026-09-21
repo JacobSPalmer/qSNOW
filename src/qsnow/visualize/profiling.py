@@ -66,6 +66,10 @@ _MAX_HIST_COLS = 4
 # dashed in the CDF, and the baseline box is hatched *and* half-width in the box panel.
 _PRIMARY_ALPHA = 0.95
 _BASELINE_STEP_ALPHA = 0.2
+# The CDF's confidence band is a faint wash behind each profiled step. The baseline gets
+# no band: its near-vertical steps would only smear colour over the profiled bands, and
+# its uncertainty is not what the figure argues from.
+_BAND_ALPHA = 0.15
 _BASELINE_BOX_ALPHA = 0.3
 _BASELINE_LINESTYLE = "--"
 _BASELINE_HATCH = "///"
@@ -87,6 +91,15 @@ _LEGEND_SWATCH_COLOR = "0.25"
 _FALLBACK_LABELS = ("profiled", "baseline")
 # Gap, in axes fractions, between two legends stacked in the same corner.
 _LEGEND_STACK_PAD = 0.015
+
+# Confidence level of the per-placement LER interval (`ProfileRun.ler_intervals`). The
+# interval is the Wilson score interval (Wilson 1927), the textbook binomial interval that
+# behaves at small counts, so a placement held at the sampler's 30-error floor gets an
+# honest, asymmetric bound, and a zero-error placement gets `low = 0, high ~= 3/shots`
+# (the rule of three). `sinter.fit_binomial` was considered and passed over: it returns a
+# likelihood-ratio interval keyed by a Bayes factor rather than a confidence level, so
+# it cannot be quoted as "95%" in a caption.
+_INTERVAL_CONFIDENCE = 0.95
 
 
 # ------------------------------------------------------------------
@@ -157,6 +170,28 @@ class ProfileRun:
     @property
     def shots(self) -> Optional[int]:
         return self.results.run_config.get("shots")
+
+    def ler_intervals(
+        self, confidence: float = _INTERVAL_CONFIDENCE
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """`(low, high)` Wilson score bounds on each placement's LER, in `lers` order.
+
+        Computed from the stored `errors`/`shots` counts, so it needs no re-run. This is
+        the measurement uncertainty on each placement; the sweep itself visits every
+        valid placement, so there is no sampling uncertainty on the distribution.
+        """
+        from scipy.stats import binomtest
+
+        bounds = [
+            binomtest(int(entry["errors"]), int(entry["shots"])).proportion_ci(
+                confidence_level=confidence, method="wilson"
+            )
+            for entry in self.results.results.values()
+        ]
+        return (
+            np.array([b.low for b in bounds], dtype=float),
+            np.array([b.high for b in bounds], dtype=float),
+        )
 
     def values(self, scope: Literal["ler", "errors"] = "ler") -> np.ndarray:
         return self.lers if scope == "ler" else self.error_counts
@@ -264,10 +299,53 @@ def _ecdf(values: Sequence[float]) -> Tuple[np.ndarray, np.ndarray]:
     return np.r_[-np.inf, x], np.r_[0.0, np.arange(1, x.size + 1) / x.size]
 
 
+def _draw_band(ax, run: ProfileRun, color, alpha: float) -> None:
+    """Shade the envelope of `run`'s per-placement LER intervals behind its CDF step.
+
+    The envelope runs from the ECDF of every placement's lower bound to the ECDF of its
+    upper bound: sorting each bound independently *is* that ECDF, and both share the
+    step's y grid because they have the same count. `step="pre"` matches the default of
+    the `Axes.step` the CDF is drawn with, so band and line agree at every riser.
+    """
+    low, high = run.ler_intervals()
+    _, y = _ecdf(run.lers)
+    # `_ecdf` prepends the (-inf, 0) run-in point for the step; a fill cannot use it
+    ax.fill_betweenx(
+        y[1:], np.sort(low), np.sort(high), step="pre", color=color, alpha=alpha, linewidth=0
+    )
+
+
+def _finish_figure(fig: "Figure", save: Optional[PathLike], show: bool) -> Optional["Figure"]:
+    """Save, show, and/or return `fig` - the one place the figure functions end.
+
+    `save` writes the figure (parent directories created) before anything is shown, at
+    the dpi the figure was made with. `show=True` then draws it and returns `None`:
+    returning the figure too would draw it a second time, since a notebook renders a
+    returned `Figure` on top of what `plt.show()` already drew.
+    """
+    import matplotlib.pyplot as plt
+
+    if save is not None:
+        path = Path(save)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(path)
+    if show:
+        plt.show()
+        return None
+    return fig
+
+
 def _style_box(
-    bp: Dict[str, list], color, alpha: float, hatch: Optional[str] = None
+    bp: Dict[str, list],
+    color,
+    alpha: float,
+    hatch: Optional[str] = None,
+    linewidth: Optional[float] = None,
 ) -> None:
     """Tint every artist of one boxplot to `color` at `alpha`.
+
+    `linewidth` sets the weight of the box edge, whiskers, caps and median together;
+    `None` keeps matplotlib's defaults (and the median's slightly heavier 1.3).
 
     `hatch` fills the box with a pattern as a second cue beyond the fade. It has to be
     applied through explicit RGBA rather than `set_alpha`, which would fade the edge -
@@ -284,22 +362,53 @@ def _style_box(
             patch.set_facecolor(color)
             patch.set_edgecolor(color)
             patch.set_alpha(alpha)
+        if linewidth is not None:
+            patch.set_linewidth(linewidth)
     for key in ("whiskers", "caps"):
         for line in bp[key]:
             line.set_color(color)
             line.set_alpha(alpha)
+            if linewidth is not None:
+                line.set_linewidth(linewidth)
     for line in bp["medians"]:
         # black, and less faded than the box: a colour-matched median disappears into
         # its own fill at the baseline's low alpha
         line.set_color("black")
         line.set_alpha(min(1.0, alpha + 0.45))
-        line.set_linewidth(1.3)
+        line.set_linewidth(1.3 if linewidth is None else linewidth)
     for flier in bp["fliers"]:
         # a d=3 sweep has ~1400 placements; default fliers bury the box they belong to
         flier.set_markeredgecolor(color)
         flier.set_markerfacecolor(color)
         flier.set_alpha(alpha * 0.55)
         flier.set_markersize(2.5)
+
+
+# Figure width, and the height in inches of each panel of the whisker layout before
+# `box_scale` is applied. Paired boxes need roughly twice the vertical room per distance.
+_FIG_WIDTH = 14
+_CDF_HEIGHT = {False: 9.0, True: 8.6}
+_BOX_HEIGHT = {False: 3.0, True: 4.9}
+
+
+def _whisker_layout(
+    paired: bool, box_scale: float
+) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+    """`(figsize, height_ratios)` for the CDF-over-whisker layout.
+
+    `box_scale` stretches only the box panel's share of the height. Box widths and the
+    row pitch share the same data units, so fattening the boxes in place would always
+    eat the gap between rows; growing the panel instead gives every row more physical
+    room, and boxes and gaps scale together. The figure's width then grows by the same
+    factor as its total height, so the figure keeps its aspect ratio and simply gets
+    larger rather than turning into a tall strip.
+    """
+    if box_scale <= 0:
+        raise ValueError(f"box_scale must be > 0, got {box_scale}")
+    cdf_height, box_height = _CDF_HEIGHT[paired], _BOX_HEIGHT[paired] * box_scale
+    growth = (cdf_height + box_height) / (_CDF_HEIGHT[paired] + _BOX_HEIGHT[paired])
+    figsize = (_FIG_WIDTH * growth, cdf_height + box_height)
+    return figsize, (cdf_height, box_height)
 
 
 def _draw_box(
@@ -310,6 +419,7 @@ def _draw_box(
     alpha: float,
     width: float,
     hatch: Optional[str] = None,
+    linewidth: Optional[float] = None,
 ) -> None:
     """Draw one horizontal box for `values`, centred on `position`.
 
@@ -323,7 +433,7 @@ def _draw_box(
         orientation="horizontal",
         patch_artist=True,
     )
-    _style_box(bp, color, alpha, hatch)
+    _style_box(bp, color, alpha, hatch, linewidth)
 
 
 def _series_labels(
@@ -521,6 +631,12 @@ def ler_cdf(
     directory: Optional[PathLike] = None,
     *,
     whisker: bool = True,
+    band: bool = True,
+    band_alpha: float = _BAND_ALPHA,
+    linewidth: Optional[float] = None,
+    box_scale: float = 1.0,
+    box_linewidth: Optional[float] = None,
+    figsize: Optional[Tuple[float, float]] = None,
     baseline_dir: Optional[PathLike] = None,
     labels: Optional[Tuple[str, str]] = None,
     legend_loc: str = "best",
@@ -528,12 +644,29 @@ def ler_cdf(
     add_title: str = "",
     dpi: Optional[int] = None,
     verbose: bool = True,
+    save: Optional[PathLike] = None,
     show: bool = True,
     **kwargs
 ) -> Optional["Figure"]:
     """Cumulative distribution of LER across every tile placement, one step per distance.
 
     `whisker` adds a horizontal boxplot of the same data beneath the CDF.
+    `band` shades, in each distance's colour, the envelope of the profiled sweep's
+    per-placement 95% Wilson intervals (`ProfileRun.ler_intervals`): the ECDF of every
+    placement's lower bound out to the ECDF of its upper bound. It is the measurement
+    uncertainty on each point, not sampling uncertainty on the distribution, which visits
+    every placement. The band is widest where the sampler's error floor binds - the
+    low-LER tail of the higher distances - and near-invisible where placements saw
+    thousands of errors. The baseline overlay is drawn without a band to keep the figure
+    legible. `band_alpha` sets the band's opacity. `linewidth` sets the width of the
+    CDF steps, profiled and baseline alike (default: matplotlib's `lines.linewidth`).
+    `box_scale` stretches the whisker panel by that factor, so every box and the gap
+    between rows grow together and can never overlap; the whole figure then scales up
+    in proportion, keeping its aspect ratio.
+    `box_linewidth` sets the weight of the box edges, whiskers, caps and medians.
+    `figsize` sets the overall figure size in inches, `(width, height)`, in place of the
+    computed default; with `whisker`, `box_scale` still decides how that height is split
+    between the two panels.
     `baseline_dir` overlays a second sweep (typically the uniform-noise baseline) in
     each distance's color, for a like-for-like comparison: a faded dashed step in the
     CDF, and a fainter, narrower, hatched box paired beneath the profiled one in the box
@@ -548,8 +681,8 @@ def ler_cdf(
     them in opposite corners. Aiming `key_loc` at the corner `"best"` picks is the one
     combination that can still collide.
 
-    Shows the figure. Pass `show=False` to get the `Figure` back instead, to
-    `savefig` it or tweak it further.
+    `save` writes the figure to that path before showing it. Shows the figure; pass
+    `show=False` to get the `Figure` back instead, to tweak it further.
     """
     import matplotlib.pyplot as plt
 
@@ -558,16 +691,16 @@ def ler_cdf(
 
     paired = baseline is not None
     if whisker:
-        # paired boxes need roughly twice the vertical room per distance
+        default_size, height_ratios = _whisker_layout(paired, box_scale)
         fig, (ax_cdf, ax_box) = plt.subplots(
             2,
             1,
-            height_ratios=[3, 1.7] if paired else [3, 1],
-            figsize=(14, 13.5) if paired else (14, 12),
+            height_ratios=height_ratios,
+            figsize=figsize or default_size,
             dpi=dpi,
         )
     else:
-        fig, ax_cdf = plt.subplots(figsize=(10, 6), dpi=dpi)
+        fig, ax_cdf = plt.subplots(figsize=figsize or (10, 6), dpi=dpi)
         ax_box = None
 
     palette = plt.get_cmap("tab10")
@@ -576,7 +709,9 @@ def ler_cdf(
         lers = run.lers
         x, y = _ecdf(lers)
         color = palette(i % palette.N)
-        ax_cdf.step(x, y, color=color, label=f"d={d} (n={lers.size})")
+        ax_cdf.step(x, y, color=color, label=f"d={d} (n={lers.size})", linewidth=linewidth)
+        if band:
+            _draw_band(ax_cdf, run, color, band_alpha)
 
         if baseline is not None:
             bx, by = _ecdf(baseline[d].lers)
@@ -586,6 +721,7 @@ def ler_cdf(
                 color=color,
                 alpha=kwargs.get('baseline_alpha', _BASELINE_STEP_ALPHA),
                 linestyle=_BASELINE_LINESTYLE,
+                linewidth=linewidth,
             )
 
         # both panels are drawn from the same `color`, so they cannot drift apart
@@ -600,6 +736,7 @@ def ler_cdf(
                     _BASELINE_BOX_ALPHA,
                     _BASELINE_BOX_WIDTH,
                     _BASELINE_HATCH,
+                    linewidth=box_linewidth,
                 )
                 _draw_box(
                     ax_box,
@@ -608,10 +745,17 @@ def ler_cdf(
                     color,
                     _PRIMARY_ALPHA,
                     _PRIMARY_BOX_WIDTH,
+                    linewidth=box_linewidth,
                 )
             else:
                 _draw_box(
-                    ax_box, lers, position, color, _PRIMARY_ALPHA, _SOLO_BOX_WIDTH
+                    ax_box,
+                    lers,
+                    position,
+                    color,
+                    _PRIMARY_ALPHA,
+                    _SOLO_BOX_WIDTH,
+                    linewidth=box_linewidth,
                 )
 
         if verbose:
@@ -664,12 +808,7 @@ def ler_cdf(
             key_loc=key_loc,
         )
 
-    if show:
-        plt.show()
-        # returning the figure too would draw it a second time: the notebook renders
-        # a returned Figure on top of what plt.show() already drew
-        return None
-    return fig
+    return _finish_figure(fig, save, show)
 
 
 def ler_histogram(
@@ -681,6 +820,7 @@ def ler_histogram(
     add_title: str = "",
     bins: int = 25,
     dpi: Optional[int] = None,
+    save: Optional[PathLike] = None,
     show: bool = True,
 ) -> Optional["Figure"]:
     """A grid of per-distance histograms of LER (or raw logical error count) by placement.
@@ -688,8 +828,8 @@ def ler_histogram(
     `scope` picks the quantity binned; `limits` is an `(low, high)` x-range applied to
     every subplot so distances stay directly comparable.
 
-    Shows the figure. Pass `show=False` to get the `Figure` back instead, to
-    `savefig` it or tweak it further.
+    `save` writes the figure to that path before showing it. Shows the figure; pass
+    `show=False` to get the `Figure` back instead, to tweak it further.
     """
     import math
 
@@ -727,12 +867,7 @@ def ler_histogram(
     )
 
     fig.tight_layout()
-    if show:
-        plt.show()
-        # returning the figure too would draw it a second time: the notebook renders
-        # a returned Figure on top of what plt.show() already drew
-        return None
-    return fig
+    return _finish_figure(fig, save, show)
 
 
 # ------------------------------------------------------------------
