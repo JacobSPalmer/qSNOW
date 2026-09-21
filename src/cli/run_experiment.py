@@ -142,7 +142,8 @@ def run_and_serialize_spp_experiment(
 def save_configuration(args: dict, chip: Chip, name: str):
     def format_str(name, values):
         if isinstance(values, list):
-            return f"--{name}\n{'\n'.join([str(v) for v in values])}\n"
+            joined = "\n".join([str(v) for v in values])
+            return f"--{name}\n{joined}\n"
         else:
             return f"--{name}\n{values}\n"
 
