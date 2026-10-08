@@ -1,5 +1,4 @@
-# Target Python version alignment
-target-version = "py314"
+target-version = "py311"
 line-length = 88
 
 [lint]

@@ -443,7 +443,9 @@ def build_and_solve(
         by_origin.setdefault(c.origin, []).append(i)
     for origin, idxs in by_origin.items():
         if len(idxs) > 1:
-            model.addConstr(gp.quicksum(y[i] for i in idxs) <= 1, name=f"origin_{origin}")
+            model.addConstr(
+                gp.quicksum(y[i] for i in idxs) <= 1, name=f"origin_{origin}"
+            )
 
     # LP relaxation bound: a DIAGNOSTIC only (it shows the clique formulation is
     # tight -- typically integral -- so the MIP barely branches). It is a full

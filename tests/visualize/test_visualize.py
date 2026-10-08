@@ -1,15 +1,26 @@
+import pytest
+
 from qsnow.interface.models import Qubit, Status
 from qsnow.visualize.visualize import (
     QubitStyle,
     VisualizationStyle,
+    _colorbar_strip_px,
     _default_qubit_style_by_status,
     _discrete_colormap_fn,
+    _floored_colorscale,
+    _font_px,
+    _label_color,
+    _labelled_mantissas,
+    _log_ticks,
     area_selection_style,
+    coupler_heatmap_style,
     custom_heatmap_style,
     default_style,
+    device_heatmap_style,
     noise_heatmap_style,
     packing_profile_style,
     visualize,
+    with_couplers,
 )
 
 
@@ -75,6 +86,23 @@ class TestVisualizeFigure:
         full = fig.full_figure_for_development(warn=False)
         assert full.layout.xaxis.range == requested_x
         assert full.layout.yaxis.range == requested_y
+
+    def test_non_square_chip_keeps_its_aspect_ratio(self, wide_chip):
+        # regression: plot pixels were clamped per-axis, so a checkerboard chip -
+        # whose coordinate span is `pitch` times its unit extent - saturated the
+        # 900px cap on *both* axes and rendered square. Plotly then padded the y
+        # range out to fill the surplus (19.75 -> 21.75 on a 12x10 chip).
+        fig = visualize(wide_chip)
+        assert fig.layout.width > fig.layout.height
+        full = fig.full_figure_for_development(warn=False)
+        # not exact, unlike the square case above: plotly quantizes the plot area to
+        # whole pixels, which leaves a few thousandths of a coordinate unit behind.
+        assert full.layout.xaxis.range == pytest.approx(
+            fig.layout.xaxis.range, abs=0.01
+        )
+        assert full.layout.yaxis.range == pytest.approx(
+            fig.layout.yaxis.range, abs=0.01
+        )
 
     def test_logical_color_gradient_overrides_default_edgecolor(
         self, lg_chip, logical_tile
@@ -172,3 +200,394 @@ class TestDiscreteColormapFn:
     def test_different_indices_can_differ(self):
         color_fn = _discrete_colormap_fn((0, 10), palette=["a", "b", "c"])
         assert color_fn(0) != color_fn(10)
+
+
+def line_shapes(fig):
+    return [s for s in fig.layout.shapes if s.type == "line"]
+
+
+class TestCouplerLayer:
+    def test_styles_without_a_coupler_layer_draw_no_edges(self, chip):
+        """The default seam: coupler_style is None, so output is byte-identical to
+        before couplers existed."""
+        fig = visualize(chip, style=default_style)
+
+        assert default_style.coupler_style is None
+        assert line_shapes(fig) == []
+
+    def test_enabled_layer_draws_one_line_per_coupler(self, chip):
+        chip.generate_uniform_noise(0.01)
+        style = with_couplers(default_style, chip, couplers=True)
+
+        fig = visualize(chip, style=style)
+
+        assert len(line_shapes(fig)) == len(chip.couplers) == 81
+
+    def test_edges_are_prepended_so_qubits_draw_on_top(self, chip):
+        chip.generate_uniform_noise(0.01)
+
+        fig = visualize(chip, style=with_couplers(default_style, chip, couplers=True))
+        shapes = list(fig.layout.shapes)
+
+        assert all(s.type == "line" for s in shapes[: len(chip.couplers)])
+        assert all(s.type != "line" for s in shapes[len(chip.couplers) :])
+
+    def test_coupler_layer_does_not_add_a_trace(self, chip):
+        """Couplers ride the existing invisible hover trace, so the one-trace contract
+        that `visualize_interactive`'s visibility array indexes on still holds."""
+        chip.generate_uniform_noise(0.01)
+
+        fig = visualize(chip, style=with_couplers(default_style, chip, couplers=True))
+
+        assert len(fig.data) == 1
+        assert len(fig.data[0].x) == len(chip.qubits) + len(chip.couplers)
+
+    def test_coupler_hovertext_reaches_the_trace(self, chip):
+        chip.generate_uniform_noise(0.01)
+        chip.coupler((0, 0), (1, 1)).noise.p = 0.2
+
+        fig = visualize(chip, style=coupler_heatmap_style(chip))
+        hovers = [h for h in fig.data[0].hovertext if h and "<->" in h]
+
+        assert len(hovers) == len(chip.couplers)
+        assert any("0.2000" in h for h in hovers)
+
+    def test_hover_points_are_anchored_at_edge_midpoints(self, chip):
+        chip.generate_uniform_noise(0.01)
+
+        fig = visualize(chip, style=with_couplers(default_style, chip, couplers=True))
+        midpoints = {c.midpoint for c in chip.couplers}
+
+        # couplers come first in the parallel arrays, matching the shape order
+        assert set(zip(fig.data[0].x, fig.data[0].y)) >= midpoints
+
+
+class TestCouplerAutoDetection:
+    def test_auto_is_off_while_couplers_are_derived(self, chip):
+        chip.generate_gaussian_noise(0.01, 0.002)
+
+        fig = visualize(chip, style=noise_heatmap_style(chip))
+
+        assert not chip.has_independent_couplers
+        assert line_shapes(fig) == []
+
+    def test_auto_turns_on_once_a_coupler_is_overridden(self, chip):
+        chip.generate_gaussian_noise(0.01, 0.002)
+        chip.coupler((0, 0), (1, 1)).noise.p = 0.2
+
+        fig = visualize(chip, style=noise_heatmap_style(chip))
+
+        assert len(line_shapes(fig)) == len(chip.couplers)
+
+    def test_explicit_true_overrides_auto_off(self, chip):
+        chip.generate_gaussian_noise(0.01, 0.002)
+
+        fig = visualize(chip, style=noise_heatmap_style(chip, couplers=True))
+
+        assert len(line_shapes(fig)) == len(chip.couplers)
+
+    def test_explicit_false_overrides_auto_on(self, chip):
+        chip.generate_gaussian_noise(0.01, 0.002)
+        chip.coupler((0, 0), (1, 1)).noise.p = 0.2
+
+        fig = visualize(chip, style=noise_heatmap_style(chip, couplers=False))
+
+        assert line_shapes(fig) == []
+
+    def test_shared_singletons_are_never_mutated(self, chip):
+        chip.generate_uniform_noise(0.01)
+
+        with_couplers(default_style, chip, couplers=True)
+
+        assert default_style.coupler_style is None
+
+    def test_enabled_layer_widens_the_shared_colorbar(self, chip):
+        """Qubit and coupler p are the same quantity, so one colorbar spans both."""
+        chip.generate_uniform_noise(0.01)
+        chip.coupler((0, 0), (1, 1)).noise.p = 0.2
+
+        assert noise_heatmap_style(chip).colorbar.cmax == 0.2
+        assert noise_heatmap_style(chip, couplers=False).colorbar.cmax == 0.01
+
+
+def measured(chip, qubit_p=0.004, coupler_p=0.02):
+    """A chip whose couplers carry rates of their own, an order above the qubits."""
+    chip.generate_uniform_noise(qubit_p)
+    chip.set_coupler_noise_map({c.ends: coupler_p for c in chip.couplers})
+    return chip
+
+
+class TestLogTicks:
+    def test_decades_are_labelled_as_powers_of_ten_and_the_rest_are_bare_marks(self):
+        import math
+
+        vals, text = _log_ticks(math.log10(2e-3), math.log10(1e-2))
+
+        assert text[-1] == "10<sup>-2</sup>"
+        assert [t for t in text if t] == ["10<sup>-2</sup>"]
+        assert (
+            len(vals) == 9
+        )  # 2e-3 .. 9e-3 and 1e-2: every mantissa in range has a mark
+
+    def test_labelled_mantissas_add_2_and_5_when_asked(self):
+        import math
+
+        _, text = _log_ticks(math.log10(1e-3), math.log10(1e-2), labelled=(1, 2, 5))
+
+        assert [t for t in text if t] == [
+            "10<sup>-3</sup>",
+            "2×10<sup>-3</sup>",
+            "5×10<sup>-3</sup>",
+            "10<sup>-2</sup>",
+        ]
+
+    def test_tick_positions_are_log10_of_their_values(self):
+        import math
+
+        vals, _ = _log_ticks(math.log10(1e-3), math.log10(1e-2))
+
+        assert vals == [pytest.approx(math.log10(m * 1e-3)) for m in range(1, 10)] + [
+            pytest.approx(-2)
+        ]
+
+    def test_rule_labels_decades_only_once_two_fit(self):
+        assert _labelled_mantissas(1.5) == (1,)
+        assert _labelled_mantissas(1.2) == (1, 2, 5)
+
+
+class TestDeviceHeatmapStyle:
+    def test_declares_two_independent_colorbars(self, chip):
+        style = device_heatmap_style(measured(chip))
+
+        assert style.colorbar is not None
+        assert style.coupler_colorbar is not None
+        assert style.colorbar.colorscale != style.coupler_colorbar.colorscale
+
+    def test_the_two_scales_do_not_share_a_range(self, chip):
+        """The whole point: coupler rates an order above qubit rates would otherwise
+        flatten every qubit into the bottom of one shared bar."""
+        style = device_heatmap_style(measured(chip, qubit_p=0.004, coupler_p=0.02))
+
+        assert style.colorbar.cmax != style.coupler_colorbar.cmax
+
+    def test_emits_one_trace_per_colorbar(self, chip):
+        fig = visualize(chip, style=device_heatmap_style(measured(chip)))
+
+        assert len(fig.data) == 2
+        assert [t.marker.showscale for t in fig.data] == [True, True]
+
+    def test_the_colorbars_do_not_overlap(self, chip):
+        fig = visualize(chip, style=device_heatmap_style(measured(chip)))
+
+        xs = [t.marker.colorbar.x for t in fig.data]
+        assert xs[0] < xs[1]
+
+    def test_reserves_a_strip_per_colorbar(self, chip):
+        """Each bar buys a strip sized to its own labels and title at the current font."""
+        one = visualize(chip, style=noise_heatmap_style(measured(chip)))
+        device = device_heatmap_style(chip)
+        two = visualize(chip, style=device)
+
+        font = _font_px()
+        expected = sum(
+            _colorbar_strip_px(b, font)
+            for b in (device.colorbar, device.coupler_colorbar)
+        )
+        expected -= _colorbar_strip_px(noise_heatmap_style(chip).colorbar, font)
+        assert two.layout.width - one.layout.width == expected
+
+    def test_a_larger_font_widens_the_strip_not_the_plot(self, chip):
+        """Regression: at 14 pt the bold bottom titles overflowed a fixed strip, plotly's
+        margin autoexpand narrowed the plot, and the scale-anchored y axis padded its
+        range to -1..60. The strip must grow with the font instead."""
+        import plotly.io as pio
+
+        template = pio.templates[pio.templates.default]
+        before = template.layout.font.size
+        try:
+            template.layout.font.size = 12
+            small = visualize(chip, style=device_heatmap_style(measured(chip)))
+            template.layout.font.size = 20
+            large = visualize(chip, style=device_heatmap_style(measured(chip)))
+        finally:
+            template.layout.font.size = before
+
+        plot_px = lambda fig: (
+            fig.layout.xaxis.domain[1]
+            * (fig.layout.width - fig.layout.margin.l - fig.layout.margin.r)
+        )
+        assert large.layout.width > small.layout.width
+        assert plot_px(large) == pytest.approx(plot_px(small))
+
+    def test_log_scale_feeds_log10_values_against_log10_bounds(self, chip):
+        style = device_heatmap_style(measured(chip, qubit_p=0.004), log=True)
+
+        assert style.colorbar.cmin < 0  # log10(0.004) is negative
+        assert style.colorbar.ticktext is not None
+
+    def test_both_bars_share_one_tick_rule_whatever_their_spans(self, chip):
+        """Qubits over 1.2 decades, couplers over 2: the narrower bar's rule wins for both,
+        so the two bars carry the same labelled mantissas."""
+        measured(chip)
+        qs = iter([0.001, 0.016] * len(chip.qubits))
+        for q in chip.qubits:
+            q.noise.p = next(qs)
+        cs = iter([0.001, 0.1] * len(chip.couplers))
+        for c in chip.couplers:
+            c.noise.p = next(cs)
+        style = device_heatmap_style(chip, log=True)
+
+        labels = lambda bar: {t.split("×")[0] for t in bar.ticktext if t and "×" in t}
+        assert labels(style.colorbar) == labels(style.coupler_colorbar) == {"2", "5"}
+
+    def test_limits_set_the_ticks_not_just_the_bounds(self, chip):
+        style = device_heatmap_style(measured(chip), log=True, limits=(1e-4, 1e-1))
+
+        assert style.colorbar.tickvals[0] == pytest.approx(-4)
+        assert style.colorbar.tickvals[-1] == pytest.approx(-1)
+
+    def test_linear_scale_keeps_raw_units(self, chip):
+        style = device_heatmap_style(measured(chip, qubit_p=0.004), log=False)
+
+        assert style.colorbar.cmin == pytest.approx(0.004)
+        assert style.colorbar.ticktext is None
+
+    def test_labels_are_off_by_default(self, chip):
+        fig = visualize(chip, style=device_heatmap_style(measured(chip)))
+
+        assert fig.layout.annotations == ()
+
+    def test_labels_number_every_qubit_in_reading_order(self, chip):
+        fig = visualize(chip, style=device_heatmap_style(measured(chip), labels=True))
+        notes = list(fig.layout.annotations)
+
+        assert len(notes) == len(chip.qubits)
+        assert [n.text for n in notes] == [str(i) for i in range(len(chip.qubits))]
+        # index 0 is the top-left qubit; reading order is left-to-right, top-to-bottom
+        assert (notes[0].x, notes[0].y) == min(chip.grid, key=lambda c: (c[1], c[0]))
+
+    def test_zero_rates_pin_to_the_bottom_of_the_log_scale(self, chip):
+        """A p of 0 has no logarithm; it must clamp rather than raise."""
+        chip.generate_uniform_noise(0.004)
+        chip.set_coupler_noise_map({c.ends: 0.0 for c in chip.couplers})
+
+        fig = visualize(chip, style=device_heatmap_style(chip))
+
+        assert len(fig.data) == 2
+
+
+class TestDeviceHeatmapPresets:
+    def test_default_preset_matches_the_house_marker_conventions(self, chip):
+        """Asserted against QubitStyle's own defaults, not literals, so this tracks the
+        house style if it ever moves."""
+        style = device_heatmap_style(measured(chip))
+        house, actual = QubitStyle(), style.style_fn(chip.qubits[0])
+
+        assert (actual.marker, actual.size, actual.edgecolor, actual.linewidths) == (
+            house.marker,
+            house.size,
+            house.edgecolor,
+            house.linewidths,
+        )
+
+    def test_default_preset_uses_the_house_qubit_ramp(self, chip):
+        style = device_heatmap_style(measured(chip))
+
+        assert style.colorbar.colorscale == "hot_r"
+        assert style.colorbar.colorscale != style.coupler_colorbar.colorscale
+
+    def test_default_preset_matches_the_house_logical_outline(self, chip):
+        """noise_heatmap_style outlines tiles in blue; the device view must agree."""
+        device = device_heatmap_style(measured(chip)).logical_style(chip.tag)
+        house = noise_heatmap_style(chip).logical_style(chip.tag)
+
+        assert device.edgecolor == house.edgecolor == "blue"
+
+    def test_bar_titles_sit_beneath_the_bars_in_both_presets(self, chip):
+        for preset in ("qsnow", "device"):
+            style = device_heatmap_style(measured(chip), preset=preset)
+            assert (
+                style.colorbar.title_side
+                == style.coupler_colorbar.title_side
+                == "bottom"
+            )
+            assert style.colorbar.label == "<b>Qubit (p<sub>q</sub>)</b>"
+            assert style.coupler_colorbar.label == "<b>Coupler (p<sub>c</sub>)</b>"
+
+    def test_device_preset_flips_the_whole_set_together(self, chip):
+        style = device_heatmap_style(measured(chip), preset="device")
+        marker = style.style_fn(chip.qubits[0])
+
+        assert marker.marker == "o"
+        assert style.colorbar.colorscale == "Viridis_r"
+        assert style.colorbar.ticktext is not None  # device preset is log
+        assert style.logical_style(chip.tag).edgecolor == "red"
+
+    def test_log_follows_the_preset_unless_given(self, chip):
+        measured(chip)
+
+        assert device_heatmap_style(chip).colorbar.ticktext is None
+        assert device_heatmap_style(chip, preset="device").colorbar.ticktext is not None
+
+    @pytest.mark.parametrize("preset, log", [("qsnow", True), ("device", False)])
+    def test_explicit_log_overrides_either_preset(self, chip, preset, log):
+        style = device_heatmap_style(measured(chip), preset=preset, log=log)
+
+        assert (style.colorbar.ticktext is not None) is log
+
+    def test_unknown_preset_names_the_valid_ones(self, chip):
+        with pytest.raises(ValueError, match="Known presets"):
+            device_heatmap_style(chip, preset="nope")
+
+    def test_explicit_colorscales_override_the_preset(self, chip):
+        style = device_heatmap_style(measured(chip), qubit_colorscale="Greys")
+
+        assert style.colorbar.colorscale == "Greys"
+
+
+class TestLabelContrast:
+    @pytest.mark.parametrize(
+        "fill, expected",
+        [
+            ("rgb(255, 255, 255)", "black"),  # hot_r's low end
+            ("rgb(0, 0, 0)", "white"),  # hot_r's high end
+            ("rgb(8, 48, 107)", "white"),  # Blues' high end
+            ("lightgray", "white"),  # unparseable named color
+            ("", "white"),
+        ],
+    )
+    def test_picks_the_readable_color(self, fill, expected):
+        assert _label_color(fill) == expected
+
+    def test_labels_stay_legible_across_the_house_ramp(self, chip):
+        """hot_r is white at the low end, so a fixed white label would vanish on every
+        good qubit - both colors must appear on a chip that spans the ramp."""
+        chip.generate_uniform_noise(0.001)
+        for q in chip.qubits[:10]:
+            q.noise.p = 0.05
+        chip.set_coupler_noise_map({c.ends: 0.02 for c in chip.couplers})
+
+        fig = visualize(chip, style=device_heatmap_style(chip, labels=True))
+        colors = {n.font.color for n in fig.layout.annotations if n.text.isdigit()}
+
+        assert colors == {"black", "white"}
+
+
+class TestFlooredColorscale:
+    def test_trims_the_palest_end(self, chip):
+        """A bare line with no outline vanishes at Blues' near-white low end."""
+        full = _floored_colorscale("Blues", floor=0.0)[0][1]
+        floored = _floored_colorscale("Blues", floor=0.25)[0][1]
+
+        assert full != floored
+        assert _label_color(full) == "black"  # i.e. the raw low end is very pale
+        assert (
+            _floored_colorscale("Blues")[-1][1]
+            == _floored_colorscale("Blues", 0.0)[-1][1]
+        )
+
+    def test_spans_the_full_zero_to_one_domain(self):
+        scale = _floored_colorscale("Blues")
+
+        assert scale[0][0] == 0.0
+        assert scale[-1][0] == 1.0

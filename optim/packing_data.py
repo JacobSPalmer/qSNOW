@@ -26,8 +26,9 @@ import argparse
 import json
 import os
 import re
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Dict, Iterable, List, NamedTuple, Optional, Tuple, Union
+from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
 Coord = Tuple[int, int]
 
@@ -44,6 +45,7 @@ class Candidate(NamedTuple):
     distance: int
     span: int
     ler: float
+
 
 # This module lives in qSNOW/optim/; the experiment data stays in the demo tree.
 # Paths are resolved relative to this file so imports and CLI runs work regardless
@@ -80,7 +82,9 @@ def flake_path(distance: int = 3, data_dir: Union[str, Path, None] = None) -> Pa
     surrounding descriptor. If several runs match, the lexicographically last
     (newest timestamp) is used.
     """
-    data_dir = Path(data_dir).expanduser() if data_dir is not None else default_data_dir()
+    data_dir = (
+        Path(data_dir).expanduser() if data_dir is not None else default_data_dir()
+    )
     pattern = f"results_*d{distance}_*.flake"
     matches = sorted(data_dir.glob(pattern))
     if not matches:

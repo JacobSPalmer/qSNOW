@@ -1,0 +1,850 @@
+{
+  "__qsnow__": "Chip",
+  "format_version": 1,
+  "tag": {
+    "name": null,
+    "desc": null,
+    "metadata": {
+      "noise_model": {
+        "name": "gaussian",
+        "mean": 0.01,
+        "deviation": 0.003,
+        "seed": 1
+      }
+    }
+  },
+  "length": 12,
+  "height": 12,
+  "noise": {
+    "0,0": 0.01009,
+    "0,2": 0.01495,
+    "0,4": 0.00682,
+    "0,6": 0.0149,
+    "0,8": 0.00853,
+    "0,10": 0.00942,
+    "0,12": 0.01284,
+    "0,14": 0.00931,
+    "0,16": 0.01038,
+    "0,18": 0.00427,
+    "0,20": 0.01206,
+    "0,22": 0.01029,
+    "1,1": 0.00868,
+    "1,3": 0.0124,
+    "1,5": 0.00846,
+    "1,7": 0.00965,
+    "1,9": 0.00668,
+    "1,11": 0.00927,
+    "1,13": 0.00752,
+    "1,15": 0.00809,
+    "1,17": 0.01203,
+    "1,19": 0.00826,
+    "1,21": 0.00989,
+    "1,23": 0.01621,
+    "2,0": 0.01531,
+    "2,2": 0.01179,
+    "2,4": 0.01031,
+    "2,6": 0.00823,
+    "2,8": 0.00703,
+    "2,10": 0.01564,
+    "2,12": 0.01012,
+    "2,14": 0.00642,
+    "2,16": 0.01095,
+    "2,18": 0.01228,
+    "2,20": 0.01086,
+    "2,22": 0.01416,
+    "3,1": 0.00475,
+    "3,3": 0.01022,
+    "3,5": 0.0097,
+    "3,7": 0.0054,
+    "3,9": 0.01109,
+    "3,11": 0.01314,
+    "3,13": 0.01071,
+    "3,15": 0.00807,
+    "3,17": 0.01298,
+    "3,19": 0.01007,
+    "3,21": 0.01008,
+    "3,23": 0.01205,
+    "4,0": 0.00687,
+    "4,2": 0.01274,
+    "4,4": 0.01143,
+    "4,6": 0.01239,
+    "4,8": 0.00739,
+    "4,10": 0.01255,
+    "4,12": 0.00738,
+    "4,14": 0.00582,
+    "4,16": 0.01318,
+    "4,18": 0.01326,
+    "4,20": 0.01347,
+    "4,22": 0.00979,
+    "5,1": 0.0082,
+    "5,3": 0.00271,
+    "5,5": 0.01112,
+    "5,7": 0.01175,
+    "5,9": 0.01293,
+    "5,11": 0.00827,
+    "5,13": 0.00764,
+    "5,15": 0.01107,
+    "5,17": 0.01258,
+    "5,19": 0.01539,
+    "5,21": 0.0069,
+    "5,23": 0.00987,
+    "6,0": 0.01376,
+    "6,2": 0.00942,
+    "6,4": 0.01068,
+    "6,6": 0.00412,
+    "6,8": 0.01135,
+    "6,10": 0.0142,
+    "6,12": 0.01283,
+    "6,14": 0.01361,
+    "6,16": 0.01124,
+    "6,18": 0.00794,
+    "6,20": 0.0122,
+    "6,22": 0.0076,
+    "7,1": 0.01288,
+    "7,3": 0.00541,
+    "7,5": 0.01281,
+    "7,7": 0.00708,
+    "7,9": 0.00905,
+    "7,11": 0.00857,
+    "7,13": 0.0115,
+    "7,15": 0.00724,
+    "7,17": 0.00921,
+    "7,19": 0.00251,
+    "7,21": 0.0081,
+    "7,23": 0.00941,
+    "8,0": 0.00626,
+    "8,2": 0.01102,
+    "8,4": 0.00909,
+    "8,6": 0.0118,
+    "8,8": 0.01119,
+    "8,10": 0.00948,
+    "8,12": 0.01334,
+    "8,14": 0.01101,
+    "8,16": 0.01264,
+    "8,18": 0.00878,
+    "8,20": 0.01033,
+    "8,22": 0.00744,
+    "9,1": 0.01799,
+    "9,3": 0.00792,
+    "9,5": 0.00804,
+    "9,7": 0.00565,
+    "9,9": 0.00805,
+    "9,11": 0.01215,
+    "9,13": 0.01156,
+    "9,15": 0.00661,
+    "9,17": 0.00906,
+    "9,19": 0.0094,
+    "9,21": 0.01128,
+    "9,23": 0.00967,
+    "10,0": 0.01066,
+    "10,2": 0.01298,
+    "10,4": 0.01181,
+    "10,6": 0.00897,
+    "10,8": 0.00961,
+    "10,10": 0.00899,
+    "10,12": 0.00632,
+    "10,14": 0.00751,
+    "10,16": 0.00829,
+    "10,18": 0.00855,
+    "10,20": 0.00854,
+    "10,22": 0.01058,
+    "11,1": 0.01572,
+    "11,3": 0.01226,
+    "11,5": 0.01243,
+    "11,7": 0.01211,
+    "11,9": 0.01074,
+    "11,11": 0.01417,
+    "11,13": 0.01149,
+    "11,15": 0.01,
+    "11,17": 0.00573,
+    "11,19": 0.00991,
+    "11,21": 0.00761,
+    "11,23": 0.00666,
+    "12,0": 0.01005,
+    "12,2": 0.01237,
+    "12,4": 0.00839,
+    "12,6": 0.01221,
+    "12,8": 0.01019,
+    "12,10": 0.00688,
+    "12,12": 0.01544,
+    "12,14": 0.00925,
+    "12,16": 0.00839,
+    "12,18": 0.01307,
+    "12,20": 0.00655,
+    "12,22": 0.01187,
+    "13,1": 0.00735,
+    "13,3": 0.00918,
+    "13,5": 0.00781,
+    "13,7": 0.013,
+    "13,9": 0.00916,
+    "13,11": 0.01586,
+    "13,13": 0.01096,
+    "13,15": 0.01152,
+    "13,17": 0.01016,
+    "13,19": 0.00851,
+    "13,21": 0.00921,
+    "13,23": 0.01469,
+    "14,0": 0.00749,
+    "14,2": 0.01679,
+    "14,4": 0.0121,
+    "14,6": 0.00893,
+    "14,8": 0.01109,
+    "14,10": 0.00909,
+    "14,12": 0.0091,
+    "14,14": 0.01003,
+    "14,16": 0.00365,
+    "14,18": 0.00995,
+    "14,20": 0.01572,
+    "14,22": 0.0083,
+    "15,1": 0.01201,
+    "15,3": 0.00957,
+    "15,5": 0.00758,
+    "15,7": 0.01393,
+    "15,9": 0.00366,
+    "15,11": 0.00846,
+    "15,13": 0.01929,
+    "15,15": 0.00809,
+    "15,17": 0.0131,
+    "15,19": 0.01081,
+    "15,21": 0.01259,
+    "15,23": 0.011,
+    "16,0": 0.00895,
+    "16,2": 0.01213,
+    "16,4": 0.00421,
+    "16,6": 0.0096,
+    "16,8": 0.00902,
+    "16,10": 0.00983,
+    "16,12": 0.00659,
+    "16,14": 0.00771,
+    "16,16": 0.01047,
+    "16,18": 0.00915,
+    "16,20": 0.01244,
+    "16,22": 0.0108,
+    "17,1": 0.01326,
+    "17,3": 0.01186,
+    "17,5": 0.01078,
+    "17,7": 0.00832,
+    "17,9": 0.01235,
+    "17,11": 0.00799,
+    "17,13": 0.00569,
+    "17,15": 0.01536,
+    "17,17": 0.0103,
+    "17,19": 0.01226,
+    "17,21": 0.01022,
+    "17,23": 0.01085,
+    "18,0": 0.00454,
+    "18,2": 0.00733,
+    "18,4": 0.01136,
+    "18,6": 0.01053,
+    "18,8": 0.007,
+    "18,10": 0.015,
+    "18,12": 0.00695,
+    "18,14": 0.01008,
+    "18,16": 0.00682,
+    "18,18": 0.01173,
+    "18,20": 0.00822,
+    "18,22": 0.00668,
+    "19,1": 0.00496,
+    "19,3": 0.0072,
+    "19,5": 0.00739,
+    "19,7": 0.01028,
+    "19,9": 0.00963,
+    "19,11": 0.01516,
+    "19,13": 0.01506,
+    "19,15": 0.01249,
+    "19,17": 0.01133,
+    "19,19": 0.01305,
+    "19,21": 0.01463,
+    "19,23": 0.00402,
+    "20,0": 0.00645,
+    "20,2": 0.00893,
+    "20,4": 0.00605,
+    "20,6": 0.01076,
+    "20,8": 0.00808,
+    "20,10": 0.00811,
+    "20,12": 0.00833,
+    "20,14": 0.00612,
+    "20,16": 0.01194,
+    "20,18": 0.01116,
+    "20,20": 0.01081,
+    "20,22": 0.00454,
+    "21,1": 0.00947,
+    "21,3": 0.01145,
+    "21,5": 0.00698,
+    "21,7": 0.00913,
+    "21,9": 0.00385,
+    "21,11": 0.00583,
+    "21,13": 0.00765,
+    "21,15": 0.00936,
+    "21,17": 0.00972,
+    "21,19": 0.01359,
+    "21,21": 0.00857,
+    "21,23": 0.00395,
+    "22,0": 0.01282,
+    "22,2": 0.00539,
+    "22,4": 0.00604,
+    "22,6": 0.01537,
+    "22,8": 0.01206,
+    "22,10": 0.00875,
+    "22,12": 0.00666,
+    "22,14": 0.00914,
+    "22,16": 0.00876,
+    "22,18": 0.01344,
+    "22,20": 0.00939,
+    "22,22": 0.00583,
+    "23,1": 0.01436,
+    "23,3": 0.01094,
+    "23,5": 0.00643,
+    "23,7": 0.00638,
+    "23,9": 0.00975,
+    "23,11": 0.00602,
+    "23,13": 0.01101,
+    "23,15": 0.01089,
+    "23,17": 0.00446,
+    "23,19": 0.01261,
+    "23,21": 0.01239,
+    "23,23": 0.01412
+  },
+  "tiles": [
+    {
+      "__qsnow__": "SCTile",
+      "format_version": 1,
+      "base_circuit": "QUBIT_COORDS(1, 1) 1\nQUBIT_COORDS(2, 0) 2\nQUBIT_COORDS(3, 1) 3\nQUBIT_COORDS(5, 1) 5\nQUBIT_COORDS(6, 0) 6\nQUBIT_COORDS(7, 1) 7\nQUBIT_COORDS(9, 1) 9\nQUBIT_COORDS(1, 3) 12\nQUBIT_COORDS(2, 2) 13\nQUBIT_COORDS(3, 3) 14\nQUBIT_COORDS(4, 2) 15\nQUBIT_COORDS(5, 3) 16\nQUBIT_COORDS(6, 2) 17\nQUBIT_COORDS(7, 3) 18\nQUBIT_COORDS(8, 2) 19\nQUBIT_COORDS(9, 3) 20\nQUBIT_COORDS(10, 2) 21\nQUBIT_COORDS(0, 4) 22\nQUBIT_COORDS(1, 5) 23\nQUBIT_COORDS(2, 4) 24\nQUBIT_COORDS(3, 5) 25\nQUBIT_COORDS(4, 4) 26\nQUBIT_COORDS(5, 5) 27\nQUBIT_COORDS(6, 4) 28\nQUBIT_COORDS(7, 5) 29\nQUBIT_COORDS(8, 4) 30\nQUBIT_COORDS(9, 5) 31\nQUBIT_COORDS(1, 7) 34\nQUBIT_COORDS(2, 6) 35\nQUBIT_COORDS(3, 7) 36\nQUBIT_COORDS(4, 6) 37\nQUBIT_COORDS(5, 7) 38\nQUBIT_COORDS(6, 6) 39\nQUBIT_COORDS(7, 7) 40\nQUBIT_COORDS(8, 6) 41\nQUBIT_COORDS(9, 7) 42\nQUBIT_COORDS(10, 6) 43\nQUBIT_COORDS(0, 8) 44\nQUBIT_COORDS(1, 9) 45\nQUBIT_COORDS(2, 8) 46\nQUBIT_COORDS(3, 9) 47\nQUBIT_COORDS(4, 8) 48\nQUBIT_COORDS(5, 9) 49\nQUBIT_COORDS(6, 8) 50\nQUBIT_COORDS(7, 9) 51\nQUBIT_COORDS(8, 8) 52\nQUBIT_COORDS(9, 9) 53\nQUBIT_COORDS(4, 10) 59\nQUBIT_COORDS(8, 10) 63\nR 1 3 5 7 9 12 14 16 18 20 23 25 27 29 31 34 36 38 40 42 45 47 49 51 53 2 6 13 15 17 19 21 22 24 26 28 30 35 37 39 41 43 44 46 48 50 52 59 63\nTICK\nH 2 6 15 19 24 28 37 41 46 50 59 63\nTICK\nCX 2 3 24 25 46 47 15 16 37 38 6 7 28 29 50 51 19 20 41 42 23 22 45 44 14 13 36 35 27 26 49 48 18 17 40 39 31 30 53 52\nTICK\nCX 2 1 24 23 46 45 15 14 37 36 6 5 28 27 50 49 19 18 41 40 12 22 34 44 3 13 25 35 16 26 38 48 7 17 29 39 20 30 42 52\nTICK\nCX 24 14 46 36 15 5 37 27 59 49 28 18 50 40 19 9 41 31 63 53 12 13 34 35 25 26 47 48 16 17 38 39 29 30 51 52 20 21 42 43\nTICK\nCX 24 12 46 34 15 3 37 25 59 47 28 16 50 38 19 7 41 29 63 51 1 13 23 35 14 26 36 48 5 17 27 39 18 30 40 52 9 21 31 43\nTICK\nH 2 6 15 19 24 28 37 41 46 50 59 63\nTICK\nMR 2 6 13 15 17 19 21 22 24 26 28 30 35 37 39 41 43 44 46 48 50 52 59 63\nDETECTOR(0, 4, 0) rec[-17]\nDETECTOR(0, 8, 0) rec[-7]\nDETECTOR(2, 2, 0) rec[-22]\nDETECTOR(2, 6, 0) rec[-12]\nDETECTOR(4, 4, 0) rec[-15]\nDETECTOR(4, 8, 0) rec[-5]\nDETECTOR(6, 2, 0) rec[-20]\nDETECTOR(6, 6, 0) rec[-10]\nDETECTOR(8, 4, 0) rec[-13]\nDETECTOR(8, 8, 0) rec[-3]\nDETECTOR(10, 2, 0) rec[-18]\nDETECTOR(10, 6, 0) rec[-8]\nREPEAT 4 {\n    TICK\n    H 2 6 15 19 24 28 37 41 46 50 59 63\n    TICK\n    CX 2 3 24 25 46 47 15 16 37 38 6 7 28 29 50 51 19 20 41 42 23 22 45 44 14 13 36 35 27 26 49 48 18 17 40 39 31 30 53 52\n    TICK\n    CX 2 1 24 23 46 45 15 14 37 36 6 5 28 27 50 49 19 18 41 40 12 22 34 44 3 13 25 35 16 26 38 48 7 17 29 39 20 30 42 52\n    TICK\n    CX 24 14 46 36 15 5 37 27 59 49 28 18 50 40 19 9 41 31 63 53 12 13 34 35 25 26 47 48 16 17 38 39 29 30 51 52 20 21 42 43\n    TICK\n    CX 24 12 46 34 15 3 37 25 59 47 28 16 50 38 19 7 41 29 63 51 1 13 23 35 14 26 36 48 5 17 27 39 18 30 40 52 9 21 31 43\n    TICK\n    H 2 6 15 19 24 28 37 41 46 50 59 63\n    TICK\n    MR 2 6 13 15 17 19 21 22 24 26 28 30 35 37 39 41 43 44 46 48 50 52 59 63\n    SHIFT_COORDS(0, 0, 1)\n    DETECTOR(2, 0, 0) rec[-24] rec[-48]\n    DETECTOR(6, 0, 0) rec[-23] rec[-47]\n    DETECTOR(2, 2, 0) rec[-22] rec[-46]\n    DETECTOR(4, 2, 0) rec[-21] rec[-45]\n    DETECTOR(6, 2, 0) rec[-20] rec[-44]\n    DETECTOR(8, 2, 0) rec[-19] rec[-43]\n    DETECTOR(10, 2, 0) rec[-18] rec[-42]\n    DETECTOR(0, 4, 0) rec[-17] rec[-41]\n    DETECTOR(2, 4, 0) rec[-16] rec[-40]\n    DETECTOR(4, 4, 0) rec[-15] rec[-39]\n    DETECTOR(6, 4, 0) rec[-14] rec[-38]\n    DETECTOR(8, 4, 0) rec[-13] rec[-37]\n    DETECTOR(2, 6, 0) rec[-12] rec[-36]\n    DETECTOR(4, 6, 0) rec[-11] rec[-35]\n    DETECTOR(6, 6, 0) rec[-10] rec[-34]\n    DETECTOR(8, 6, 0) rec[-9] rec[-33]\n    DETECTOR(10, 6, 0) rec[-8] rec[-32]\n    DETECTOR(0, 8, 0) rec[-7] rec[-31]\n    DETECTOR(2, 8, 0) rec[-6] rec[-30]\n    DETECTOR(4, 8, 0) rec[-5] rec[-29]\n    DETECTOR(6, 8, 0) rec[-4] rec[-28]\n    DETECTOR(8, 8, 0) rec[-3] rec[-27]\n    DETECTOR(4, 10, 0) rec[-2] rec[-26]\n    DETECTOR(8, 10, 0) rec[-1] rec[-25]\n}\nM 1 3 5 7 9 12 14 16 18 20 23 25 27 29 31 34 36 38 40 42 45 47 49 51 53\nDETECTOR(0, 4, 1) rec[-15] rec[-20] rec[-42]\nDETECTOR(0, 8, 1) rec[-5] rec[-10] rec[-32]\nDETECTOR(2, 2, 1) rec[-19] rec[-20] rec[-24] rec[-25] rec[-47]\nDETECTOR(2, 6, 1) rec[-9] rec[-10] rec[-14] rec[-15] rec[-37]\nDETECTOR(4, 4, 1) rec[-13] rec[-14] rec[-18] rec[-19] rec[-40]\nDETECTOR(4, 8, 1) rec[-3] rec[-4] rec[-8] rec[-9] rec[-30]\nDETECTOR(6, 2, 1) rec[-17] rec[-18] rec[-22] rec[-23] rec[-45]\nDETECTOR(6, 6, 1) rec[-7] rec[-8] rec[-12] rec[-13] rec[-35]\nDETECTOR(8, 4, 1) rec[-11] rec[-12] rec[-16] rec[-17] rec[-38]\nDETECTOR(8, 8, 1) rec[-1] rec[-2] rec[-6] rec[-7] rec[-28]\nDETECTOR(10, 2, 1) rec[-16] rec[-21] rec[-43]\nDETECTOR(10, 6, 1) rec[-6] rec[-11] rec[-33]\nOBSERVABLE_INCLUDE(0) rec[-21] rec[-22] rec[-23] rec[-24] rec[-25]",
+      "origin": [
+        0.0,
+        0.0
+      ],
+      "construct_origin": [
+        0,
+        0
+      ],
+      "x_buffer": 1,
+      "y_buffer": 1,
+      "tag": {
+        "name": "rsc_memory_z_d5",
+        "desc": null,
+        "metadata": {}
+      },
+      "spec": {
+        "tile_type": "SCTile",
+        "distance": 5,
+        "rounds": 5,
+        "generator_args": {
+          "code_task": "surface_code:rotated_memory_z",
+          "distance": 5,
+          "rounds": 5,
+          "task": "memory_z"
+        }
+      },
+      "ruleset": {
+        "rules": [
+          {
+            "operation": "R",
+            "trigger": "all_qubits",
+            "before": [],
+            "after": [
+              {
+                "channel": "X_ERROR",
+                "filter": "all_qubits",
+                "scalar": 1.0,
+                "name": null
+              }
+            ],
+            "exclusive": false,
+            "name": null
+          },
+          {
+            "operation": "H",
+            "trigger": "x_measures",
+            "before": [],
+            "after": [
+              {
+                "channel": "DEPOLARIZE1",
+                "filter": "all_qubits",
+                "scalar": 1.0,
+                "name": null
+              }
+            ],
+            "exclusive": false,
+            "name": null
+          },
+          {
+            "operation": "CX",
+            "trigger": "any",
+            "before": [],
+            "after": [
+              {
+                "channel": "DEPOLARIZE2",
+                "filter": "active",
+                "scalar": 1.0,
+                "name": null
+              },
+              {
+                "channel": "DEPOLARIZE1",
+                "filter": "idle",
+                "scalar": 1.0,
+                "name": null
+              }
+            ],
+            "exclusive": false,
+            "name": null
+          },
+          {
+            "operation": "MR",
+            "trigger": "all_measures",
+            "before": [
+              {
+                "channel": "X_ERROR",
+                "filter": "all_measures",
+                "scalar": 1.0,
+                "name": null
+              },
+              {
+                "channel": "DEPOLARIZE1",
+                "filter": "data",
+                "scalar": 1.0,
+                "name": null
+              }
+            ],
+            "after": [
+              {
+                "channel": "X_ERROR",
+                "filter": "all_measures",
+                "scalar": 1.0,
+                "name": null
+              },
+              {
+                "channel": "DEPOLARIZE1",
+                "filter": "data",
+                "scalar": 1.0,
+                "name": null
+              }
+            ],
+            "exclusive": false,
+            "name": null
+          },
+          {
+            "operation": "M",
+            "trigger": "data",
+            "before": [
+              {
+                "channel": "X_ERROR",
+                "filter": "all_qubits",
+                "scalar": 1.0,
+                "name": null
+              }
+            ],
+            "after": [],
+            "exclusive": false,
+            "name": null
+          }
+        ]
+      }
+    },
+    {
+      "__qsnow__": "SCTile",
+      "format_version": 1,
+      "base_circuit": "QUBIT_COORDS(1, 1) 1\nQUBIT_COORDS(2, 0) 2\nQUBIT_COORDS(3, 1) 3\nQUBIT_COORDS(5, 1) 5\nQUBIT_COORDS(6, 0) 6\nQUBIT_COORDS(7, 1) 7\nQUBIT_COORDS(9, 1) 9\nQUBIT_COORDS(1, 3) 12\nQUBIT_COORDS(2, 2) 13\nQUBIT_COORDS(3, 3) 14\nQUBIT_COORDS(4, 2) 15\nQUBIT_COORDS(5, 3) 16\nQUBIT_COORDS(6, 2) 17\nQUBIT_COORDS(7, 3) 18\nQUBIT_COORDS(8, 2) 19\nQUBIT_COORDS(9, 3) 20\nQUBIT_COORDS(10, 2) 21\nQUBIT_COORDS(0, 4) 22\nQUBIT_COORDS(1, 5) 23\nQUBIT_COORDS(2, 4) 24\nQUBIT_COORDS(3, 5) 25\nQUBIT_COORDS(4, 4) 26\nQUBIT_COORDS(5, 5) 27\nQUBIT_COORDS(6, 4) 28\nQUBIT_COORDS(7, 5) 29\nQUBIT_COORDS(8, 4) 30\nQUBIT_COORDS(9, 5) 31\nQUBIT_COORDS(1, 7) 34\nQUBIT_COORDS(2, 6) 35\nQUBIT_COORDS(3, 7) 36\nQUBIT_COORDS(4, 6) 37\nQUBIT_COORDS(5, 7) 38\nQUBIT_COORDS(6, 6) 39\nQUBIT_COORDS(7, 7) 40\nQUBIT_COORDS(8, 6) 41\nQUBIT_COORDS(9, 7) 42\nQUBIT_COORDS(10, 6) 43\nQUBIT_COORDS(0, 8) 44\nQUBIT_COORDS(1, 9) 45\nQUBIT_COORDS(2, 8) 46\nQUBIT_COORDS(3, 9) 47\nQUBIT_COORDS(4, 8) 48\nQUBIT_COORDS(5, 9) 49\nQUBIT_COORDS(6, 8) 50\nQUBIT_COORDS(7, 9) 51\nQUBIT_COORDS(8, 8) 52\nQUBIT_COORDS(9, 9) 53\nQUBIT_COORDS(4, 10) 59\nQUBIT_COORDS(8, 10) 63\nR 1 3 5 7 9 12 14 16 18 20 23 25 27 29 31 34 36 38 40 42 45 47 49 51 53 2 6 13 15 17 19 21 22 24 26 28 30 35 37 39 41 43 44 46 48 50 52 59 63\nTICK\nH 2 6 15 19 24 28 37 41 46 50 59 63\nTICK\nCX 2 3 24 25 46 47 15 16 37 38 6 7 28 29 50 51 19 20 41 42 23 22 45 44 14 13 36 35 27 26 49 48 18 17 40 39 31 30 53 52\nTICK\nCX 2 1 24 23 46 45 15 14 37 36 6 5 28 27 50 49 19 18 41 40 12 22 34 44 3 13 25 35 16 26 38 48 7 17 29 39 20 30 42 52\nTICK\nCX 24 14 46 36 15 5 37 27 59 49 28 18 50 40 19 9 41 31 63 53 12 13 34 35 25 26 47 48 16 17 38 39 29 30 51 52 20 21 42 43\nTICK\nCX 24 12 46 34 15 3 37 25 59 47 28 16 50 38 19 7 41 29 63 51 1 13 23 35 14 26 36 48 5 17 27 39 18 30 40 52 9 21 31 43\nTICK\nH 2 6 15 19 24 28 37 41 46 50 59 63\nTICK\nMR 2 6 13 15 17 19 21 22 24 26 28 30 35 37 39 41 43 44 46 48 50 52 59 63\nDETECTOR(0, 4, 0) rec[-17]\nDETECTOR(0, 8, 0) rec[-7]\nDETECTOR(2, 2, 0) rec[-22]\nDETECTOR(2, 6, 0) rec[-12]\nDETECTOR(4, 4, 0) rec[-15]\nDETECTOR(4, 8, 0) rec[-5]\nDETECTOR(6, 2, 0) rec[-20]\nDETECTOR(6, 6, 0) rec[-10]\nDETECTOR(8, 4, 0) rec[-13]\nDETECTOR(8, 8, 0) rec[-3]\nDETECTOR(10, 2, 0) rec[-18]\nDETECTOR(10, 6, 0) rec[-8]\nREPEAT 4 {\n    TICK\n    H 2 6 15 19 24 28 37 41 46 50 59 63\n    TICK\n    CX 2 3 24 25 46 47 15 16 37 38 6 7 28 29 50 51 19 20 41 42 23 22 45 44 14 13 36 35 27 26 49 48 18 17 40 39 31 30 53 52\n    TICK\n    CX 2 1 24 23 46 45 15 14 37 36 6 5 28 27 50 49 19 18 41 40 12 22 34 44 3 13 25 35 16 26 38 48 7 17 29 39 20 30 42 52\n    TICK\n    CX 24 14 46 36 15 5 37 27 59 49 28 18 50 40 19 9 41 31 63 53 12 13 34 35 25 26 47 48 16 17 38 39 29 30 51 52 20 21 42 43\n    TICK\n    CX 24 12 46 34 15 3 37 25 59 47 28 16 50 38 19 7 41 29 63 51 1 13 23 35 14 26 36 48 5 17 27 39 18 30 40 52 9 21 31 43\n    TICK\n    H 2 6 15 19 24 28 37 41 46 50 59 63\n    TICK\n    MR 2 6 13 15 17 19 21 22 24 26 28 30 35 37 39 41 43 44 46 48 50 52 59 63\n    SHIFT_COORDS(0, 0, 1)\n    DETECTOR(2, 0, 0) rec[-24] rec[-48]\n    DETECTOR(6, 0, 0) rec[-23] rec[-47]\n    DETECTOR(2, 2, 0) rec[-22] rec[-46]\n    DETECTOR(4, 2, 0) rec[-21] rec[-45]\n    DETECTOR(6, 2, 0) rec[-20] rec[-44]\n    DETECTOR(8, 2, 0) rec[-19] rec[-43]\n    DETECTOR(10, 2, 0) rec[-18] rec[-42]\n    DETECTOR(0, 4, 0) rec[-17] rec[-41]\n    DETECTOR(2, 4, 0) rec[-16] rec[-40]\n    DETECTOR(4, 4, 0) rec[-15] rec[-39]\n    DETECTOR(6, 4, 0) rec[-14] rec[-38]\n    DETECTOR(8, 4, 0) rec[-13] rec[-37]\n    DETECTOR(2, 6, 0) rec[-12] rec[-36]\n    DETECTOR(4, 6, 0) rec[-11] rec[-35]\n    DETECTOR(6, 6, 0) rec[-10] rec[-34]\n    DETECTOR(8, 6, 0) rec[-9] rec[-33]\n    DETECTOR(10, 6, 0) rec[-8] rec[-32]\n    DETECTOR(0, 8, 0) rec[-7] rec[-31]\n    DETECTOR(2, 8, 0) rec[-6] rec[-30]\n    DETECTOR(4, 8, 0) rec[-5] rec[-29]\n    DETECTOR(6, 8, 0) rec[-4] rec[-28]\n    DETECTOR(8, 8, 0) rec[-3] rec[-27]\n    DETECTOR(4, 10, 0) rec[-2] rec[-26]\n    DETECTOR(8, 10, 0) rec[-1] rec[-25]\n}\nM 1 3 5 7 9 12 14 16 18 20 23 25 27 29 31 34 36 38 40 42 45 47 49 51 53\nDETECTOR(0, 4, 1) rec[-15] rec[-20] rec[-42]\nDETECTOR(0, 8, 1) rec[-5] rec[-10] rec[-32]\nDETECTOR(2, 2, 1) rec[-19] rec[-20] rec[-24] rec[-25] rec[-47]\nDETECTOR(2, 6, 1) rec[-9] rec[-10] rec[-14] rec[-15] rec[-37]\nDETECTOR(4, 4, 1) rec[-13] rec[-14] rec[-18] rec[-19] rec[-40]\nDETECTOR(4, 8, 1) rec[-3] rec[-4] rec[-8] rec[-9] rec[-30]\nDETECTOR(6, 2, 1) rec[-17] rec[-18] rec[-22] rec[-23] rec[-45]\nDETECTOR(6, 6, 1) rec[-7] rec[-8] rec[-12] rec[-13] rec[-35]\nDETECTOR(8, 4, 1) rec[-11] rec[-12] rec[-16] rec[-17] rec[-38]\nDETECTOR(8, 8, 1) rec[-1] rec[-2] rec[-6] rec[-7] rec[-28]\nDETECTOR(10, 2, 1) rec[-16] rec[-21] rec[-43]\nDETECTOR(10, 6, 1) rec[-6] rec[-11] rec[-33]\nOBSERVABLE_INCLUDE(0) rec[-21] rec[-22] rec[-23] rec[-24] rec[-25]",
+      "origin": [
+        12.0,
+        0.0
+      ],
+      "construct_origin": [
+        0,
+        0
+      ],
+      "x_buffer": 1,
+      "y_buffer": 1,
+      "tag": {
+        "name": "rsc_memory_z_d5",
+        "desc": null,
+        "metadata": {}
+      },
+      "spec": {
+        "tile_type": "SCTile",
+        "distance": 5,
+        "rounds": 5,
+        "generator_args": {
+          "code_task": "surface_code:rotated_memory_z",
+          "distance": 5,
+          "rounds": 5,
+          "task": "memory_z"
+        }
+      },
+      "ruleset": {
+        "rules": [
+          {
+            "operation": "R",
+            "trigger": "all_qubits",
+            "before": [],
+            "after": [
+              {
+                "channel": "X_ERROR",
+                "filter": "all_qubits",
+                "scalar": 1.0,
+                "name": null
+              }
+            ],
+            "exclusive": false,
+            "name": null
+          },
+          {
+            "operation": "H",
+            "trigger": "x_measures",
+            "before": [],
+            "after": [
+              {
+                "channel": "DEPOLARIZE1",
+                "filter": "all_qubits",
+                "scalar": 1.0,
+                "name": null
+              }
+            ],
+            "exclusive": false,
+            "name": null
+          },
+          {
+            "operation": "CX",
+            "trigger": "any",
+            "before": [],
+            "after": [
+              {
+                "channel": "DEPOLARIZE2",
+                "filter": "active",
+                "scalar": 1.0,
+                "name": null
+              },
+              {
+                "channel": "DEPOLARIZE1",
+                "filter": "idle",
+                "scalar": 1.0,
+                "name": null
+              }
+            ],
+            "exclusive": false,
+            "name": null
+          },
+          {
+            "operation": "MR",
+            "trigger": "all_measures",
+            "before": [
+              {
+                "channel": "X_ERROR",
+                "filter": "all_measures",
+                "scalar": 1.0,
+                "name": null
+              },
+              {
+                "channel": "DEPOLARIZE1",
+                "filter": "data",
+                "scalar": 1.0,
+                "name": null
+              }
+            ],
+            "after": [
+              {
+                "channel": "X_ERROR",
+                "filter": "all_measures",
+                "scalar": 1.0,
+                "name": null
+              },
+              {
+                "channel": "DEPOLARIZE1",
+                "filter": "data",
+                "scalar": 1.0,
+                "name": null
+              }
+            ],
+            "exclusive": false,
+            "name": null
+          },
+          {
+            "operation": "M",
+            "trigger": "data",
+            "before": [
+              {
+                "channel": "X_ERROR",
+                "filter": "all_qubits",
+                "scalar": 1.0,
+                "name": null
+              }
+            ],
+            "after": [],
+            "exclusive": false,
+            "name": null
+          }
+        ]
+      }
+    },
+    {
+      "__qsnow__": "SCTile",
+      "format_version": 1,
+      "base_circuit": "QUBIT_COORDS(1, 1) 1\nQUBIT_COORDS(2, 0) 2\nQUBIT_COORDS(3, 1) 3\nQUBIT_COORDS(5, 1) 5\nQUBIT_COORDS(6, 0) 6\nQUBIT_COORDS(7, 1) 7\nQUBIT_COORDS(9, 1) 9\nQUBIT_COORDS(1, 3) 12\nQUBIT_COORDS(2, 2) 13\nQUBIT_COORDS(3, 3) 14\nQUBIT_COORDS(4, 2) 15\nQUBIT_COORDS(5, 3) 16\nQUBIT_COORDS(6, 2) 17\nQUBIT_COORDS(7, 3) 18\nQUBIT_COORDS(8, 2) 19\nQUBIT_COORDS(9, 3) 20\nQUBIT_COORDS(10, 2) 21\nQUBIT_COORDS(0, 4) 22\nQUBIT_COORDS(1, 5) 23\nQUBIT_COORDS(2, 4) 24\nQUBIT_COORDS(3, 5) 25\nQUBIT_COORDS(4, 4) 26\nQUBIT_COORDS(5, 5) 27\nQUBIT_COORDS(6, 4) 28\nQUBIT_COORDS(7, 5) 29\nQUBIT_COORDS(8, 4) 30\nQUBIT_COORDS(9, 5) 31\nQUBIT_COORDS(1, 7) 34\nQUBIT_COORDS(2, 6) 35\nQUBIT_COORDS(3, 7) 36\nQUBIT_COORDS(4, 6) 37\nQUBIT_COORDS(5, 7) 38\nQUBIT_COORDS(6, 6) 39\nQUBIT_COORDS(7, 7) 40\nQUBIT_COORDS(8, 6) 41\nQUBIT_COORDS(9, 7) 42\nQUBIT_COORDS(10, 6) 43\nQUBIT_COORDS(0, 8) 44\nQUBIT_COORDS(1, 9) 45\nQUBIT_COORDS(2, 8) 46\nQUBIT_COORDS(3, 9) 47\nQUBIT_COORDS(4, 8) 48\nQUBIT_COORDS(5, 9) 49\nQUBIT_COORDS(6, 8) 50\nQUBIT_COORDS(7, 9) 51\nQUBIT_COORDS(8, 8) 52\nQUBIT_COORDS(9, 9) 53\nQUBIT_COORDS(4, 10) 59\nQUBIT_COORDS(8, 10) 63\nR 1 3 5 7 9 12 14 16 18 20 23 25 27 29 31 34 36 38 40 42 45 47 49 51 53 2 6 13 15 17 19 21 22 24 26 28 30 35 37 39 41 43 44 46 48 50 52 59 63\nTICK\nH 2 6 15 19 24 28 37 41 46 50 59 63\nTICK\nCX 2 3 24 25 46 47 15 16 37 38 6 7 28 29 50 51 19 20 41 42 23 22 45 44 14 13 36 35 27 26 49 48 18 17 40 39 31 30 53 52\nTICK\nCX 2 1 24 23 46 45 15 14 37 36 6 5 28 27 50 49 19 18 41 40 12 22 34 44 3 13 25 35 16 26 38 48 7 17 29 39 20 30 42 52\nTICK\nCX 24 14 46 36 15 5 37 27 59 49 28 18 50 40 19 9 41 31 63 53 12 13 34 35 25 26 47 48 16 17 38 39 29 30 51 52 20 21 42 43\nTICK\nCX 24 12 46 34 15 3 37 25 59 47 28 16 50 38 19 7 41 29 63 51 1 13 23 35 14 26 36 48 5 17 27 39 18 30 40 52 9 21 31 43\nTICK\nH 2 6 15 19 24 28 37 41 46 50 59 63\nTICK\nMR 2 6 13 15 17 19 21 22 24 26 28 30 35 37 39 41 43 44 46 48 50 52 59 63\nDETECTOR(0, 4, 0) rec[-17]\nDETECTOR(0, 8, 0) rec[-7]\nDETECTOR(2, 2, 0) rec[-22]\nDETECTOR(2, 6, 0) rec[-12]\nDETECTOR(4, 4, 0) rec[-15]\nDETECTOR(4, 8, 0) rec[-5]\nDETECTOR(6, 2, 0) rec[-20]\nDETECTOR(6, 6, 0) rec[-10]\nDETECTOR(8, 4, 0) rec[-13]\nDETECTOR(8, 8, 0) rec[-3]\nDETECTOR(10, 2, 0) rec[-18]\nDETECTOR(10, 6, 0) rec[-8]\nREPEAT 4 {\n    TICK\n    H 2 6 15 19 24 28 37 41 46 50 59 63\n    TICK\n    CX 2 3 24 25 46 47 15 16 37 38 6 7 28 29 50 51 19 20 41 42 23 22 45 44 14 13 36 35 27 26 49 48 18 17 40 39 31 30 53 52\n    TICK\n    CX 2 1 24 23 46 45 15 14 37 36 6 5 28 27 50 49 19 18 41 40 12 22 34 44 3 13 25 35 16 26 38 48 7 17 29 39 20 30 42 52\n    TICK\n    CX 24 14 46 36 15 5 37 27 59 49 28 18 50 40 19 9 41 31 63 53 12 13 34 35 25 26 47 48 16 17 38 39 29 30 51 52 20 21 42 43\n    TICK\n    CX 24 12 46 34 15 3 37 25 59 47 28 16 50 38 19 7 41 29 63 51 1 13 23 35 14 26 36 48 5 17 27 39 18 30 40 52 9 21 31 43\n    TICK\n    H 2 6 15 19 24 28 37 41 46 50 59 63\n    TICK\n    MR 2 6 13 15 17 19 21 22 24 26 28 30 35 37 39 41 43 44 46 48 50 52 59 63\n    SHIFT_COORDS(0, 0, 1)\n    DETECTOR(2, 0, 0) rec[-24] rec[-48]\n    DETECTOR(6, 0, 0) rec[-23] rec[-47]\n    DETECTOR(2, 2, 0) rec[-22] rec[-46]\n    DETECTOR(4, 2, 0) rec[-21] rec[-45]\n    DETECTOR(6, 2, 0) rec[-20] rec[-44]\n    DETECTOR(8, 2, 0) rec[-19] rec[-43]\n    DETECTOR(10, 2, 0) rec[-18] rec[-42]\n    DETECTOR(0, 4, 0) rec[-17] rec[-41]\n    DETECTOR(2, 4, 0) rec[-16] rec[-40]\n    DETECTOR(4, 4, 0) rec[-15] rec[-39]\n    DETECTOR(6, 4, 0) rec[-14] rec[-38]\n    DETECTOR(8, 4, 0) rec[-13] rec[-37]\n    DETECTOR(2, 6, 0) rec[-12] rec[-36]\n    DETECTOR(4, 6, 0) rec[-11] rec[-35]\n    DETECTOR(6, 6, 0) rec[-10] rec[-34]\n    DETECTOR(8, 6, 0) rec[-9] rec[-33]\n    DETECTOR(10, 6, 0) rec[-8] rec[-32]\n    DETECTOR(0, 8, 0) rec[-7] rec[-31]\n    DETECTOR(2, 8, 0) rec[-6] rec[-30]\n    DETECTOR(4, 8, 0) rec[-5] rec[-29]\n    DETECTOR(6, 8, 0) rec[-4] rec[-28]\n    DETECTOR(8, 8, 0) rec[-3] rec[-27]\n    DETECTOR(4, 10, 0) rec[-2] rec[-26]\n    DETECTOR(8, 10, 0) rec[-1] rec[-25]\n}\nM 1 3 5 7 9 12 14 16 18 20 23 25 27 29 31 34 36 38 40 42 45 47 49 51 53\nDETECTOR(0, 4, 1) rec[-15] rec[-20] rec[-42]\nDETECTOR(0, 8, 1) rec[-5] rec[-10] rec[-32]\nDETECTOR(2, 2, 1) rec[-19] rec[-20] rec[-24] rec[-25] rec[-47]\nDETECTOR(2, 6, 1) rec[-9] rec[-10] rec[-14] rec[-15] rec[-37]\nDETECTOR(4, 4, 1) rec[-13] rec[-14] rec[-18] rec[-19] rec[-40]\nDETECTOR(4, 8, 1) rec[-3] rec[-4] rec[-8] rec[-9] rec[-30]\nDETECTOR(6, 2, 1) rec[-17] rec[-18] rec[-22] rec[-23] rec[-45]\nDETECTOR(6, 6, 1) rec[-7] rec[-8] rec[-12] rec[-13] rec[-35]\nDETECTOR(8, 4, 1) rec[-11] rec[-12] rec[-16] rec[-17] rec[-38]\nDETECTOR(8, 8, 1) rec[-1] rec[-2] rec[-6] rec[-7] rec[-28]\nDETECTOR(10, 2, 1) rec[-16] rec[-21] rec[-43]\nDETECTOR(10, 6, 1) rec[-6] rec[-11] rec[-33]\nOBSERVABLE_INCLUDE(0) rec[-21] rec[-22] rec[-23] rec[-24] rec[-25]",
+      "origin": [
+        0.0,
+        12.0
+      ],
+      "construct_origin": [
+        0,
+        0
+      ],
+      "x_buffer": 1,
+      "y_buffer": 1,
+      "tag": {
+        "name": "rsc_memory_z_d5",
+        "desc": null,
+        "metadata": {}
+      },
+      "spec": {
+        "tile_type": "SCTile",
+        "distance": 5,
+        "rounds": 5,
+        "generator_args": {
+          "code_task": "surface_code:rotated_memory_z",
+          "distance": 5,
+          "rounds": 5,
+          "task": "memory_z"
+        }
+      },
+      "ruleset": {
+        "rules": [
+          {
+            "operation": "R",
+            "trigger": "all_qubits",
+            "before": [],
+            "after": [
+              {
+                "channel": "X_ERROR",
+                "filter": "all_qubits",
+                "scalar": 1.0,
+                "name": null
+              }
+            ],
+            "exclusive": false,
+            "name": null
+          },
+          {
+            "operation": "H",
+            "trigger": "x_measures",
+            "before": [],
+            "after": [
+              {
+                "channel": "DEPOLARIZE1",
+                "filter": "all_qubits",
+                "scalar": 1.0,
+                "name": null
+              }
+            ],
+            "exclusive": false,
+            "name": null
+          },
+          {
+            "operation": "CX",
+            "trigger": "any",
+            "before": [],
+            "after": [
+              {
+                "channel": "DEPOLARIZE2",
+                "filter": "active",
+                "scalar": 1.0,
+                "name": null
+              },
+              {
+                "channel": "DEPOLARIZE1",
+                "filter": "idle",
+                "scalar": 1.0,
+                "name": null
+              }
+            ],
+            "exclusive": false,
+            "name": null
+          },
+          {
+            "operation": "MR",
+            "trigger": "all_measures",
+            "before": [
+              {
+                "channel": "X_ERROR",
+                "filter": "all_measures",
+                "scalar": 1.0,
+                "name": null
+              },
+              {
+                "channel": "DEPOLARIZE1",
+                "filter": "data",
+                "scalar": 1.0,
+                "name": null
+              }
+            ],
+            "after": [
+              {
+                "channel": "X_ERROR",
+                "filter": "all_measures",
+                "scalar": 1.0,
+                "name": null
+              },
+              {
+                "channel": "DEPOLARIZE1",
+                "filter": "data",
+                "scalar": 1.0,
+                "name": null
+              }
+            ],
+            "exclusive": false,
+            "name": null
+          },
+          {
+            "operation": "M",
+            "trigger": "data",
+            "before": [
+              {
+                "channel": "X_ERROR",
+                "filter": "all_qubits",
+                "scalar": 1.0,
+                "name": null
+              }
+            ],
+            "after": [],
+            "exclusive": false,
+            "name": null
+          }
+        ]
+      }
+    },
+    {
+      "__qsnow__": "SCTile",
+      "format_version": 1,
+      "base_circuit": "QUBIT_COORDS(1, 1) 1\nQUBIT_COORDS(2, 0) 2\nQUBIT_COORDS(3, 1) 3\nQUBIT_COORDS(5, 1) 5\nQUBIT_COORDS(1, 3) 8\nQUBIT_COORDS(2, 2) 9\nQUBIT_COORDS(3, 3) 10\nQUBIT_COORDS(4, 2) 11\nQUBIT_COORDS(5, 3) 12\nQUBIT_COORDS(6, 2) 13\nQUBIT_COORDS(0, 4) 14\nQUBIT_COORDS(1, 5) 15\nQUBIT_COORDS(2, 4) 16\nQUBIT_COORDS(3, 5) 17\nQUBIT_COORDS(4, 4) 18\nQUBIT_COORDS(5, 5) 19\nQUBIT_COORDS(4, 6) 25\nR 1 3 5 8 10 12 15 17 19 2 9 11 13 14 16 18 25\nTICK\nH 2 11 16 25\nTICK\nCX 2 3 16 17 11 12 15 14 10 9 19 18\nTICK\nCX 2 1 16 15 11 10 8 14 3 9 12 18\nTICK\nCX 16 10 11 5 25 19 8 9 17 18 12 13\nTICK\nCX 16 8 11 3 25 17 1 9 10 18 5 13\nTICK\nH 2 11 16 25\nTICK\nMR 2 9 11 13 14 16 18 25\nDETECTOR(0, 4, 0) rec[-4]\nDETECTOR(2, 2, 0) rec[-7]\nDETECTOR(4, 4, 0) rec[-2]\nDETECTOR(6, 2, 0) rec[-5]\nREPEAT 2 {\n    TICK\n    H 2 11 16 25\n    TICK\n    CX 2 3 16 17 11 12 15 14 10 9 19 18\n    TICK\n    CX 2 1 16 15 11 10 8 14 3 9 12 18\n    TICK\n    CX 16 10 11 5 25 19 8 9 17 18 12 13\n    TICK\n    CX 16 8 11 3 25 17 1 9 10 18 5 13\n    TICK\n    H 2 11 16 25\n    TICK\n    MR 2 9 11 13 14 16 18 25\n    SHIFT_COORDS(0, 0, 1)\n    DETECTOR(2, 0, 0) rec[-8] rec[-16]\n    DETECTOR(2, 2, 0) rec[-7] rec[-15]\n    DETECTOR(4, 2, 0) rec[-6] rec[-14]\n    DETECTOR(6, 2, 0) rec[-5] rec[-13]\n    DETECTOR(0, 4, 0) rec[-4] rec[-12]\n    DETECTOR(2, 4, 0) rec[-3] rec[-11]\n    DETECTOR(4, 4, 0) rec[-2] rec[-10]\n    DETECTOR(4, 6, 0) rec[-1] rec[-9]\n}\nM 1 3 5 8 10 12 15 17 19\nDETECTOR(0, 4, 1) rec[-3] rec[-6] rec[-13]\nDETECTOR(2, 2, 1) rec[-5] rec[-6] rec[-8] rec[-9] rec[-16]\nDETECTOR(4, 4, 1) rec[-1] rec[-2] rec[-4] rec[-5] rec[-11]\nDETECTOR(6, 2, 1) rec[-4] rec[-7] rec[-14]\nOBSERVABLE_INCLUDE(0) rec[-7] rec[-8] rec[-9]",
+      "origin": [
+        14.0,
+        14.0
+      ],
+      "construct_origin": [
+        0,
+        0
+      ],
+      "x_buffer": 1,
+      "y_buffer": 1,
+      "tag": {
+        "name": "rsc_memory_z_d3",
+        "desc": null,
+        "metadata": {}
+      },
+      "spec": {
+        "tile_type": "SCTile",
+        "distance": 3,
+        "rounds": 3,
+        "generator_args": {
+          "code_task": "surface_code:rotated_memory_z",
+          "distance": 3,
+          "rounds": 3,
+          "task": "memory_z"
+        }
+      },
+      "ruleset": {
+        "rules": [
+          {
+            "operation": "R",
+            "trigger": "all_qubits",
+            "before": [],
+            "after": [
+              {
+                "channel": "X_ERROR",
+                "filter": "all_qubits",
+                "scalar": 1.0,
+                "name": null
+              }
+            ],
+            "exclusive": false,
+            "name": null
+          },
+          {
+            "operation": "H",
+            "trigger": "x_measures",
+            "before": [],
+            "after": [
+              {
+                "channel": "DEPOLARIZE1",
+                "filter": "all_qubits",
+                "scalar": 1.0,
+                "name": null
+              }
+            ],
+            "exclusive": false,
+            "name": null
+          },
+          {
+            "operation": "CX",
+            "trigger": "any",
+            "before": [],
+            "after": [
+              {
+                "channel": "DEPOLARIZE2",
+                "filter": "active",
+                "scalar": 1.0,
+                "name": null
+              },
+              {
+                "channel": "DEPOLARIZE1",
+                "filter": "idle",
+                "scalar": 1.0,
+                "name": null
+              }
+            ],
+            "exclusive": false,
+            "name": null
+          },
+          {
+            "operation": "MR",
+            "trigger": "all_measures",
+            "before": [
+              {
+                "channel": "X_ERROR",
+                "filter": "all_measures",
+                "scalar": 1.0,
+                "name": null
+              },
+              {
+                "channel": "DEPOLARIZE1",
+                "filter": "data",
+                "scalar": 1.0,
+                "name": null
+              }
+            ],
+            "after": [
+              {
+                "channel": "X_ERROR",
+                "filter": "all_measures",
+                "scalar": 1.0,
+                "name": null
+              },
+              {
+                "channel": "DEPOLARIZE1",
+                "filter": "data",
+                "scalar": 1.0,
+                "name": null
+              }
+            ],
+            "exclusive": false,
+            "name": null
+          },
+          {
+            "operation": "M",
+            "trigger": "data",
+            "before": [
+              {
+                "channel": "X_ERROR",
+                "filter": "all_qubits",
+                "scalar": 1.0,
+                "name": null
+              }
+            ],
+            "after": [],
+            "exclusive": false,
+            "name": null
+          }
+        ]
+      }
+    }
+  ]
+}

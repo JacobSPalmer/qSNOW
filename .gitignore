@@ -14,3 +14,7 @@ notebooks/
 core_flakes/
 .tox
 *.prof
+.ipynb_checkpoints
+.jupyter
+.jupyter_ystore.db
+writeups/

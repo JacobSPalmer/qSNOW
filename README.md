@@ -11,7 +11,7 @@ qSNOW is, at it's heart, meant to be used as an extendable toolbox for supportin
 The fundamental workflow of qSNOW is to place logical tiles on a abstract chip, like such:
 
 ```python
-from qsnow.interface import Chip, SCTile
+from qsnow.interface import Chip, SCTile, SkewContour
 
 ## Create chips and tiles
 chip = Chip(12, 12)
@@ -21,6 +21,10 @@ d5Tile = SCTile(distance=5)
 
 ## Specify any arbitrary noise model
 chip.generate_gaussian_noise(mean=0.001,deviation=0.0006)
+# or a spatially correlated, right-skewed landscape:
+# chip.generate_skewed_contour_noise(location=0.001, deviation=0.0006, skew=1.5)
+# and, optionally, a coupler landscape cross-correlated with the sites:
+# chip.generate_coupler_noise(SkewContour(0.005, 0.002, skew=1.0), correlation=0.5)
 
 ## Place logical tiles on the chip
 chip.add_tile(d3Tile,       loc=(0,0))

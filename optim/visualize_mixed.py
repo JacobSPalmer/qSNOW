@@ -34,7 +34,6 @@ from packing_data import (
     chip_grid_dim,
     footprint_span,
     load_lers,
-    mixed_candidates,
 )
 
 # Fixed (face, edge) colors for the common distances so plots stay consistent;

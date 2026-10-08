@@ -1,13 +1,26 @@
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, Optional, Self, Tuple, overload, TypeAlias
-
 from functools import total_ordering
 from numbers import Number
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    Literal,
+    Optional,
+    Self,
+    Tuple,
+    TypeAlias,
+    overload,
+)
+
+if TYPE_CHECKING:
+    from .noise.distribution import NoiseDistribution
 
 Coord: TypeAlias = Tuple[float, float]
 ShiftFunction: TypeAlias = Callable[[*tuple[float, ...]], Coord]
+CouplerKey: TypeAlias = Tuple[Coord, Coord]
 
 
 @dataclass
@@ -41,6 +54,30 @@ class TileSpec:
     initial_shift_fn: Optional[ShiftFunction] = None
 
 
+CouplerMode: TypeAlias = Literal["mean", "max", "min"]
+
+
+@dataclass
+class ChipSpec:
+    """
+    State a chip's own code reads to rebuild its noise landscape: the distribution that
+    produced the site rates, the one (if any) that produced the coupler rates and the
+    cross-correlation it was applied with, and how coupler rates derive from their
+    endpoints when no coupler distribution is in force.
+
+    Typed and separate from `Tag.metadata` for the same reason `TileSpec` is: metadata
+    is free-form text for humans, so anything the tool branches on must not live there
+    where it can be reshaped, shared between copies, or silently dropped.
+    """
+
+    noise_model: Optional["NoiseDistribution"] = None
+    coupler_mode: CouplerMode = "mean"
+    # The coupler-side twin of `noise_model`, and the correlation it was applied with.
+    # Both None whenever the couplers are derived from their endpoints or hand-set.
+    coupler_model: Optional["NoiseDistribution"] = None
+    coupler_correlation: Optional[float] = None
+
+
 class Status(Enum):
     INACTIVE = 0  # True if not within a logical patch; default state
     LOGICAL = 1  # True if actively used in a loaded logical patch
@@ -57,6 +94,7 @@ class CSSType(Enum):
 
 _DEFAULT_STATUS = Status.INACTIVE
 _DEFAULT_CSSTYPE = CSSType.UNASSIGNED
+
 
 class BoundedFloat:
     """Descriptor class enforcing min_value <= value <= max_value on assignment."""
@@ -87,6 +125,7 @@ class BoundedFloat:
             )
         setattr(obj, self.private_name, value)
 
+
 @total_ordering
 class NoiseProfile:
     # TODO - start with seperating all operations into 3 buckets: 2-qubit (CNOT, SWAP, etc.), 1-qubit (H, Pauli's (X, Y, Z)), Idle/Measurement (M, MX, R, RX)
@@ -98,7 +137,7 @@ class NoiseProfile:
 
     def __repr__(self):
         return f"{self.__class__.__name__}(p={self.p})"
-    
+
     def __eq__(self, value) -> bool:
         if isinstance(value, Number):
             return self.p == value
@@ -136,13 +175,13 @@ class Qubit:
     @property
     def loc(self) -> Coord:
         if not self._loc:
-            raise AttributeError('Qubit location not initialized.')
+            raise AttributeError("Qubit location not initialized.")
         return self._loc
-    
+
     @loc.setter
     def loc(self, new_loc) -> None:
         self._loc = new_loc
-        
+
     @property
     def status(self) -> Status:
         return self._status
@@ -169,7 +208,7 @@ class Qubit:
         self._status = _DEFAULT_STATUS
 
     def reset_type(self) -> None:
-        """Resets the qubit's type to the default typing, initially `UNAASSIGNED`"""
+        """Resets the qubit's type to the default typing, initially `UNASSIGNED`"""
         self._type = _DEFAULT_CSSTYPE
 
     def is_measure(self) -> bool:
@@ -190,3 +229,62 @@ class Qubit:
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(loc={self.loc}, status={self.status}, type={self.type}, noise={self.noise})"
+
+
+def coupler_key(a: Coord, b: Coord) -> CouplerKey:
+    """
+    Order-independent key for the edge `{a, b}`, so `(a, b)` and `(b, a)` name one coupler.
+
+    A sorted tuple rather than a frozenset: it is deterministic, it round-trips through
+    JSON, and it keeps `Coupler.ends` readable.
+    """
+    return (a, b) if a <= b else (b, a)
+
+
+class Coupler:
+    """
+    The link between two adjacent qubits, owning the error rate of operations across it.
+
+    A two-qubit gate's error on real hardware is dominated by the coupler joining the
+    pair, not by the pair's endpoints - so the rate lives here rather than being derived
+    from the two `Qubit.noise` values. Couplers belong to the *physical* chip, exactly as
+    `Qubit.noise` does: a `LogicalTile` never owns one, and `shift_by` never carries one
+    along (see `LogicalTile._transfer_qubit_metadata`).
+
+    `ends` is canonical, so a coupler built as `((2,2), (1,1))` compares and keys the same
+    as one built as `((1,1), (2,2))`. Validity is the `Chip`'s business - it builds every
+    coupler off its `Lattice`, so adjacency holds by construction.
+    """
+
+    def __init__(self, ends: CouplerKey, noise: Optional[NoiseProfile] = None):
+        self._ends: CouplerKey = coupler_key(*ends)
+        self.noise = noise if noise is not None else NoiseProfile()
+
+    @property
+    def ends(self) -> CouplerKey:
+        return self._ends
+
+    @property
+    def midpoint(self) -> Coord:
+        """Halfway between the two endpoints - where a renderer would anchor the edge."""
+        (x0, y0), (x1, y1) = self._ends
+        return ((x0 + x1) / 2, (y0 + y1) / 2)
+
+    def other(self, coord: Coord) -> Coord:
+        """The endpoint opposite `coord`."""
+        a, b = self._ends
+        if coord == a:
+            return b
+        if coord == b:
+            return a
+        raise KeyError(f"Coordinate {coord} is not an endpoint of {self}.")
+
+    def __contains__(self, coord: object) -> bool:
+        return coord in self._ends
+
+    def copy(self):
+        return Coupler(self._ends, self.noise.copy())
+
+    def __repr__(self) -> str:
+        a, b = self._ends
+        return f"{self.__class__.__name__}(ends={a}<->{b}, noise={self.noise})"

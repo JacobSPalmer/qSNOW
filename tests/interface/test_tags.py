@@ -17,6 +17,7 @@ from qsnow.helpers.serialize import export_flake, import_flake, set_data_dir
 from qsnow.interface.chip import Chip, LogicalTile
 from qsnow.interface.codes.rsc import SCTile
 from qsnow.interface.models import Tag, TileSpec
+from qsnow.interface.rules import InjectionRule, Ruleset
 
 
 def _circuit() -> stim.Circuit:
@@ -107,6 +108,21 @@ class TestCopyIsolation:
             dupe.spec.generator_args["k"] = "v"
             assert tile.tag.desc != "copy only"
             assert "k" not in tile.spec.generator_args
+
+    def test_copy_carries_independent_ruleset(self):
+        # regression: both copy() overrides rebuilt from the class-default ruleset,
+        # so a ruleset set via the setter was silently lost at the next copy
+        for factory in (TAGGED_KINDS["LogicalTile"], TAGGED_KINDS["SCTile"]):
+            tile = factory()
+            custom = Ruleset(
+                [InjectionRule("H", "any", before=[], after=[], name="custom")]
+            )
+            tile.ruleset = custom
+            dupe = tile.copy()
+            assert [r.name for r in dupe.ruleset.rules] == ["custom"]
+            assert dupe.ruleset is not tile.ruleset
+            dupe.ruleset.add_rule(InjectionRule("CX", "any", before=[], after=[]))
+            assert len(tile.ruleset.rules) == 1
 
 
 class TestRoundTripPreservation:

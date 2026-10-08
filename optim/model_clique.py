@@ -26,7 +26,6 @@ from typing import FrozenSet, List
 
 import gurobipy as gp
 from gurobipy import GRB
-
 from packing_data import Coord, footprint_span, valid_placements
 
 
