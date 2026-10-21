@@ -9,7 +9,7 @@ from matplotlib.figure import Figure  # noqa: E402
 from matplotlib.legend import Legend  # noqa: E402
 from PIL import Image  # noqa: E402
 
-from qsnow.experiments.squarepacking.game import SquarePackingExp  # noqa: E402
+from qsnow.experiments.profiling.game import ProfilingExp  # noqa: E402
 from qsnow.helpers import serialize  # noqa: E402
 from qsnow.interface.chip import Chip  # noqa: E402
 from qsnow.interface.codes.rsc import SCTile  # noqa: E402
@@ -29,7 +29,7 @@ DISTANCES = (3, 5)
 
 def _save_sweep(distance: int, lers, *, shots: int = 1_000, ler_key: bool = True):
     """Persist a synthetic profiling sweep as a real experiment/results flake pair."""
-    exp = SquarePackingExp(chip=Chip(10, 10), tile=SCTile(distance))
+    exp = ProfilingExp(chip=Chip(10, 10), tile=SCTile(distance))
     exp.config["shots"] = shots
     exp.results = {}
     for loc, ler in zip(exp.profile, lers):
@@ -82,7 +82,7 @@ def named_roots(tmp_path):
         serialize.set_data_dir(root)
         try:
             for d in DISTANCES:
-                exp = SquarePackingExp(chip=Chip(10, 10), tile=SCTile(d))
+                exp = ProfilingExp(chip=Chip(10, 10), tile=SCTile(d))
                 exp.chip.spec.noise_model = model
                 exp.config["shots"] = 1_000
                 exp.results = {
@@ -244,7 +244,7 @@ class TestProfileRun:
     def test_stats_on_a_single_placement_does_not_raise(self, tmp_path):
         serialize.set_data_dir(tmp_path / "single")
         try:
-            exp = SquarePackingExp(chip=Chip(10, 10), tile=SCTile(3))
+            exp = ProfilingExp(chip=Chip(10, 10), tile=SCTile(3))
             exp.config["shots"] = 100
             exp.results = {exp.profile[0]: {"shots": 100, "errors": 5, "ler": 0.05}}
             exp.save(label="profiling_d3")

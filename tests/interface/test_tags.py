@@ -12,7 +12,7 @@ import pytest
 import stim
 
 from qsnow.experiments.experiment import Experiment
-from qsnow.experiments.squarepacking.game import SquarePackingExp
+from qsnow.experiments.profiling.game import ProfilingExp
 from qsnow.helpers.serialize import export_flake, import_flake, set_data_dir
 from qsnow.interface.chip import Chip, LogicalTile
 from qsnow.interface.codes.rsc import SCTile
@@ -26,8 +26,8 @@ def _circuit() -> stim.Circuit:
     )
 
 
-def _square_packing() -> SquarePackingExp:
-    return SquarePackingExp(chip=Chip(5, 5), tile=SCTile(distance=3))
+def _profiling() -> ProfilingExp:
+    return ProfilingExp(chip=Chip(5, 5), tile=SCTile(distance=3))
 
 
 # factories, so each call constructs a genuinely fresh instance
@@ -36,11 +36,11 @@ TAGGED_KINDS = {
     "LogicalTile": lambda: LogicalTile(_circuit()),
     "SCTile": lambda: SCTile(distance=3),
     "Experiment": lambda: Experiment(),
-    "SquarePackingExp": _square_packing,
+    "ProfilingExp": _profiling,
 }
 
 # kinds that go through export_json/import_json (generic Experiment included)
-SERIALIZABLE_KINDS = ["Chip", "LogicalTile", "SCTile", "Experiment", "SquarePackingExp"]
+SERIALIZABLE_KINDS = ["Chip", "LogicalTile", "SCTile", "Experiment", "ProfilingExp"]
 
 
 @pytest.fixture(params=TAGGED_KINDS.keys())

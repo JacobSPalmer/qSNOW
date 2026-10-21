@@ -1,0 +1,16 @@
+{
+  "__qsnow__": "ExperimentResults",
+  "format_version": {
+    "major": 0,
+    "minor": 9,
+    "patch": 0
+  },
+  "written_by": "qsnow 0.1.1",
+  "experiment": "experiment_profiling_rsc_memory_z_d3_2026-07-14_15-05-46.flake",
+  "desc": "",
+  "run_config": {
+    "shots": 50000,
+    "max_errors": 5000
+  },
+  "results": {}
+}

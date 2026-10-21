@@ -1,13 +1,13 @@
 import pytest
 
 from qsnow.experiments.experiment import ExperimentResults
-from qsnow.experiments.squarepacking.game import SquarePackingExp
+from qsnow.experiments.profiling.game import ProfilingExp
 from qsnow.helpers.serialize import set_data_dir
 from qsnow.visualize.interactive import (
     _format_stat_rows,
     default_interactive_styles,
     export_html,
-    export_square_packing,
+    export_profiling,
     visualize_interactive,
 )
 from qsnow.visualize.visualize import (
@@ -184,56 +184,68 @@ class TestExportHtml:
 
 
 @pytest.fixture
-def sp_exp(chip, logical_tile) -> SquarePackingExp:
-    return SquarePackingExp(chip=chip, tile=logical_tile)
+def profiling_exp(chip, logical_tile) -> ProfilingExp:
+    return ProfilingExp(chip=chip, tile=logical_tile)
 
 
 @pytest.fixture
-def sp_results(sp_exp) -> ExperimentResults:
+def profiling_results(profiling_exp) -> ExperimentResults:
     return ExperimentResults(
         experiment_ref=None,
         run_config={"shots": 1000, "max_errors": 100, "decoder": "pymatching"},
-        results={loc: {"ler": 0.01} for loc in sp_exp.profile},
+        results={loc: {"ler": 0.01} for loc in profiling_exp.profile},
     )
 
 
-class TestExportSquarePacking:
-    def test_explicit_path(self, tmp_path, sp_exp, sp_results):
-        path = export_square_packing(
-            sp_exp, sp_results, tmp_path / "sp.html", include_plotlyjs="cdn"
+class TestExportProfiling:
+    def test_explicit_path(self, tmp_path, profiling_exp, profiling_results):
+        path = export_profiling(
+            profiling_exp,
+            profiling_results,
+            tmp_path / "profiling.html",
+            include_plotlyjs="cdn",
         )
-        assert path == tmp_path / "sp.html"
+        assert path == tmp_path / "profiling.html"
         text = path.read_text()
         assert "updatemenus" in text
         assert "<dt>Placements</dt>" in text
         assert "<dt>Shots</dt><dd>1000</dd>" in text
 
-    def test_default_path_uses_data_dir(self, tmp_path, sp_exp, sp_results):
+    def test_default_path_uses_data_dir(
+        self, tmp_path, profiling_exp, profiling_results
+    ):
         set_data_dir(tmp_path)
         try:
-            path = export_square_packing(sp_exp, sp_results, include_plotlyjs="cdn")
+            path = export_profiling(
+                profiling_exp, profiling_results, include_plotlyjs="cdn"
+            )
         finally:
             set_data_dir()
         assert path.parent == tmp_path / "html"
-        assert path.name.startswith("experiment_sp_")
+        assert path.name.startswith("experiment_profiling_")
         assert path.suffix == ".html"
 
-    def test_via_export_html_dispatch(self, tmp_path, sp_exp, sp_results):
+    def test_via_export_html_dispatch(self, tmp_path, profiling_exp, profiling_results):
         path = export_html(
-            sp_exp,
-            tmp_path / "sp.html",
-            results=sp_results,
+            profiling_exp,
+            tmp_path / "profiling.html",
+            results=profiling_results,
             include_plotlyjs="cdn",
         )
-        assert path == tmp_path / "sp.html"
+        assert path == tmp_path / "profiling.html"
 
-    def test_export_html_requires_results_kwarg(self, tmp_path, sp_exp):
+    def test_export_html_requires_results_kwarg(self, tmp_path, profiling_exp):
         with pytest.raises(AttributeError, match="results"):
-            export_html(sp_exp, tmp_path / "sp.html")
+            export_html(profiling_exp, tmp_path / "profiling.html")
 
-    def test_stats_include_chip_tile_and_experiment(self, tmp_path, sp_exp, sp_results):
-        path = export_square_packing(
-            sp_exp, sp_results, tmp_path / "sp.html", include_plotlyjs="cdn"
+    def test_stats_include_chip_tile_and_experiment(
+        self, tmp_path, profiling_exp, profiling_results
+    ):
+        path = export_profiling(
+            profiling_exp,
+            profiling_results,
+            tmp_path / "profiling.html",
+            include_plotlyjs="cdn",
         )
         text = path.read_text()
         assert "<dt>Size</dt>" in text

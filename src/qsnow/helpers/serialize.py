@@ -5,7 +5,7 @@ All qSNOW objects support exporting as .flake files, which is a serialized qSNOW
 file containing all relevant attributes and information used to 1:1 regenerate the qSNOW object.
 
 The qSNOW serialization library supports round-tripping (1:1 import-export) of `Chip`, `LogicalTile`
-(and code subclasses like `SCTile`), `SquarePackingExp`, and the generic `Experiment` through JSON
+(and code subclasses like `SCTile`), `ProfilingExp`, and the generic `Experiment` through JSON
 files (.flake) files, capturing everything needed to rebuild the object with the exact same setup:
 
     from qsnow.helpers.serialize import export_flake, import_flake, import_latest
@@ -44,13 +44,11 @@ Notes:
     using the spec's `generator_args`; `tile_from_dict` then restores the stored
     tag and ruleset on top. Additional subclasses are registered with
     `register_tile_type()` and get the same treatment.
-  - Exports are stamped with `format_version`; older flakes are upgraded in
-    memory on import if the exist within the default data configuration file.
-
-Any change to an export's structure must:
-    1. Bump FORMAT_VERSION,
-    2. Register a matching `@_migration` step, and
-    3. Check in a new golden fixture under tests/helpers/fixtures/ (see the migration section).
+  - Exports are stamped with a MAJOR.MINOR.PATCH `format_version` and the qsnow
+    release that wrote them (`written_by`); older flakes are upgraded in memory on
+    import. Versioning and every migration live in `qsnow.helpers.migrations`, which
+    also lists what an export-structure change must do. v0.8.0 renamed the
+    `SquarePackingExp` record to `ProfilingExp`.
 """
 
 from __future__ import annotations
@@ -71,10 +69,11 @@ logger = getLogger(__name__)
 import logging
 
 from qsnow.experiments.experiment import Experiment, ExperimentResults
-from qsnow.experiments.squarepacking.game import SquarePackingExp
+from qsnow.experiments.profiling.game import ProfilingExp
+from qsnow.helpers.migrations import _export_stamp, _migrate
 from qsnow.interface.chip import Chip, LogicalTile
 from qsnow.interface.codes.rsc import SCTile
-from qsnow.interface.lattice import CHECKERBOARD, lattice_by_name
+from qsnow.interface.lattice import lattice_by_name
 from qsnow.interface.models import ChipSpec, Coord, CouplerKey, Tag, TileSpec
 from qsnow.interface.noise import NoiseDistribution
 from qsnow.interface.rules import (
@@ -88,159 +87,6 @@ from qsnow.interface.rules import (
 
 logger = logging.getLogger(__name__)
 
-FORMAT_VERSION = 7
-
-# ------------------------------------------------------------------
-# Format versioning / migrations
-# ------------------------------------------------------------------
-
-# NOTE - Every exported dict is stamped with 'format_version'. When an export's
-# structure changes, bump FORMAT_VERSION by one and register a @_migration(N)
-# step that upgrades a dict from version N to N+1 (branching on the dict's
-# '__qsnow__' kind if the change only affects one object type), and check in a
-# new golden fixture under tests/helpers/fixtures/. Old files are upgraded in
-# memory on import, one step at a time, and are never rewritten on disk.
-
-
-# TODO - move migrations to seperate folder, similar to the setup for the PHP Laravel model migrations (1 migration -> 1 file perhaps)
-_MIGRATIONS: Dict[int, Callable[[Dict], Dict]] = {}
-
-
-def _migration(from_version: int):
-    """Decorator registering an upgrade step from `from_version` to `from_version + 1`."""
-
-    def register(fn: Callable[[Dict], Dict]) -> Callable[[Dict], Dict]:
-        _MIGRATIONS[from_version] = fn
-        return fn
-
-    return register
-
-
-# TODO - migrate to add date to each file as a 'created' attr
-
-# NOTE - This migration process is necessary so that when (inevitably) some sort of attribute change takes place the serialize function doesn't shit the bed
-#        Below is a demo patch as if
-#   @_migration(1)
-#   def _demo(data: Dict) -> Dict:
-#       """v2 changed chip 'noise' values from a bare p float to {'p', 'scale'}."""
-#       if data.get("__qsnow__") == "Chip":
-#           data["noise"] = {k: {"p": p, "scale": 1.0} for k, p in data["noise"].items()}
-#       return data
-
-
-@_migration(1)
-def _v1_to_v2(data: Dict) -> Dict:
-    """v2 records the lattice a chip/tile is laid out on; everything before it was
-    implicitly a checkerboard.
-
-    Tiles are discriminated by 'base_circuit' rather than '__qsnow__' because tile
-    dicts carry arbitrary subclass names there.
-    """
-    if data.get("__qsnow__") == "Chip" or "base_circuit" in data:
-        data.setdefault("lattice", CHECKERBOARD.name)
-    return data
-
-
-@_migration(2)
-def _v2_to_v3(data: Dict) -> Dict:
-    """v3 records per-coupler error rates; before it, two-qubit noise was always the mean
-    of a gate's two endpoint qubits.
-
-    Left empty rather than derived here: the migration sees only the dict, and the import
-    derives couplers from the restored qubit noise when this map is empty - which
-    reproduces the pre-v3 rates exactly.
-    """
-    if data.get("__qsnow__") == "Chip":
-        data.setdefault("couplers", {})
-    return data
-
-
-@_migration(3)
-def _v3_to_v4(data: Dict) -> Dict:
-    """v4 moves the noise-model record and coupler derivation mode out of
-    `tag.metadata` into a typed `spec`, so code no longer branches on free-form
-    annotation. Pre-v4 chips wrote `noise_model` and `coupler_model` into metadata;
-    both are lifted out here and removed, so a migrated chip carries them once.
-    """
-    if data.get("__qsnow__") == "Chip":
-        metadata = data.get("tag", {}).get("metadata", {})
-        noise_model = metadata.pop("noise_model", None)
-        coupler_model = metadata.pop("coupler_model", None) or {}
-        data.setdefault(
-            "spec",
-            {
-                "noise_model": noise_model,
-                "coupler_mode": coupler_model.get("mode", "mean"),
-            },
-        )
-    return data
-
-
-@_migration(4)
-def _v4_to_v5(data: Dict) -> Dict:
-    """v5 adds `spec.coupler_model`, the coupler generator record. A v4 chip never had
-    one, so the field is absent, which `ChipSpec` reads as "derived from endpoints"."""
-    if data.get("__qsnow__") == "Chip":
-        data.setdefault("spec", {}).setdefault("coupler_model", None)
-    return data
-
-
-@_migration(5)
-def _v5_to_v6(data: Dict) -> Dict:
-    """v6 records noise as `NoiseDistribution` objects. Two v5 records need renaming
-    to match their classes: the coupler record "correlated contour" is `SkewContour`
-    applied with a correlation, which now lives in `spec.coupler_correlation`; and
-    "uniform random" spelled its bounds `range`, now `bounds`."""
-    if data.get("__qsnow__") == "Chip":
-        spec = data.setdefault("spec", {})
-        spec.setdefault("coupler_correlation", None)
-        coupler_model = spec.get("coupler_model")
-        if coupler_model and coupler_model.get("name") == "correlated contour":
-            coupler_model["name"] = "skewed contour"
-            spec["coupler_correlation"] = coupler_model.pop("correlation", None)
-        noise_model = spec.get("noise_model")
-        if (
-            noise_model
-            and noise_model.get("name") == "uniform random"
-            and "range" in noise_model
-        ):
-            noise_model["bounds"] = noise_model.pop("range")
-    return data
-
-
-@_migration(6)
-def _v6_to_v7(data: Dict) -> Dict:
-    """v7 renames the "derived contour" record to "normal contour", matching the
-    `NormalContour` class and its `normal-contour` CLI flag.
-
-    "Derived" already means "follows its endpoints" for couplers, so the old name read
-    as a coupler mode rather than as the normal-marginal member of the contour family
-    (`NormalContour`/`SkewContour`/`LogSkewContour`). Both the site and the coupler
-    record can hold it.
-    """
-    if data.get("__qsnow__") == "Chip":
-        spec = data.get("spec", {})
-        for key in ("noise_model", "coupler_model"):
-            record = spec.get(key)
-            if record and record.get("name") == "derived contour":
-                record["name"] = "normal contour"
-    return data
-
-
-def _migrate(data: Dict) -> Dict:
-    """Upgrade a persisted dict to the current FORMAT_VERSION before deserialization."""
-    version = data.get("format_version", 1)  # earliest exports are v1
-    if version > FORMAT_VERSION:
-        raise ValueError(
-            f"Export uses format v{version}, newer than this qSNOW install (v{FORMAT_VERSION}). "
-            f"Upgrade qsnow to import this file."
-        )
-    while version < FORMAT_VERSION:
-        data = _MIGRATIONS[version](data)
-        version += 1
-        data["format_version"] = version
-    return data
-
 
 def _find_repo_root() -> Path:
     """Locate the repository root so `data/` is stable regardless of the caller's cwd."""
@@ -251,7 +97,7 @@ def _find_repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
-# TODO - consider moving this to platform specific cache location (like .)
+# TODO - consider moving this to platform specific cache location
 # TODO - move the default to be a part of the package-wide configuration file when refactoring for package distribution
 # Default export root: `data/` at the repo root. Override with set_data_dir()
 # for tests, notebooks, or an absolute location.
@@ -311,7 +157,7 @@ def _subfolder(obj: Any) -> str:
             return "chips"
         case LogicalTile():
             return "tiles"
-        case SquarePackingExp() | Experiment():
+        case ProfilingExp() | Experiment():
             return "experiments"
         case _:
             raise TypeError(f"Cannot serialize object of type {type(obj).__name__}.")
@@ -326,7 +172,7 @@ def _prefix(obj: Any) -> str:
             return "chip"
         case LogicalTile():
             return "tile"
-        case SquarePackingExp() | Experiment():
+        case ProfilingExp() | Experiment():
             return "experiment"
         case _:
             raise TypeError(f"Cannot serialize object of type {type(obj).__name__}.")
@@ -341,10 +187,8 @@ def _label(obj: Any) -> str:
             return f"{obj.unit_dims[0]}x{obj.unit_dims[1]}"
         case LogicalTile():
             return obj.tag.name or obj.spec.tile_type or type(obj).__name__.lower()
-        case SquarePackingExp():
-            return (
-                f"squarepacking_{obj.tile.tag.name or type(obj.tile).__name__.lower()}"
-            )
+        case ProfilingExp():
+            return f"profiling_{obj.tile.tag.name or type(obj.tile).__name__.lower()}"
         case Experiment():
             return type(obj).__name__.lower()
         case _:
@@ -515,7 +359,7 @@ def tile_to_dict(tile: LogicalTile) -> Dict:
     dims = tuple(int(max(c) + 1) for c in zip(*coords))[:2]
     return {
         "__qsnow__": type(tile).__name__,
-        "format_version": FORMAT_VERSION,
+        **_export_stamp(),
         "base_circuit": str(tile.base_circuit),
         "origin": list(tile.origin),
         "construct_origin": [0, 0] if tile.initialized() else list(tile.origin),
@@ -590,7 +434,7 @@ def tile_from_dict(data: Dict) -> LogicalTile:
 def chip_to_dict(chip: Chip) -> Dict:
     return {
         "__qsnow__": "Chip",
-        "format_version": FORMAT_VERSION,
+        **_export_stamp(),
         "tag": tag_to_dict(chip.tag),
         "spec": chip_spec_to_dict(chip.spec),
         # the original constructor arguments, in unit cells (the coordinate extent
@@ -648,7 +492,7 @@ def _experiment_headings(exp: Experiment, kind: str) -> Dict:
     """
     return {
         "__qsnow__": kind,
-        "format_version": FORMAT_VERSION,
+        **_export_stamp(),
         "tag": tag_to_dict(exp.tag),
         "config": exp.config,
         "exp": {},
@@ -656,8 +500,8 @@ def _experiment_headings(exp: Experiment, kind: str) -> Dict:
     }
 
 
-def square_packing_to_dict(exp: SquarePackingExp) -> Dict:
-    data = _experiment_headings(exp, "SquarePackingExp")
+def profiling_exp_to_dict(exp: ProfilingExp) -> Dict:
+    data = _experiment_headings(exp, "ProfilingExp")
     data["exp"] = {
         "chip": chip_to_dict(exp.chip),
         "tile": tile_to_dict(exp.tile),
@@ -666,10 +510,10 @@ def square_packing_to_dict(exp: SquarePackingExp) -> Dict:
     return data
 
 
-def square_packing_from_dict(data: Dict) -> SquarePackingExp:
+def profiling_exp_from_dict(data: Dict) -> ProfilingExp:
     data = _migrate(data)
     payload = data["exp"]
-    exp = SquarePackingExp(
+    exp = ProfilingExp(
         chip=chip_from_dict(payload["chip"]),
         tile=tile_from_dict(payload["tile"]),
         # JSON round-trips Coord tuples as lists; restore tuples so profile
@@ -727,7 +571,7 @@ def results_to_dict(exp: Experiment, path: Optional[Union[str, Path]] = None) ->
         )
     return {
         "__qsnow__": "ExperimentResults",
-        "format_version": FORMAT_VERSION,
+        **_export_stamp(),
         "experiment": flake_ref(exp.source, path) if exp.source is not None else None,
         "desc": exp.desc,
         "run_config": exp.config,
@@ -786,8 +630,8 @@ def to_dict(obj: Any) -> Dict:
             return chip_to_dict(obj)
         case LogicalTile():
             return tile_to_dict(obj)
-        case SquarePackingExp():
-            return square_packing_to_dict(obj)
+        case ProfilingExp():
+            return profiling_exp_to_dict(obj)
         case Experiment():
             return experiment_to_dict(obj)
         case _:
@@ -801,8 +645,8 @@ def from_dict(data: Dict) -> Any:
     match kind:
         case "Chip":
             return chip_from_dict(data)
-        case "SquarePackingExp":
-            return square_packing_from_dict(data)
+        case "ProfilingExp":
+            return profiling_exp_from_dict(data)
         case "Experiment":
             return experiment_from_dict(data)
         case "ExperimentResults":

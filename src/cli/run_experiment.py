@@ -2,7 +2,7 @@ import argparse
 import logging
 from time import perf_counter
 
-from qsnow.experiments import SquarePackingExp
+from qsnow.experiments import ProfilingExp
 from qsnow.helpers import serialize
 from qsnow.interface import Chip, SCTile
 from qsnow.interface.noise import (
@@ -57,7 +57,7 @@ def distribution_from_flags(
             )
 
 
-def run_and_serialize_spp_experiment(
+def run_and_serialize_profiling_experiment(
     chip: Chip,
     *,
     location,
@@ -120,7 +120,7 @@ def run_and_serialize_spp_experiment(
             + f"d{d}_{new_chip.unit_dims[0]}x{new_chip.unit_dims[1]}_loc_{str(location).replace('.', '_')}"
         )
 
-        exp = SquarePackingExp(new_chip, SCTile(d))
+        exp = ProfilingExp(new_chip, SCTile(d))
         exp.tag.name = additional_label + f"_d{d}"
         exp.run(
             shots=shots,
@@ -147,9 +147,6 @@ def save_configuration(args: dict, chip: Chip, name: str):
         else:
             return f"--{name}\n{values}\n"
 
-    # Flags left at None are omitted rather than written as "None": every such flag
-    # defaults to None, so a replay resolves them the same way this run did. Seeds and
-    # centres are written as the chip resolved them, so the replay is identical.
     resolved = {
         "seed": getattr(chip.spec.noise_model, "seed", None),
         "center": getattr(chip.spec.noise_model, "center", None),
@@ -192,7 +189,7 @@ def main():
         return rho
 
     parser = argparse.ArgumentParser(
-        description="A script that runs Square Packing experiments conveniently.\n The arguments can either be specified individually or passed from a text file using `@<path/to/text_file>.",
+        description="A script that runs profiling experiments conveniently.\n The arguments can either be specified individually or passed from a text file using `@<path/to/text_file>.",
         fromfile_prefix_chars="@",
     )
 
@@ -390,7 +387,7 @@ def main():
     else:
         chip = Chip(args.dimensions[0], args.dimensions[1])
 
-    chip = run_and_serialize_spp_experiment(
+    chip = run_and_serialize_profiling_experiment(
         chip=chip,
         location=args.location,
         deviation=args.deviation,

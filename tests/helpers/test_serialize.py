@@ -3,8 +3,8 @@ from statistics import mean
 
 import pytest
 
+from qsnow.experiments.experiment import ExperimentResults
 from qsnow.helpers.serialize import (
-    FORMAT_VERSION,
     export_flake,
     from_dict,
     import_flake,
@@ -31,6 +31,13 @@ def data_dir(tmp_path):
     set_data_dir(tmp_path / "data")
     yield tmp_path / "data"
     set_data_dir()  # restore repo-root default
+
+
+def _as_legacy(data, version):
+    """Restamp an export the way flakes before v0.9.0 were: a single integer version."""
+    data.pop("written_by", None)
+    data["format_version"] = version
+    return data
 
 
 class TestTileRoundTrip:
@@ -140,41 +147,41 @@ class TestChipRoundTrip:
 
 
 class TestExperimentRoundTrip:
-    def test_square_packing_exp_round_trips(self, chip):
-        from qsnow.experiments.squarepacking.game import SquarePackingExp
+    def test_profiling_exp_round_trips(self, chip):
+        from qsnow.experiments.profiling.game import ProfilingExp
 
         chip.generate_random_noise()
-        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
-        exp.desc = "square packing on a 5x5 chip"
+        exp = ProfilingExp(chip=chip, tile=SCTile(distance=3))
+        exp.desc = "profiling on a 5x5 chip"
 
         restored = from_dict(to_dict(exp))
 
-        assert isinstance(restored, SquarePackingExp)
-        assert restored.desc == "square packing on a 5x5 chip"
+        assert isinstance(restored, ProfilingExp)
+        assert restored.desc == "profiling on a 5x5 chip"
         assert restored.profile == exp.profile
         assert {c: q.noise.p for c, q in restored.chip.grid.items()} == {
             c: q.noise.p for c, q in chip.grid.items()
         }
 
-    def test_square_packing_profile_survives_json_round_trip(self, chip):
+    def test_profiling_profile_survives_json_round_trip(self, chip):
         # to_dict/from_dict alone keeps tuples in memory; only a real JSON
         # round-trip (as in export_flake/import_flake) degrades Coords to lists
         import json
 
-        from qsnow.experiments.squarepacking.game import SquarePackingExp
+        from qsnow.experiments.profiling.game import ProfilingExp
 
-        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        exp = ProfilingExp(chip=chip, tile=SCTile(distance=3))
 
         restored = from_dict(json.loads(json.dumps(to_dict(exp))))
 
         assert restored.profile == exp.profile
         assert all(isinstance(loc, tuple) for loc in restored.profile)
 
-    def test_square_packing_payload_nests_under_experiment_headings(self, chip):
+    def test_profiling_payload_nests_under_experiment_headings(self, chip):
         from qsnow.experiments.experiment import Experiment
-        from qsnow.experiments.squarepacking.game import SquarePackingExp
+        from qsnow.experiments.profiling.game import ProfilingExp
 
-        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        exp = ProfilingExp(chip=chip, tile=SCTile(distance=3))
         assert isinstance(exp, Experiment)
 
         data = to_dict(exp)
@@ -182,6 +189,7 @@ class TestExperimentRoundTrip:
         assert set(data.keys()) == {
             "__qsnow__",
             "format_version",
+            "written_by",
             "tag",
             "config",
             "results_refs",
@@ -229,9 +237,9 @@ class TestTagAnnotations:
         assert restored.tag.desc == "written at export time"
 
     def test_experiment_desc_lives_on_tag(self, chip):
-        from qsnow.experiments.squarepacking.game import SquarePackingExp
+        from qsnow.experiments.profiling.game import ProfilingExp
 
-        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        exp = ProfilingExp(chip=chip, tile=SCTile(distance=3))
         exp.desc = "via the property"
 
         assert exp.tag.desc == "via the property"
@@ -252,9 +260,9 @@ class TestTagAnnotations:
 class TestResultsFlow:
     def test_save_run_save_results_round_trip(self, data_dir, chip):
         from qsnow.experiments.experiment import ExperimentResults
-        from qsnow.experiments.squarepacking.game import SquarePackingExp
+        from qsnow.experiments.profiling.game import ProfilingExp
 
-        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        exp = ProfilingExp(chip=chip, tile=SCTile(distance=3))
         setup_path = exp.save()
         assert exp.source == setup_path
 
@@ -282,9 +290,9 @@ class TestResultsFlow:
         import json
 
         from qsnow.experiments.sampling import ErrorFloorSampler
-        from qsnow.experiments.squarepacking.game import SquarePackingExp
+        from qsnow.experiments.profiling.game import ProfilingExp
 
-        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        exp = ProfilingExp(chip=chip, tile=SCTile(distance=3))
         # sourced from the sampler itself, so this breaks if run_config drops a key
         exp.config.update(
             **ErrorFloorSampler(
@@ -310,9 +318,9 @@ class TestResultsFlow:
 
     def test_disabled_error_floor_persists_as_no_ceiling(self, data_dir, chip):
         from qsnow.experiments.sampling import ErrorFloorSampler
-        from qsnow.experiments.squarepacking.game import SquarePackingExp
+        from qsnow.experiments.profiling.game import ProfilingExp
 
-        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        exp = ProfilingExp(chip=chip, tile=SCTile(distance=3))
         exp.config.update(**ErrorFloorSampler(shots=1_000, min_errors=0).run_config())
         exp.results = {(0, 0): {"ler": 0.0, "shots": 1000, "errors": 0}}
         exp.save()
@@ -323,18 +331,18 @@ class TestResultsFlow:
         assert record.run_config["max_topup_shots"] is None
 
     def test_save_with_desc_updates_description(self, data_dir, chip):
-        from qsnow.experiments.squarepacking.game import SquarePackingExp
+        from qsnow.experiments.profiling.game import ProfilingExp
 
-        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        exp = ProfilingExp(chip=chip, tile=SCTile(distance=3))
         path = exp.save(desc="testing desc at save time")
 
         assert exp.desc == "testing desc at save time"
         assert import_flake(path).desc == "testing desc at save time"
 
     def test_save_results_backlinks_saved_setup(self, data_dir, chip):
-        from qsnow.experiments.squarepacking.game import SquarePackingExp
+        from qsnow.experiments.profiling.game import ProfilingExp
 
-        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        exp = ProfilingExp(chip=chip, tile=SCTile(distance=3))
         setup_path = exp.save()
         exp.results = {(0.0, 0.0): {"ler": 0.001}}
         results_path = exp.save_results()
@@ -344,9 +352,9 @@ class TestResultsFlow:
         assert import_flake(setup_path).results_refs == [results_path.name]
 
     def test_save_results_without_saved_setup_warns(self, data_dir, chip):
-        from qsnow.experiments.squarepacking.game import SquarePackingExp
+        from qsnow.experiments.profiling.game import ProfilingExp
 
-        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        exp = ProfilingExp(chip=chip, tile=SCTile(distance=3))
         exp.results = {(0.0, 0.0): {"ler": 0.001}}
 
         with pytest.warns(UserWarning, match="call exp.save"):
@@ -361,9 +369,9 @@ class TestResultsLinkage:
 
     @staticmethod
     def _saved_pair(chip):
-        from qsnow.experiments.squarepacking.game import SquarePackingExp
+        from qsnow.experiments.profiling.game import ProfilingExp
 
-        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        exp = ProfilingExp(chip=chip, tile=SCTile(distance=3))
         exp.results = {(0, 0): {"ler": 0.001, "shots": 1000, "errors": 1}}
         setup_path = exp.save()
         results_path = exp.save_results()
@@ -410,9 +418,9 @@ class TestResultsLinkage:
         assert import_flake(setup_path).results == exp.results
 
     def test_results_flake_names_its_setup_relative_to_itself(self, data_dir, chip):
-        from qsnow.experiments.squarepacking.game import SquarePackingExp
+        from qsnow.experiments.profiling.game import ProfilingExp
 
-        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        exp = ProfilingExp(chip=chip, tile=SCTile(distance=3))
         exp.results = {(0, 0): {"ler": 0.001}}
         setup_path = exp.save()
         results_path = exp.save_results(
@@ -505,15 +513,15 @@ class TestAutoOrganization:
         assert len(list_exports("chip*")) == 1
 
     def test_label_only_pattern_falls_back_to_substring_match(self, data_dir, chip):
-        from qsnow.experiments.squarepacking.game import SquarePackingExp
+        from qsnow.experiments.profiling.game import ProfilingExp
 
-        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        exp = ProfilingExp(chip=chip, tile=SCTile(distance=3))
         exp.save(label="d3-20x20chip")
 
         # filename starts with "experiment_", but the bare label still matches
         restored = import_latest("d3-20x20chip", kind="experiments")
 
-        assert isinstance(restored, SquarePackingExp)
+        assert isinstance(restored, ProfilingExp)
 
     def test_import_latest_missing_raises(self, data_dir):
         with pytest.raises(FileNotFoundError):
@@ -549,14 +557,14 @@ class TestFormatVersioning:
     def test_nested_chip_and_tile_migrate_independently(self, chip):
         """Nested objects stamp and migrate their own format_version, so a v1
         experiment's chip/tile upgrade without the experiment migration touching them."""
-        from qsnow.experiments.squarepacking.game import SquarePackingExp
+        from qsnow.experiments.profiling.game import ProfilingExp
 
-        exp = SquarePackingExp(chip=chip, tile=SCTile(distance=3))
+        exp = ProfilingExp(chip=chip, tile=SCTile(distance=3))
         data = to_dict(exp)
 
         # rewind the nested payloads to their pre-lattice v1 shape
         for nested in (data["exp"]["chip"], data["exp"]["tile"]):
-            nested["format_version"] = 1
+            _as_legacy(nested, 1)
             del nested["lattice"]
 
         restored = from_dict(data)
@@ -579,13 +587,6 @@ class TestFormatVersioning:
 
         assert exp.config == {"shots": 1000, "decoder": "pymatching"}
 
-    def test_future_version_raises_clear_error(self, chip):
-        data = to_dict(chip)
-        data["format_version"] = FORMAT_VERSION + 1
-
-        with pytest.raises(ValueError, match="Upgrade qsnow"):
-            from_dict(data)
-
     def test_missing_version_defaults_to_v1(self, chip):
         data = to_dict(chip)
         del data["format_version"]
@@ -594,24 +595,28 @@ class TestFormatVersioning:
 
         assert isinstance(restored, Chip)
 
-    def test_migration_steps_chain_to_current_version(self, monkeypatch, chip):
-        import qsnow.helpers.serialize as serialize
+    def test_v7_square_packing_experiment_imports_as_profiling_exp(self):
+        """v0.8.0 renamed `SquarePackingExp` to `ProfilingExp`; setups saved under the
+        old name must still load."""
+        from qsnow.experiments.profiling.game import ProfilingExp
 
-        applied = []
-        monkeypatch.setattr(serialize, "FORMAT_VERSION", FORMAT_VERSION + 2)
-        monkeypatch.setitem(
-            serialize._MIGRATIONS, FORMAT_VERSION, lambda d: applied.append(1) or d
-        )
-        monkeypatch.setitem(
-            serialize._MIGRATIONS, FORMAT_VERSION + 1, lambda d: applied.append(2) or d
-        )
+        exp = import_flake(self.FIXTURES / "experiment_v7.flake")
 
-        data = to_dict(chip)
-        data["format_version"] = FORMAT_VERSION
-        restored = from_dict(data)
+        assert isinstance(exp, ProfilingExp)
+        assert exp.profile == [(0, 0), (0, 2), (1, 1), (2, 0), (2, 2)]
+        assert exp.chip.unit_dims == (5, 5)
+        assert exp.tile.spec.distance == 3
 
-        assert applied == [1, 2]
-        assert isinstance(restored, Chip)
+    def test_v0_9_0_chip_golden_file_imports(self):
+        chip = import_flake(self.FIXTURES / "chip_v0.9.0.flake")
+
+        assert isinstance(chip, Chip)
+
+    def test_v0_9_0_experiment_results_golden_file_imports(self):
+        record = import_flake(self.FIXTURES / "experimentresults_v0.9.0.flake")
+
+        assert isinstance(record, ExperimentResults)
+        assert record.run_config == {"shots": 50000, "max_errors": 5000}
 
 
 class TestCouplerRoundTrip:
@@ -684,7 +689,7 @@ class TestChipSpecRoundTrip:
         chip.derive_coupler_noise("max")
         data = to_dict(chip)
         # rewrite as a v3 export: record in metadata, no spec, no coupler map
-        data["format_version"] = 3
+        _as_legacy(data, 3)
         del data["spec"]
         data["couplers"] = {}
         data["tag"]["metadata"]["noise_model"] = {
@@ -729,7 +734,7 @@ class TestCouplerFormatVersioning:
     def test_v5_uniform_random_record_renames_range_to_bounds(self, chip):
         chip.generate_uniform_noise(0.01)
         data = to_dict(chip)
-        data["format_version"] = 5
+        _as_legacy(data, 5)
         data["spec"]["noise_model"] = {
             "name": "uniform random",
             "range": [0.01, 0.05],
@@ -756,7 +761,7 @@ class TestCouplerFormatVersioning:
         "derived contour", which read as a coupler derivation mode."""
         chip = import_flake(self.FIXTURES / "chip_v6.flake")
         data = to_dict(chip)
-        data["format_version"] = 6
+        _as_legacy(data, 6)
         data["spec"]["noise_model"] = {
             "name": "derived contour",
             "mean": 0.01,
@@ -773,7 +778,7 @@ class TestCouplerFormatVersioning:
         """The rename lands on whichever record held it, sites or couplers."""
         chip = import_flake(self.FIXTURES / "chip_v6.flake")
         data = to_dict(chip)
-        data["format_version"] = 6
+        _as_legacy(data, 6)
         data["spec"]["coupler_model"] = {
             "name": "derived contour",
             "mean": 0.05,

@@ -1,2 +1,2 @@
 from .experiment import Experiment, ExperimentResults, ResultsLike
-from .squarepacking.game import SquarePackingExp
+from .profiling.game import ProfilingExp

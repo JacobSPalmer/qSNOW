@@ -16,7 +16,9 @@ distribution_from_flags = run_experiment.distribution_from_flags
 resolve_model = run_experiment.resolve_model
 MODEL_CHOICES = run_experiment.MODEL_CHOICES
 main = run_experiment.main
-run_and_serialize_spp_experiment = run_experiment.run_and_serialize_spp_experiment
+run_and_serialize_profiling_experiment = (
+    run_experiment.run_and_serialize_profiling_experiment
+)
 save_configuration = run_experiment.save_configuration
 from qsnow.helpers import serialize
 from qsnow.interface.chip import Chip
@@ -49,7 +51,7 @@ def _run(chip, tmp_path, **kw):
         location=0.01, deviation=0.003, skew=1.5, seed=3, noise_model="skewed-contour"
     )
     params.update(kw)
-    return run_and_serialize_spp_experiment(
+    return run_and_serialize_profiling_experiment(
         chip, data_directory=tmp_path / "data", **SMALL, **params
     )
 

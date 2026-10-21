@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class SquarePackingExp(Experiment):
+class ProfilingExp(Experiment):
     chip: Chip
     tile: LogicalTile
     profile: List[Coord] = field(default_factory=list)

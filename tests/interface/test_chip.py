@@ -25,7 +25,7 @@ class TestSquareLatticeChip:
         assert square_chip.summary()["n_qubits"] == 25
 
     def test_copy_preserves_the_lattice(self, square_chip: Chip):
-        # SquarePackingExp copies its chip, so losing the lattice here would
+        # ProfilingExp copies its chip, so losing the lattice here would
         # silently turn a square-lattice experiment into a checkerboard one
         copied = square_chip.copy()
 

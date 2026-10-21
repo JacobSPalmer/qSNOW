@@ -149,11 +149,6 @@ class Experiment:
     ):
         """Display an interactive visualization of a run's results. This must be called from the experiment
         in order to expose the underlying chip noise model to the visualization module.
-
-        `results` is a persisted `ExperimentResults` record or the dict `run()`
-        returns; with none given, the experiment's own latest results are shown.
-        `extra_styles` (name -> VisualizationStyle) extends the views the
-        subclass bundles by default.
         """
         raise NotImplementedError(f"{type(self).__name__} does not implement show().")
 

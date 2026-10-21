@@ -74,19 +74,6 @@ class Chip(Grid):
     Chip(5, 5) spans (0,0)-(9,9) and only positions satisfying x % 2 == y % 2 hold a
     qubit. On `SQUARE` a cell is one coordinate, so Chip(5, 5) spans (0,0)-(4,4) with a
     qubit at every integer position.
-
-    The grid is described using selection spaces of polygons, so a 5x5 checkerboard
-    logical tile occupies box(0, 0, 10, 10).
-
-    Typical workflow:
-      1. Instantiate Chip(L, H) and give it a landscape: `generate_noise(dist)` with a
-         `NoiseDistribution` (`Uniform`, `RandomUniform`, `RandomGaussian`, `NormalContour`,
-         `SkewContour`, `LogSkewContour`, `Custom`), or one of the `generate_*_noise`
-         conveniences that wrap them - one per distribution, `Custom` aside. Couplers
-         follow their endpoints until `generate_coupler_noise(dist, ...)` gives them a
-         landscape of their own.
-      2. Build, place, and shift LogicalTiles within the chip by specifying origin points or movement shifts.
-      3. Retrieve and modify noise-injected circuits by accessing `tile.circuit`.
     """
 
     # ------------------------------------------------------------------
@@ -179,12 +166,7 @@ class Chip(Grid):
         Whether any coupler carries information its two qubits do not.
 
         False while every coupler still equals the endpoint combination
-        `derive_coupler_noise` produced: in that state the coupler rates are a function of
-        the qubit rates, so anything reading them - a heatmap especially - would present
-        the qubit data back as if it were a second measurement.
-
-        Computed rather than tracked, because `set_coupler_noise_map` and direct
-        `coupler.noise.p` writes both bypass any bookkeeping a setter could do.
+        `derive_coupler_noise` produced.
         """
         combine = _COUPLER_DERIVATIONS[self.spec.coupler_mode]
         # isclose, not ==, so a chip whose rates round-tripped through JSON is not
@@ -225,8 +207,7 @@ class Chip(Grid):
     # Noise manipulation
     # ------------------------------------------------------------------
     def set_noise_map(self, noise_map: Dict[Coord, NoiseProfile] | Dict[Coord, float]):
-        """Assign site profiles directly. A targeted edit: couplers are *not* re-derived
-        (that would discard manual overrides); call `derive_coupler_noise` if wanted."""
+        """Assign qubit rates directly, overriding whatever they were derived from."""
         for c, n in noise_map.items():
             self.loc(c).noise = as_profile(n)
 
@@ -241,9 +222,6 @@ class Chip(Grid):
     ):
         """
         Assign coupler rates directly, overriding whatever they were derived from.
-
-        Clears any recorded coupler model: even a partial override means the rates no
-        longer follow that recipe.
         """
         self._write_coupler_rates(coupler_map)
         self._clear_coupler_model()
@@ -256,11 +234,8 @@ class Chip(Grid):
         """
         Set every coupler's rate as a function of the two qubits it joins.
 
-        The default a chip starts from: absent measured per-coupler data, the endpoints
-        are the best available estimate, and `mean` reproduces exactly what the injector
-        computed before couplers existed. Call again after editing qubit noise by hand, or
-        override individual couplers with `set_coupler_noise_map`. For a coupler landscape
-        of its own, cross-correlated with the sites, use `generate_coupler_noise`.
+        The options for mode determine how the coupler is set according to it's two endpoint qubits
+        with available options `mean`, `max`, `min`.
         """
         self._derive_coupler_rates(mode)
         self._clear_coupler_model()  # the derived rates replace any generated ones
@@ -276,9 +251,8 @@ class Chip(Grid):
         Give every site the landscape `dist` produces, and record `dist` as the recipe.
 
         Couplers are then re-derived from their endpoints with the chip's current mode,
-        so a coupler rate is never left stale behind the site rates it was derived from;
-        any earlier coupler landscape is dropped with it. Apply `generate_coupler_noise`
-        afterwards for couplers of their own.
+        so a coupler rate is never left stale behind the site rates it was derived from.
+        Apply `generate_coupler_noise` afterwards for couplers of their own.
         """
         self.set_noise_map(dist.sites(self))
         self.spec.noise_model = dist
@@ -291,39 +265,38 @@ class Chip(Grid):
         Give every coupler the landscape `dist` produces, optionally cross-correlated
         with the site landscape the chip currently holds.
 
-        `correlation` (ρ in [0, 1]) is the correlation between a coupler and the mean of
-        its two endpoints, in latent terms: 1 reproduces the ordering
-        `derive_coupler_noise("mean")` gives, 0 is a landscape independent of the sites.
-        Only distributions built on a Gaussian field accept it. Call after the site
-        landscape exists; a later site generator re-derives the couplers and drops this
-        record. Method: `writeups/noise_generation_walkthrough.tex`.
+        The correlation value is akin to a sort of "blending" between the distribution for the
+        couplers and the qubits. `correlation=1` means that the couplers error rate is exactly
+        the mean of it's endpoints. A `correlation=01 means that the couplers error rates are
+        entirely independent of the qubit endpoints. Values inbetween blend the coupler distribuiton
+        provided here with the existing qubit values.
         """
         self._write_coupler_rates(dist.couplers(self, correlation=correlation))
         self.spec.coupler_model = dist
         self.spec.coupler_correlation = correlation
 
-    # -- conveniences: one distribution each, kept for notebooks, tests and the CLI --
+    # -- Convenience functions for generating various NoiseDistributions --
 
     def generate_uniform_noise(self, p: float) -> None:
-        """`generate_noise(Uniform(p))`."""
+        """Convenience function for `generate_noise(Uniform(p))`."""
         self.generate_noise(Uniform(p))
 
     def generate_random_noise(
         self, range: Tuple[float, float] = (0.01, 0.05), seed: int | None = None
     ) -> None:
-        """`generate_noise(RandomUniform(range, seed=seed))`."""
+        """Convenience function for `generate_noise(RandomUniform(range, seed=seed))`."""
         self.generate_noise(RandomUniform(tuple(range), seed=seed))
 
     def generate_gaussian_noise(
         self, mean: float, deviation: float, seed: int | None = None
     ) -> None:
-        """`generate_noise(RandomGaussian(mean, deviation, seed=seed))`."""
+        """Convenience function for `generate_noise(RandomGaussian(mean, deviation, seed=seed))`."""
         self.generate_noise(RandomGaussian(mean, deviation, seed=seed))
 
     def generate_normal_contour_noise(
         self, mean: float, deviation: float, seed: int | None = None, *, slope: int = 5
     ) -> None:
-        """`generate_noise(NormalContour(mean, deviation, slope=slope, seed=seed))`."""
+        """Convenience function for `generate_noise(NormalContour(mean, deviation, slope=slope, seed=seed))`."""
         self.generate_noise(NormalContour(mean, deviation, slope=slope, seed=seed))
 
     def generate_skewed_contour_noise(
@@ -336,7 +309,7 @@ class Chip(Grid):
         center: Center = "mean",
         slope: int = 5,
     ) -> None:
-        """`generate_noise(SkewContour(location, deviation, skew, center, slope=slope, seed=seed))`."""
+        """Convenience function for `generate_noise(SkewContour(location, deviation, skew, center, slope=slope, seed=seed))`."""
         self.generate_noise(
             SkewContour(location, deviation, skew, center, slope=slope, seed=seed)
         )
@@ -351,12 +324,7 @@ class Chip(Grid):
         center: LogCenter = "median",
         slope: int = 5,
     ) -> None:
-        """`generate_noise(LogSkewContour(location, deviation, skew, center, slope=slope, seed=seed))`.
-
-        Note `deviation` is in decades of log10(rate), not rate units - see
-        `LogSkewContour`, whose docstring covers how to read the three parameters off
-        calibration data.
-        """
+        """Convenience function for `generate_noise(LogSkewContour(location, deviation, skew, center, slope=slope, seed=seed))`. """
         self.generate_noise(
             LogSkewContour(location, deviation, skew, center, slope=slope, seed=seed)
         )

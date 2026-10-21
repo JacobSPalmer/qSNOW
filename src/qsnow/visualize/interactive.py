@@ -26,14 +26,14 @@ from qsnow.visualize.visualize import (
 if TYPE_CHECKING:
     from plotly.graph_objs._figure import Figure
 
-    from qsnow.experiments import ResultsLike, SquarePackingExp
+    from qsnow.experiments import ProfilingExp, ResultsLike
     from qsnow.interface.chip import Chip
 
 __all__ = [
     "default_interactive_styles",
     "export_html",
     "visualize_interactive",
-    "export_square_packing",
+    "export_profiling",
     "export_chip",
 ]
 
@@ -420,7 +420,7 @@ def _chip_stats(summary: Dict[str, object]) -> Dict[str, str]:
     return stats
 
 
-def _spp_stats(summary):
+def _profiling_stats(summary):
     stats = {"Placements": str(summary["placements"])}
     return stats
 
@@ -449,14 +449,14 @@ def export_html(
 
     # deferred import: qsnow.helpers.serialize imports the experiment stack,
     # which imports this package (same pattern as Experiment.save)
-    from qsnow.experiments import SquarePackingExp
+    from qsnow.experiments import ProfilingExp
     from qsnow.interface import Chip
 
     match obj:
-        case SquarePackingExp():
+        case ProfilingExp():
             results = kwargs.pop("results", None)
             if results:
-                return export_square_packing(
+                return export_profiling(
                     obj,
                     results,
                     path,
@@ -486,8 +486,8 @@ def export_html(
             )
 
 
-def export_square_packing(
-    exp: SquarePackingExp,
+def export_profiling(
+    exp: ProfilingExp,
     results: ResultsLike,
     path: Optional[Union[str, Path]] = None,
     *,
@@ -498,10 +498,10 @@ def export_square_packing(
     **kwargs,
 ) -> Path:
     """
-    Write a standalone interactive HTML page for `SquarePackingExp` results and return its path.
+    Write a standalone interactive HTML page for `ProfilingExp` results and return its path.
 
     `results` is either a persisted `ExperimentResults` record or the dict
-    `SquarePackingExp.run()` returns (`exp.results`).
+    `ProfilingExp.run()` returns (`exp.results`).
     """
     # deferred import: qsnow.helpers.serialize imports the experiment stack,
     # which imports this package (same pattern as Experiment.save)
@@ -509,13 +509,13 @@ def export_square_packing(
 
     chip_size_label = f"{exp.chip.unit_dims[0]}x{exp.chip.unit_dims[1]}"
     if title is None:
-        title = exp.tag.name or "SP Experiment"
+        title = exp.tag.name or "Profiling Experiment"
     if path is None:
         stamp = datetime.now().strftime(_TIMESTAMP_FORMAT)
         path = (
             get_data_dir()
             / "html"
-            / f"experiment_sp_{label or chip_size_label}_{stamp}.html"
+            / f"experiment_profiling_{label or chip_size_label}_{stamp}.html"
         )
     else:
         path = Path(path)
@@ -542,7 +542,7 @@ def export_square_packing(
     tile_stats: Dict = _tile_stats(summary.get("tile"))
     tile_stats_html = _format_stat_box("Tile", _format_stat_rows(tile_stats))
 
-    exp_stats: Dict = _spp_stats(summary)
+    exp_stats: Dict = _profiling_stats(summary)
     exp_stats |= {"Shots": str(results.run_config.get("shots", "N/A"))}
     exp_stats_html = _format_stat_box("Experiment", _format_stat_rows(exp_stats))
 
