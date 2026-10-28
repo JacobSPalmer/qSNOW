@@ -5,7 +5,13 @@ qSNOW (quantum Simulated Noise Orchestration Workflow) is designed to provide a 
 
 qSNOW create tiles by ingesting STIM circuits, mapping the circuit-level qubits to the underlying qubits on the chip, and uniquely injecting noise into the circuit via sets of customizable noise injection rules. These injection rules conditionally trigger noise channels on individual qubits based on conditions or operations occuring in each circuit. 
 
-qSNOW is, at it's heart, meant to be used as an extendable toolbox for supporting simulation efforts on any variety of QEC codes by providing extendable base classes that can be made code-specific with minimal implementation overhead. As 
+qSNOW is, at it's heart, meant to be used as an extendable toolbox for supporting simulation efforts on any variety of QEC codes by providing extendable base classes that can be made code-specific with minimal implementation overhead.
+
+## Planned & Current Work
+
+The next larger update will focus on additional functionality for modeling modular quantum chips as well as long-distance couplers. Additionally, adding tile generators for BB codes, specifically gross and two-gross codes, and out-of-the-box support for additional decoders, like BP-OSD/Relay-BP, are high priority as well.
+
+Following the aforementioned as well as additional QoL, performance enhancements, and general clean-ups, qSNOW will be ready for release as full package.
 
 ## Workflow
 The fundamental workflow of qSNOW is to place logical tiles on a abstract chip, like such:
