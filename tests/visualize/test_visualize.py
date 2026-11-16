@@ -1,7 +1,12 @@
+from dataclasses import replace
+
 import pytest
 
+from qsnow.interface.chip import Chip
 from qsnow.interface.models import Qubit, Status
+from qsnow.interface.quilt import QuiltedChip
 from qsnow.visualize.visualize import (
+    CouplerCasingStyle,
     QubitStyle,
     VisualizationStyle,
     _colorbar_strip_px,
@@ -17,6 +22,7 @@ from qsnow.visualize.visualize import (
     custom_heatmap_style,
     default_style,
     device_heatmap_style,
+    module_style,
     noise_heatmap_style,
     packing_profile_style,
     visualize,
@@ -591,3 +597,107 @@ class TestFlooredColorscale:
 
         assert scale[0][0] == 0.0
         assert scale[-1][0] == 1.0
+
+
+@pytest.fixture
+def quilt() -> QuiltedChip:
+    return QuiltedChip({(0, 0): Chip(5, 5), (10, 0): Chip(5, 5)})
+
+
+def dashed_rects(fig):
+    return [s for s in fig.layout.shapes if s.type == "rect" and s.line.dash == "dash"]
+
+
+class TestModuleOutline:
+    @pytest.mark.parametrize(
+        "make_style", [lambda q: default_style, noise_heatmap_style]
+    )
+    def test_every_view_outlines_each_module(self, quilt, make_style):
+        rects = dashed_rects(visualize(quilt, style=make_style(quilt)))
+
+        assert len(rects) == len(quilt.modules)
+        assert sorted((r.x0, r.x1) for r in rects) == [(-0.5, 9.5), (9.5, 19.5)]
+
+    def test_none_hides_the_outline(self, quilt):
+        style = replace(default_style, module_outline=None)
+
+        assert dashed_rects(visualize(quilt, style=style)) == []
+
+    def test_monolithic_chip_draws_no_outline(self, chip):
+        assert dashed_rects(visualize(chip)) == []
+
+
+class TestModuleStyle:
+    def test_fill_follows_the_owning_module(self, quilt):
+        style = module_style(quilt)
+        fill = {q.loc: style.style_fn(q).color for q in quilt.qubits}
+
+        assert fill[(0, 0)] == fill[(9, 9)]
+        assert fill[(10, 0)] == fill[(19, 9)]
+        assert fill[(0, 0)] != fill[(10, 0)]
+
+    def test_hover_names_the_module(self, quilt):
+        hover = module_style(quilt).style_fn(quilt.loc((12, 2))).custom_hovertext
+
+        assert "module=(10, 0)" in hover
+
+    def test_seams_are_drawn_bold(self, quilt):
+        style = module_style(quilt)
+        widths = {c.ends: style.coupler_style(c).width for c in quilt.couplers}
+        seams = set(quilt.seam_map)
+
+        assert all(widths[k] == 3.0 for k in seams)
+        assert all(w == 1.0 for k, w in widths.items() if k not in seams)
+
+        lines = [
+            s for s in visualize(quilt, style=style).layout.shapes if s.type == "line"
+        ]
+        assert sum(s.line.width == 3.0 for s in lines) == len(quilt.seam_couplers)
+
+
+class TestSeamCasing:
+    def lines(self, fig):
+        return [s for s in fig.layout.shapes if s.type == "line"]
+
+    def test_device_view_cases_every_seam_beneath_the_couplers(self, quilt):
+        lines = self.lines(visualize(quilt, style=device_heatmap_style(quilt)))
+        n_seams = len(quilt.seam_couplers)
+        casings, couplers = lines[:n_seams], lines[n_seams:]
+
+        assert len(couplers) == len(quilt.couplers)
+        assert all(
+            c.line.color == "black" and c.line.dash == "6px,4px" for c in casings
+        )
+        assert all(c.line.width == couplers[0].line.width + 5 for c in casings)
+        assert all(c.line.color != "black" for c in couplers)
+
+    def test_none_draws_seams_plain(self, quilt):
+        style = device_heatmap_style(quilt, seam_casing=None)
+
+        assert len(self.lines(visualize(quilt, style=style))) == len(quilt.couplers)
+
+    def test_casing_is_configurable(self, quilt):
+        casing = CouplerCasingStyle(color="white", margin=1.0, dash=None)
+        style = device_heatmap_style(quilt, seam_casing=casing)
+        whites = [
+            s
+            for s in self.lines(visualize(quilt, style=style))
+            if s.line.color == "white"
+        ]
+
+        assert len(whites) == len(quilt.seam_couplers)
+        assert all(s.line.dash is None for s in whites)
+
+    def test_monolithic_chip_has_no_casings(self, chip):
+        chip.generate_uniform_noise(0.01)
+        style = device_heatmap_style(chip)
+
+        assert len(self.lines(visualize(chip, style=style))) == len(chip.couplers)
+
+    def test_hover_marks_seams(self, quilt):
+        style = device_heatmap_style(quilt)
+        seam = quilt.seam_couplers[0]
+        inner = next(c for c in quilt.couplers if c.ends not in quilt.seam_map)
+
+        assert style.coupler_style(seam).custom_hovertext.endswith("<br>seam")
+        assert "seam" not in style.coupler_style(inner).custom_hovertext

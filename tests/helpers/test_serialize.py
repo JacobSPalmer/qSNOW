@@ -23,6 +23,7 @@ from qsnow.interface.noise import (
     SkewContour,
     Uniform,
 )
+from qsnow.interface.quilt import QuiltedChip
 from qsnow.interface.rules import InjectionRule, Ruleset, Source
 
 
@@ -144,6 +145,102 @@ class TestChipRoundTrip:
         assert {c: q.noise.p for c, q in restored.grid.items()} == {
             c: q.noise.p for c, q in square_chip.grid.items()
         }
+
+
+@pytest.fixture
+def quilt() -> QuiltedChip:
+    """Two 5x5 modules side by side with contour site noise and their own seam rates."""
+    quilt = QuiltedChip({(0, 0): Chip(5, 5), (10, 0): Chip(5, 5)})
+    quilt.generate_noise(NormalContour(0.01, 0.003, seed=3))
+    quilt.generate_seam_noise(Uniform(0.02))
+    return quilt
+
+
+def _rates(chip: Chip):
+    """Every qubit and coupler rate on `chip`, keyed by coordinate / endpoint pair."""
+    return (
+        {c: q.noise.p for c, q in chip.grid.items()},
+        {k: n.p for k, n in chip.coupler_map.items()},
+    )
+
+
+class TestQuiltRoundTrip:
+    def test_quilt_round_trips_as_a_quilt(self, quilt):
+        restored = from_dict(to_dict(quilt))
+
+        assert isinstance(restored, QuiltedChip)
+        assert list(restored.modules) == [(0, 0), (10, 0)]
+        assert all(type(o[0]) is int for o in restored.modules)
+        assert [m.unit_dims for m in restored.modules.values()] == [(5, 5), (5, 5)]
+        assert restored.lattice == quilt.lattice
+        assert _rates(restored) == _rates(quilt)
+        assert restored.seam_map == quilt.seam_map
+
+    def test_hand_set_seam_is_not_re_derived(self, quilt):
+        quilt.coupler((9, 1), (10, 0)).noise.p = 0.05
+
+        restored = from_dict(to_dict(quilt))
+
+        assert restored.coupler((9, 1), (10, 0)).noise.p == 0.05
+
+    def test_tile_across_the_seam_restores_placement_and_statuses(self, quilt):
+        assert quilt.add_tile(SCTile(distance=3), (8, 0))
+
+        restored = from_dict(to_dict(quilt))
+
+        assert [t.origin for t in restored.tiles] == [(8, 0)]
+        assert {c: (q.status, q.type) for c, q in restored.grid.items()} == {
+            c: (q.status, q.type) for c, q in quilt.grid.items()
+        }
+        for offset, module in restored.modules.items():
+            assert [q.status for q in module.qubits] == [
+                q.status for q in quilt.modules[offset].qubits
+            ]
+
+    def test_placed_tile_circuit_matches_after_reimport(self, quilt):
+        quilt.add_tile(SCTile(distance=3), (8, 0))
+
+        restored = from_dict(to_dict(quilt))
+
+        assert str(restored.tiles[0].circuit) == str(quilt.tiles[0].circuit)
+
+    def test_tag_and_spec_round_trip(self, quilt):
+        quilt.tag.name = "two-module quilt"
+        quilt.modules[(10, 0)].tag.name = "right module"
+
+        restored = from_dict(to_dict(quilt))
+
+        assert restored.tag.name == "two-module quilt"
+        assert restored.modules[(10, 0)].tag.name == "right module"
+        assert restored.spec.noise_model == quilt.spec.noise_model
+
+    def test_l_shaped_quilt_keeps_its_hole(self):
+        quilt = QuiltedChip(
+            {(0, 0): Chip(4, 4), (0, 8): Chip(4, 4), (8, 8): Chip(4, 4)}
+        )
+
+        restored = from_dict(to_dict(quilt))
+
+        assert set(restored.grid) == set(quilt.grid)
+        assert set(restored.coupler_map) == set(quilt.coupler_map)
+
+    def test_export_names_it_a_quilt_and_import_rebuilds_one(self, data_dir, quilt):
+        path = export_flake(quilt)
+
+        assert path.parent == data_dir / "chips"
+        assert path.name.startswith("quilt_10x5_")
+        assert isinstance(import_flake(path), QuiltedChip)
+
+    def test_profiling_exp_on_a_quilt_keeps_the_quilt(self, quilt):
+        from qsnow.experiments.profiling.game import ProfilingExp
+
+        exp = ProfilingExp(chip=quilt, tile=SCTile(distance=3))
+
+        restored = from_dict(to_dict(exp))
+
+        assert isinstance(restored.chip, QuiltedChip)
+        assert restored.chip.seam_map == exp.chip.seam_map
+        assert restored.profile == exp.profile
 
 
 class TestExperimentRoundTrip:
@@ -611,6 +708,16 @@ class TestFormatVersioning:
         chip = import_flake(self.FIXTURES / "chip_v0.9.0.flake")
 
         assert isinstance(chip, Chip)
+
+    def test_v0_10_0_quilt_golden_file_imports(self):
+        quilt = import_flake(self.FIXTURES / "quilt_v0.10.0.flake")
+
+        assert isinstance(quilt, QuiltedChip)
+        assert list(quilt.modules) == [(0, 0), (10, 0)]
+        assert quilt.modules[(10, 0)].tag.name == "right module"
+        assert quilt.coupler((9, 1), (10, 0)).noise.p == 0.05
+        assert {c.noise.p for c in quilt.seam_couplers} == {0.02, 0.05}
+        assert [t.origin for t in quilt.tiles] == [(8, 0)]
 
     def test_v0_9_0_experiment_results_golden_file_imports(self):
         record = import_flake(self.FIXTURES / "experimentresults_v0.9.0.flake")

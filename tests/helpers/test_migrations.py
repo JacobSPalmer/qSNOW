@@ -102,12 +102,10 @@ class TestMigrate:
     def test_legacy_integer_is_restamped_as_a_subdict(self):
         data = _migrate({"__qsnow__": "Chip", "format_version": 7})
 
-        major, minor, patch = (0, 9, 0)
-        assert data["format_version"] == _version_dict((major, minor, patch))
+        assert data["format_version"] == _version_dict(_format_version())
 
     def test_migrations_move_to_current_version(self, monkeypatch):
-        """Test that there are not empty versions such that the current version is higher than any migration upgrade
-        """
+        """Test that there are not empty versions such that the current version is higher than any migration upgrade"""
 
         major, minor, patch = _format_version()
         monkeypatch.setattr(migrations, "FORMAT_VERSION_MAJOR", major)

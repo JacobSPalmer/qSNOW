@@ -33,6 +33,13 @@ class TestSites:
     def test_positions_are_all_sites(self):
         assert all(CHECKERBOARD.is_site(c) for c in CHECKERBOARD.positions(7, 7))
 
+    def test_nearest_sites_surround_an_off_lattice_coordinate(self):
+        assert CHECKERBOARD.nearest_sites((3, 0)) == [(2, 0), (3, -1), (3, 1), (4, 0)]
+
+    def test_a_site_is_its_own_nearest(self):
+        assert CHECKERBOARD.nearest_sites((2, 0)) == [(2, 0)]
+        assert SQUARE.nearest_sites((3, 0)) == [(3, 0)]
+
 
 class TestUnitCells:
     @pytest.mark.parametrize("lattice", [CHECKERBOARD, SQUARE])

@@ -4,13 +4,15 @@ JSON import/export for qSNOW objects as flakes.
 All qSNOW objects support exporting as .flake files, which is a serialized qSNOW configuration
 file containing all relevant attributes and information used to 1:1 regenerate the qSNOW object.
 
-The qSNOW serialization library supports round-tripping (1:1 import-export) of `Chip`, `LogicalTile`
-(and code subclasses like `SCTile`), `ProfilingExp`, and the generic `Experiment` through JSON
-files (.flake) files, capturing everything needed to rebuild the object with the exact same setup:
+The qSNOW serialization library supports round-tripping (1:1 import-export) of
+`Chip`, `QuiltedChip`, `LogicalTile` (and code subclasses like `SCTile`),
+`ProfilingExp`, and the generic `Experiment` through JSON files (.flake) files,
+capturing everything needed to rebuild the object with the exact same setup:
 
     from qsnow.helpers.serialize import export_flake, import_flake, import_latest
 
     export_flake(chip)                      # -> data/chips/chip_5x5_<timestamp>.flake
+    export_flake(quilt)                     # -> data/chips/quilt_10x5_<timestamp>.flake
     export_flake(tile)                      # -> data/tiles/tile_rsc_memory_z_d3_<timestamp>.flake
     export_flake(experiment, label='exp1')  # -> data/experiment/
     chip = import_latest("chip")            # newest matching export
@@ -76,6 +78,7 @@ from qsnow.interface.codes.rsc import SCTile
 from qsnow.interface.lattice import lattice_by_name
 from qsnow.interface.models import ChipSpec, Coord, CouplerKey, Tag, TileSpec
 from qsnow.interface.noise import NoiseDistribution
+from qsnow.interface.quilt import QuiltedChip
 from qsnow.interface.rules import (
     _DEFAULT_FILTERS,
     _DEFAULT_SOURCES,
@@ -168,6 +171,8 @@ def _prefix(obj: Any) -> str:
     Object-kind prefix that starts every auto-generated filename.
     """
     match obj:
+        case QuiltedChip():
+            return "quilt"
         case Chip():
             return "chip"
         case LogicalTile():
@@ -481,6 +486,54 @@ def chip_from_dict(data: Dict) -> Chip:
 
 
 # ------------------------------------------------------------------
+# Quilted/Modular Chips
+# ------------------------------------------------------------------
+
+
+def quilt_to_dict(quilt: QuiltedChip) -> Dict:
+    return {
+        "__qsnow__": "QuiltedChip",
+        **_export_stamp(),
+        "tag": tag_to_dict(quilt.tag),
+        "spec": chip_spec_to_dict(quilt.spec),
+        "lattice": quilt.lattice.name,
+        "modules": {
+            _coord_to_key(c): chip_to_dict(ch) for c, ch in quilt.modules.items()
+        },
+        "seams": {_coupler_to_key(ends): n.p for ends, n in quilt.seam_map.items()},
+        "tiles": [tile_to_dict(t) for t in quilt.tiles],
+    }
+
+
+def quilt_from_dict(data: Dict) -> QuiltedChip:
+    data = _migrate(data)
+
+    modules = {}
+    for key, c in data["modules"].items():
+        modules[_key_to_coord(key)] = chip_from_dict(c)
+
+    quilt = QuiltedChip(modules)
+
+    quilt.tag = tag_from_dict(data["tag"])
+    quilt.spec = chip_spec_from_dict(data["spec"])
+
+    if data["seams"]:
+        for key, p in data["seams"].items():
+            quilt.coupler(*_key_to_coupler(key)).noise.p = p
+    else:
+        quilt.derive_seam_noise(quilt.spec.coupler_mode)
+
+    for tile_data in data["tiles"]:
+        tile = tile_from_dict(tile_data)
+        if not quilt.add_tile(tile, tuple(tile_data["origin"])):
+            raise ValueError(
+                f"Failed to re-place tile at {tile_data['origin']} during quilt import."
+            )
+
+    return quilt
+
+
+# ------------------------------------------------------------------
 # Experiments
 # ------------------------------------------------------------------
 
@@ -503,7 +556,7 @@ def _experiment_headings(exp: Experiment, kind: str) -> Dict:
 def profiling_exp_to_dict(exp: ProfilingExp) -> Dict:
     data = _experiment_headings(exp, "ProfilingExp")
     data["exp"] = {
-        "chip": chip_to_dict(exp.chip),
+        "chip": to_dict(exp.chip),
         "tile": tile_to_dict(exp.tile),
         "profile": exp.profile,
     }
@@ -514,7 +567,7 @@ def profiling_exp_from_dict(data: Dict) -> ProfilingExp:
     data = _migrate(data)
     payload = data["exp"]
     exp = ProfilingExp(
-        chip=chip_from_dict(payload["chip"]),
+        chip=from_dict(payload["chip"]),
         tile=tile_from_dict(payload["tile"]),
         # JSON round-trips Coord tuples as lists; restore tuples so profile
         # entries stay hashable/comparable with the rest of the coord model
@@ -626,6 +679,8 @@ def export_results(
 def to_dict(obj: Any) -> Dict:
     """Serialize a supported qSNOW object into a .flake JSON-safe dict."""
     match obj:
+        case QuiltedChip():
+            return quilt_to_dict(obj)
         case Chip():
             return chip_to_dict(obj)
         case LogicalTile():
@@ -645,6 +700,8 @@ def from_dict(data: Dict) -> Any:
     match kind:
         case "Chip":
             return chip_from_dict(data)
+        case "QuiltedChip":
+            return quilt_from_dict(data)
         case "ProfilingExp":
             return profiling_exp_from_dict(data)
         case "Experiment":

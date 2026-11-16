@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
 from qsnow.visualize.visualize import (
     VisualizationStyle,
     _apply_frame,
+    _as_quilt,
     _build_style_layer,
     _compute_geometry,
     _font_px,
@@ -20,6 +21,7 @@ from qsnow.visualize.visualize import (
     css_style,
     default_style,
     device_heatmap_style,
+    module_style,
     noise_heatmap_style,
 )
 
@@ -77,7 +79,8 @@ def default_interactive_styles(chip: Chip) -> Dict[str, VisualizationStyle]:
     """The standard chip-level view bundle: status, CSS type, and noise heatmap.
 
     Gains a coupler view only when the couplers carry rates of their own; while they are
-    still derived from their endpoints the view would restate the noise heatmap.
+    still derived from their endpoints the view would restate the noise heatmap. Gains a
+    module view for a `QuiltedChip`.
     """
     styles = {
         "Status": replace(
@@ -99,6 +102,10 @@ def default_interactive_styles(chip: Chip) -> Dict[str, VisualizationStyle]:
         styles["Qubit + Coupler"] = device_heatmap_style(
             chip,
             desc="Qubit and coupler error rates together, each on its own log scale.",
+        )
+    if (quilt := _as_quilt(chip)) is not None:
+        styles["Modules"] = module_style(
+            quilt, desc="Which module each qubit belongs to; seam couplers in bold."
         )
     return styles
 

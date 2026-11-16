@@ -6,14 +6,23 @@ import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from math import ceil, floor, log10
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union
 
-from qsnow.interface.models import Coord, Coupler, CSSType, Qubit, Status, Tag
+from qsnow.interface.models import (
+    Coord,
+    Coupler,
+    CouplerKey,
+    CSSType,
+    Qubit,
+    Status,
+    Tag,
+)
 
 if TYPE_CHECKING:
     from plotly.graph_objs._figure import Figure
 
     from qsnow.interface.chip import Chip
+    from qsnow.interface.quilt import QuiltedChip
 
 # ------------------------------------------------------------------
 # Visualization style classes/types
@@ -83,6 +92,16 @@ class ColorbarSpec:
     title_side: str = "right"
 
 
+@dataclass(frozen=True)
+class CouplerCasingStyle:
+    """An outline drawn beneath a coupler line, extending `margin` px past each side.
+    """
+
+    color: str = "black"
+    margin: float = 2.5
+    dash: Optional[str] = "6px,4px"
+
+
 @dataclass
 class CouplerStyle:
     """How one coupler is drawn, represented as a line between the two qubits it joins."""
@@ -91,6 +110,7 @@ class CouplerStyle:
     width: float = 2.0
     alpha: float = 1.0
     custom_hovertext: Optional[str] = None
+    casing: Optional[CouplerCasingStyle] = None
 
 
 # TODO - add options in logical style for text or perhaps add a title style
@@ -102,6 +122,16 @@ class LogicalStyle:
     alpha: float = 1.0
     linewidth: float = 2.0
     label_size: float = 10  # font size of the "tile N" label, in points
+
+
+@dataclass(frozen=True)
+class ModuleOutlineStyle:
+    """How the border of each module of a stitched chip is drawn."""
+
+    edgecolor: str = "dimgray"
+    linewidth: float = 1.5
+    dash: str = "dash"
+    alpha: float = 1.0
 
 
 @dataclass
@@ -130,6 +160,9 @@ class VisualizationStyle:
     # Coordinate tick labels (0, 1, ...) on both axes. Off for dense chips or print
     # figures; the tick marks and grid stay.
     axis_labels: bool = True
+    # Border around each module of a `QuiltedChip`, on by default so seams stay visible
+    # on every view. Any other chip draws none.
+    module_outline: Optional[ModuleOutlineStyle] = ModuleOutlineStyle()
 
 
 _STATUS_COLORS = {
@@ -269,11 +302,12 @@ def _label_color(fill: ColorLike) -> str:
     return "black" if (0.299 * r + 0.587 * g + 0.114 * b) > 140 else "white"
 
 
-def _coupler_hovertext(coupler: Coupler) -> str:
+def _coupler_hovertext(coupler: Coupler, *, seam: bool = False) -> str:
     (x0, y0), (x1, y1) = coupler.ends
-    return _hovertext_format(
+    text = _hovertext_format(
         f"({x0}, {y0}) <-> ({x1}, {y1})", noise=f"{coupler.noise.p:.4f}"
     )
+    return f"{text}<br>seam" if seam else text
 
 
 def noise_heatmap_style(
@@ -460,6 +494,7 @@ def device_heatmap_style(
     axis_labels: bool = True,
     label_size: float = 12,
     tile_label_size: float = 10,
+    seam_casing: Optional[CouplerCasingStyle] = CouplerCasingStyle(),
 ) -> VisualizationStyle:
     """Qubit and coupler error rates together, each on its own independently scaled colorbar.
 
@@ -480,7 +515,9 @@ def device_heatmap_style(
     is why it is off by default; `label_size` is their font size in points, and
     `tile_label_size` that of the "tile N" label on each placed tile.
     `axis_labels=False` drops the coordinate numbers from both axes (marks and grid
-    stay), for dense chips or print figures.
+    stay), for dense chips or print figures. On a `QuiltedChip`, seam couplers keep
+    their rate color but are drawn inside `seam_casing` (a dashed black outline by
+    default) so they stand apart from couplers inside a module; `None` draws them plain.
     """
     try:
         look = _DEVICE_PRESETS[preset]
@@ -540,11 +577,15 @@ def device_heatmap_style(
             ),
         )
 
+    seams = _seam_keys(chip)
+
     def coupler_style_fn(coupler: Coupler) -> CouplerStyle:
+        seam = coupler.ends in seams
         return CouplerStyle(
             color=coupler_tx(coupler.noise.p),
             width=look["coupler_width"],
-            custom_hovertext=_coupler_hovertext(coupler),
+            custom_hovertext=_coupler_hovertext(coupler, seam=seam),
+            casing=seam_casing if seam else None,
         )
 
     def logical_style_fn(tag: Tag) -> LogicalStyle:
@@ -714,6 +755,61 @@ def area_selection_style(
         style_fn=style_fn,
         logical_style=_default_logical_style if show_logicals else None,
         desc=desc,
+    )
+
+
+def _as_quilt(chip: Chip) -> Optional[QuiltedChip]:
+    """`chip` if it is a `QuiltedChip`, else None; the one place views check for it."""
+    # Local import: the interface package imports this module while it loads.
+    from qsnow.interface.quilt import QuiltedChip
+
+    return chip if isinstance(chip, QuiltedChip) else None
+
+
+def _seam_keys(chip: Chip) -> Set[CouplerKey]:
+    """The keys of the couplers joining two modules of `chip`; empty unless a quilt."""
+    quilt = _as_quilt(chip)
+    return set(quilt.seam_map) if quilt is not None else set()
+
+
+def module_style(quilt: QuiltedChip, desc: Optional[str] = None) -> VisualizationStyle:
+    """Color each qubit by the module of `quilt` that holds it, and draw the seam
+    couplers joining two modules bold over the rest."""
+    from plotly.colors import qualitative
+
+    palette = qualitative.Pastel
+    offset_of = {id(m): offset for offset, m in quilt.modules.items()}
+    fill = {offset: palette[i % len(palette)] for i, offset in enumerate(quilt.modules)}
+    seams = _seam_keys(quilt)
+
+    def style_fn(qubit: Qubit) -> QubitStyle:
+        module = offset_of[id(quilt.locate(qubit.loc)[0])]
+        return QubitStyle(
+            color=fill[module],
+            custom_hovertext=_hovertext_format(
+                f"({qubit.loc[0]}, {qubit.loc[1]})",
+                module=module,
+                status=qubit.status.name,
+                noise=f"{qubit.noise.p:.4f}",
+            ),
+        )
+
+    def coupler_style_fn(coupler: Coupler) -> CouplerStyle:
+        if coupler.ends in seams:
+            return CouplerStyle(
+                color="black",
+                width=3.0,
+                custom_hovertext=_coupler_hovertext(coupler, seam=True),
+            )
+        return CouplerStyle(
+            color="lightgray", width=1.0, custom_hovertext=_coupler_hovertext(coupler)
+        )
+
+    return VisualizationStyle(
+        style_fn=style_fn,
+        logical_style=_default_logical_style,
+        desc=desc,
+        coupler_style=coupler_style_fn,
     )
 
 
@@ -897,6 +993,31 @@ class _StyleLayer:
     traces: List[Dict[str, Any]]
 
 
+def _outline_rect(
+    origin: Coord,
+    length: float,
+    height: float,
+    *,
+    line: Dict[str, Any],
+    fillcolor: ColorLike = "none",
+    opacity: float = 1.0,
+) -> Dict[str, Any]:
+    """The rect shape bordering a `length x height` region at `origin`, set half a
+    coordinate outside it so the border clears the qubit marks on its edge."""
+    x0, y0 = origin[0] - 0.5, origin[1] - 0.5
+    return dict(
+        type="rect",
+        x0=x0,
+        y0=y0,
+        x1=x0 + length,
+        y1=y0 + height,
+        line=line,
+        fillcolor=fillcolor if fillcolor != "none" else "rgba(0,0,0,0)",
+        opacity=opacity,
+        layer="above",
+    )
+
+
 def _build_style_layer(
     chip: Chip,
     style: VisualizationStyle,
@@ -926,6 +1047,8 @@ def _build_style_layer(
     # *beneath* the qubit marks - plotly draws shapes in list order. Skipped entirely when
     # the style declares no coupler layer, which is every default style.
     coupler_shapes: List[Dict[str, Any]] = []
+    # Casings precede every coupler line, so none is drawn over a neighbouring coupler.
+    casing_shapes: List[Dict[str, Any]] = []
     xs, ys, raw_colors, fillcolors, hovertext = [], [], [], [], []
     # A coupler layer with its own scale needs its own trace to carry its own colorbar,
     # so its hover points are kept apart; otherwise they ride the qubit trace.
@@ -936,6 +1059,23 @@ def _build_style_layer(
             cs = style.coupler_style(coupler)
             (x0, y0), (x1, y1) = coupler.ends
             linecolor = resolve_fill(cs.color, coupler_bar)
+            if cs.casing is not None:
+                casing_shapes.append(
+                    dict(
+                        type="line",
+                        x0=x0,
+                        y0=y0,
+                        x1=x1,
+                        y1=y1,
+                        line=dict(
+                            color=cs.casing.color,
+                            width=cs.width + 2 * cs.casing.margin,
+                            dash=cs.casing.dash,
+                        ),
+                        opacity=cs.alpha,
+                        layer="above",
+                    )
+                )
 
             coupler_shapes.append(
                 dict(
@@ -969,7 +1109,7 @@ def _build_style_layer(
                 hovertext.append(cs.custom_hovertext)
 
     ## Qubit Style Configuration ##
-    shapes: List[Dict[str, Any]] = coupler_shapes
+    shapes: List[Dict[str, Any]] = casing_shapes + coupler_shapes
     qubit_fill: Dict[Coord, ColorLike] = {}
     for qubit in chip.qubits:
         if not qubit.loc:
@@ -1099,6 +1239,22 @@ def _build_style_layer(
                 )
             )
 
+    ## Module Outline Configuration ##
+    # Before the tiles, so a tile straddling a seam draws its border over the module's.
+    quilt = _as_quilt(chip)
+    if quilt is not None and style.module_outline is not None:
+        mo = style.module_outline
+        for origin, bound in quilt.module_footprints().values():
+            shapes.append(
+                _outline_rect(
+                    origin,
+                    bound[0] - origin[0] + 1,
+                    bound[1] - origin[1] + 1,
+                    line=dict(color=mo.edgecolor, width=mo.linewidth, dash=mo.dash),
+                    opacity=mo.alpha,
+                )
+            )
+
     ## Logical Tiling Configuration ##
     if chip.tiles and style.logical_style is not None:
         edgecolor_fn = _discrete_colormap_fn((3, 17))
@@ -1106,20 +1262,14 @@ def _build_style_layer(
             ls = style.logical_style(tile.tag)
             if logical_color_gradient:
                 ls.edgecolor = edgecolor_fn(i)
-            x0, y0 = tile.origin[0] - 0.5, tile.origin[1] - 0.5
             shapes.append(
-                dict(
-                    type="rect",
-                    x0=x0,
-                    y0=y0,
-                    x1=x0 + tile.length,
-                    y1=y0 + tile.height,
+                _outline_rect(
+                    tile.origin,
+                    tile.length,
+                    tile.height,
                     line=dict(color=ls.edgecolor, width=ls.linewidth),
-                    fillcolor=(
-                        ls.facecolor if ls.facecolor != "none" else "rgba(0,0,0,0)"
-                    ),
+                    fillcolor=ls.facecolor,
                     opacity=ls.alpha,
-                    layer="above",
                 )
             )
             annotations.append(

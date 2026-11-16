@@ -51,6 +51,22 @@ class Lattice:
         """Whether `coord` is a position this lattice puts a qubit on."""
         return coord[0] % self.pitch == coord[1] % self.pitch
 
+    def nearest_sites(self, coord: Coord) -> List[Coord]:
+        """The sites closest to `coord`, sorted; just `[coord]` when it is a site."""
+        x, y = round(coord[0]), round(coord[1])
+        candidates = [
+            (x + dx, y + dy)
+            for dx in range(-self.pitch, self.pitch + 1)
+            for dy in range(-self.pitch, self.pitch + 1)
+            if self.is_site((x + dx, y + dy))
+        ]
+
+        def distance(c: Coord) -> float:
+            return (c[0] - coord[0]) ** 2 + (c[1] - coord[1]) ** 2
+
+        nearest = min(map(distance, candidates))
+        return sorted(c for c in candidates if distance(c) == nearest)
+
     def positions(self, length: int, height: int) -> Iterator[Coord]:
         """Every site within a `length x height` *coordinate* extent."""
         for x in range(length):

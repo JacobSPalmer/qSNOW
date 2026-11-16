@@ -1,3 +1,4 @@
+from dataclasses import replace
 from statistics import mean
 
 import pytest
@@ -155,6 +156,25 @@ class TestNoiseGeneration:
         skewed = [q.noise.p for q in lg_chip.qubits]
         assert stats.spearmanr(gaussian, skewed).statistic == pytest.approx(1.0)
 
+    def test_seed_override_leaves_the_shared_distribution_alone(self):
+        dist = SkewContour(0.01, 0.003, 1.5, seed=3)
+        a, b = Chip(3, 3), Chip(3, 3)
+        a.generate_noise(dist, seed=1)
+        b.generate_noise(dist, seed=2)
+        assert dist.seed == 3
+        assert (a.spec.noise_model.seed, b.spec.noise_model.seed) == (1, 2)
+
+    def test_seed_override_honours_zero(self, chip: Chip):
+        chip.generate_noise(SkewContour(0.01, 0.003, 1.5, seed=3), seed=0)
+        assert chip.spec.noise_model.seed == 0
+
+    def test_seed_override_matches_a_reseeded_distribution(self, chip: Chip):
+        dist = SkewContour(0.01, 0.003, 1.5, seed=3)
+        chip.generate_noise(dist, seed=5)
+        overridden = chip.noise_map
+        chip.generate_noise(replace(dist, seed=5))
+        assert chip.noise_map == overridden
+
 
 class TestCouplerNoiseGeneration:
     """Chip-level behaviour of `generate_coupler_noise`; the distribution semantics
@@ -215,6 +235,12 @@ class TestCouplerNoiseGeneration:
         source = NoiseProfile(0.02)
         chip.set_noise_map({(0, 0): source})
         assert chip.loc((0, 0)).noise == source and chip.loc((0, 0)).noise is not source
+
+    def test_seed_override_leaves_the_distribution_alone(self, landscape: Chip):
+        dist = SkewContour(0.05, 0.01, 1.0, seed=4)
+        landscape.generate_coupler_noise(dist, correlation=0.5, seed=0)
+        assert dist.seed == 4
+        assert landscape.spec.coupler_model.seed == 0
 
 
 class TestTileClassProperties:
@@ -397,6 +423,15 @@ class TestPlacementRejection:
     def test_off_lattice_origin_is_fatal(self, chip: Chip, logical_tile):
         rejection = chip.placement_rejection(logical_tile, (1, 0))
         assert rejection is not None and rejection.fatal
+
+    def test_off_lattice_rejection_suggests_in_bounds_origins(
+        self, chip: Chip, logical_tile
+    ):
+        rejection = chip.placement_rejection(logical_tile, (1, 0))
+        assert rejection is not None
+        assert rejection.reason.endswith(
+            "Nearest valid origins: (0, 0), (1, 1), (2, 0)."
+        )
 
     def test_occupied_site_is_not_fatal(self, chip: Chip, logical_tile):
         chip.add_tile(logical_tile, (0, 0))
@@ -587,3 +622,53 @@ class TestIndependentCouplerDetection:
 
         assert summary["n_couplers"] == 81
         assert summary["independent_couplers"] is False
+
+
+class TestChipCut:
+    @pytest.fixture
+    def landscape(self) -> Chip:
+        c = Chip(5, 5)
+        c.generate_noise(RandomGaussian(0.01, 0.002, seed=1))
+        c.generate_coupler_noise(RandomGaussian(0.02, 0.004, seed=2), correlation=0.0)
+        return c
+
+    def test_has_the_requested_unit_dims(self, landscape: Chip):
+        assert landscape.cut((2, 2), 2, 3).unit_dims == (2, 3)
+
+    def test_sites_keep_the_parent_rates(self, landscape: Chip):
+        sub = landscape.cut((2, 2), 2, 2)
+        assert all(
+            sub.loc((x, y)).noise.p == landscape.loc((x + 2, y + 2)).noise.p
+            for x, y in sub.grid
+        )
+
+    def test_independent_couplers_keep_the_parent_rates(self, landscape: Chip):
+        sub = landscape.cut((2, 2), 2, 2)
+        shifted = [[(x + 2, y + 2) for x, y in ends] for ends in sub.coupler_map]
+        assert [c.noise.p for c in sub.couplers] == [
+            landscape.coupler(*ends).noise.p for ends in shifted
+        ]
+        assert sub.has_independent_couplers
+
+    def test_square_lattice_cuts_at_any_offset(self):
+        parent = Chip(4, 4, lattice=SQUARE)
+        parent.generate_noise(RandomGaussian(0.01, 0.002, seed=1))
+        sub = parent.cut((1, 2), 2, 2)
+        assert sub.lattice == SQUARE
+        assert sub.loc((0, 0)).noise.p == parent.loc((1, 2)).noise.p
+
+    def test_editing_the_cut_leaves_the_parent_alone(self, landscape: Chip):
+        before = landscape.loc((2, 2)).noise.p
+        landscape.cut((2, 2), 2, 2).loc((0, 0)).noise.p = 0.3
+        assert landscape.loc((2, 2)).noise.p == before
+
+    @pytest.mark.parametrize(
+        "start, length, height",
+        [((8, 8), 2, 2), ((0, 0), 6, 1), ((1, 0), 2, 2)],
+        ids=["overruns-edge", "larger-than-chip", "off-lattice-start"],
+    )
+    def test_rejects_regions_outside_the_chip(
+        self, landscape: Chip, start, length, height
+    ):
+        with pytest.raises(ValueError, match="Cannot cut"):
+            landscape.cut(start, length, height)

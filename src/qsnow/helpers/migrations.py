@@ -40,7 +40,7 @@ from typing import Any, Dict
 from qsnow.interface.lattice import CHECKERBOARD
 
 FORMAT_VERSION_MAJOR = 0
-FORMAT_VERSION_MINOR = 9
+FORMAT_VERSION_MINOR = 10
 FORMAT_VERSION_PATCH = 0
 
 # NOTE - As a sanity check for future Jacob mostly, I am including patch for future
@@ -280,4 +280,10 @@ def _v0_8_to_v0_9(data: Dict) -> Dict:
     version = data.get("format_version")
     if isinstance(version, int):
         data["format_version"] = _version_dict((0, version, 0))
+    return data
+
+
+@_migration((0, 10, 0))
+def _v0_9_to_v0_10(data: Dict) -> Dict:
+    """v0.10.0 adds the `QuiltedChip` export; every existing kind is unchanged."""
     return data

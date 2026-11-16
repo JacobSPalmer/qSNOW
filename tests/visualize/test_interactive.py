@@ -3,6 +3,8 @@ import pytest
 from qsnow.experiments.experiment import ExperimentResults
 from qsnow.experiments.profiling.game import ProfilingExp
 from qsnow.helpers.serialize import set_data_dir
+from qsnow.interface.chip import Chip
+from qsnow.interface.quilt import QuiltedChip
 from qsnow.visualize.interactive import (
     _format_stat_rows,
     default_interactive_styles,
@@ -35,6 +37,12 @@ class TestDefaultInteractiveStylesDesc:
         default_interactive_styles(chip)
         assert default_style.desc is None
         assert css_style.desc is None
+
+    def test_modules_view_only_for_stitched_chips(self, chip):
+        quilt = QuiltedChip({(0, 0): Chip(5, 5), (10, 0): Chip(5, 5)})
+
+        assert "Modules" in default_interactive_styles(quilt)
+        assert "Modules" not in default_interactive_styles(chip)
 
 
 class TestStyleDescCaption:

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import isclose
 from statistics import mean
 from typing import Dict, List, Optional, Tuple, Union
@@ -48,6 +48,11 @@ from .tile import LogicalTile
 # `derive_coupler_noise` and `has_independent_couplers` so the two can never disagree
 # about what "still derived" means.
 _COUPLER_DERIVATIONS = {"mean": mean, "max": max, "min": min}
+
+
+def _join_coords(coords: List[Coord]) -> str:
+    """Coordinates as an error message lists them: `(2, 0), (4, 0)`."""
+    return ", ".join(f"({x}, {y})" for x, y in coords)
 
 
 @dataclass(frozen=True)
@@ -246,21 +251,27 @@ class Chip(Grid):
         for c in self.couplers:
             c.noise.p = combine([self.loc(e).noise.p for e in c.ends])
 
-    def generate_noise(self, dist: NoiseDistribution) -> None:
+    def generate_noise(self, dist: NoiseDistribution, seed: Optional[int] = None) -> None:
         """
         Give every site the landscape `dist` produces, and record `dist` as the recipe.
 
         Couplers are then re-derived from their endpoints with the chip's current mode,
         so a coupler rate is never left stale behind the site rates it was derived from.
         Apply `generate_coupler_noise` afterwards for couplers of their own.
+
+        If `seed` is given, it is used in place of the distribution's own, which is left
+        unchanged. This is useful for reusing NoiseDistributions while maintaining a set of
+        known/hard-coded seeds.
         """
+        if seed is not None:
+            dist = replace(dist, seed=seed)
         self.set_noise_map(dist.sites(self))
         self.spec.noise_model = dist
         self.derive_coupler_noise(self.spec.coupler_mode)
 
     def generate_coupler_noise(
-        self, dist: NoiseDistribution, *, correlation: Optional[float] = None
-    ) -> None:
+        self, dist: NoiseDistribution, *, correlation: Optional[float] = None,
+        seed: Optional[int] = None) -> None:
         """
         Give every coupler the landscape `dist` produces, optionally cross-correlated
         with the site landscape the chip currently holds.
@@ -270,7 +281,14 @@ class Chip(Grid):
         the mean of it's endpoints. A `correlation=01 means that the couplers error rates are
         entirely independent of the qubit endpoints. Values inbetween blend the coupler distribuiton
         provided here with the existing qubit values.
+
+        If `seed` is given, it is used in place of the distribution's own, which is left
+        unchanged. This is useful for reusing NoiseDistributions while maintaining a set of
+        known/hard-coded seeds.
         """
+        if seed is not None:
+            dist = replace(dist, seed=seed)
+
         self._write_coupler_rates(dist.couplers(self, correlation=correlation))
         self.spec.coupler_model = dist
         self.spec.coupler_correlation = correlation
@@ -440,9 +458,17 @@ class Chip(Grid):
         origin, bound = footprint
 
         if not self._validate_lattice_origin(origin):
+            nearby = [
+                c
+                for c in self.lattice.nearest_sites(origin)
+                if self._validate_chip_bounds((c, c))
+            ]
             return PlacementRejection(
                 f"Invalid tile placement for a '{self.lattice.name}' lattice: "
-                f"{self.lattice.site_rule}, given loc of ({origin[0]}, {origin[1]})",
+                f"{self.lattice.site_rule}, given loc of ({origin[0]}, {origin[1]})."
+                + (
+                    f" Nearest valid origins: {_join_coords(nearby)}." if nearby else ""
+                ),
                 fatal=True,
             )
 
@@ -491,8 +517,14 @@ class Chip(Grid):
         self, tile: LogicalTile, origin: Coord
     ) -> bool:
         """Whether every qubit of `tile` lands on a chip site when moved to `origin`."""
+        return all(self.lattice.is_site(c) for c in self._landing_coords(tile, origin))
+
+    @staticmethod
+    def _landing_coords(tile: LogicalTile, origin: Coord) -> Iterator[Coord]:
+        """Where each circuit qubit of `tile` lands with the tile moved to `origin`."""
         dx, dy = origin[0] - tile.origin[0], origin[1] - tile.origin[1]
-        return all(self.lattice.is_site((x + dx, y + dy)) for x, y in tile._c2i)
+        for x, y in tile._c2i:
+            yield (x + dx, y + dy)
 
     def _keepout(self, footprint: Tuple[Coord, Coord]) -> Tuple[Coord, Coord]:
         """The region a footprint reserves: itself plus a `+x`/`+y` margin.
@@ -591,3 +623,37 @@ class Chip(Grid):
         if copy_tiles:
             new_chip.add_tiles({c: t.copy() for c, t in self.tile_map.items()})
         return new_chip
+
+    def cut(self, start: Coord, length: int, height: int) -> Chip:
+        """
+        A new chip copying the `length x height` unit-cell region whose origin is `start`.
+
+        `start` is a coordinate, as for `add_tile`. Sites and couplers inside the region
+        keep the parent's rates; couplers crossing its edge are dropped. Tiles are not
+        carried.
+        """
+        sub = Chip(length, height, lattice=self.lattice)
+        footprint = sub.footprint_for(start, sub.length, sub.height)
+        if not (
+            self._validate_lattice_origin(start)
+            and self._validate_chip_bounds(footprint)
+        ):
+            raise ValueError(
+                f"Cannot cut a {length}x{height} region at {start} from a "
+                f"{self.unit_dims[0]}x{self.unit_dims[1]} '{self.lattice.name}' chip: "
+                f"the region must start on a site ({self.lattice.site_rule}) and fit "
+                f"inside {self.origin}-{self.bound}."
+            )
+
+        def in_parent(c: Coord) -> Coord:
+            return (c[0] + start[0], c[1] + start[1])
+
+        sub.set_noise_map({c: self.loc(in_parent(c)).noise for c in sub.grid})
+        sub.set_coupler_noise_map(
+            {
+                ends: self.coupler(*map(in_parent, ends)).noise
+                for ends in sub.coupler_map
+            }
+        )
+        sub.spec.coupler_mode = self.spec.coupler_mode
+        return sub
